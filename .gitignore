@@ -1,0 +1,26 @@
+# R and Shiny local state
+.Rhistory
+.RData
+.Rproj.user/
+
+# Local environments and secrets
+.venv/
+renv/library/
+.env
+
+# Generated artifacts and runtime state
+output/
+artifacts/
+logs/
+tmp/
+*.sas
+*.log
+*.html
+*.rtf
+*.pdf
+
+# Test and tooling caches
+coverage/
+.pytest_cache/
+__pycache__/
+*.Rout
