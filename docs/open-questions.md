@@ -17,8 +17,7 @@
    schema。
 5. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
    `NE` 实现。
-6. `custom_code.before`/`after` 的 SAS 插入点、共享作用域和可变更对象。
-7. 传输/解析失败和生成前置引用失败的最小稳定错误包络。
+6. 传输/解析失败和生成前置引用失败的最小稳定错误包络。
 
 ## 本项目独立的后续确认
 
@@ -27,8 +26,7 @@
 3. 四类 chunk 的 SAS emitter、PROC/步骤选择、中间和最终逻辑输出 schema。
 4. `cell_format` 的 SAS 代码生成方式，以及 percentile、rounding、missing/NE 的
    最终实现细节。
-5. `custom_code.before`/`after` 的 SAS 插入点、共享作用域和允许改变的对象。
-6. 传输/解析错误与生成前置引用错误的最小稳定错误包络。
+5. 传输/解析错误与生成前置引用错误的最小稳定错误包络。
 
 ## 第 3 组：Session-owned Workspace 与 Draft
 
@@ -38,4 +36,5 @@
    先提示用户，或允许操作并保留 draft。
 2. revision 的具体字段、并发模型和 UI 展示细节。
 
-已确认的 workspace、save、export 和删除语义见 `docs/design-decisions.md` 的第 3 组。
+已确认的 workspace、save、export 和删除语义见 `docs/design-decisions.md` 的第 3 组；
+`custom_code.before`/`after` 语义见第 4 组。

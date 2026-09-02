@@ -40,7 +40,6 @@ bundle YAML、sequence 和导入替换语义记录在 `docs/design-decisions.md`
 - 四类 chunk 的 SAS emitter、PROC 选择、中间数据集字段和最终输出字段；
 - 分位数方法、四舍五入、格式化和不可估计值的具体 SAS 实现；
 - cell_format 是生成字符型 cell 数据集、PROC REPORT 代码，还是两者都生成；
-- custom_code.after 的准确插入点和允许改变的输出对象；
 - 是否需要生成 ODS/报表代码。本文默认只返回 SAS 源码，不生成报告文件；
 - 是否需要在 UI 中保留单 stub/层级布局限制。它不是 SAS 代码生成的必然限制。
 
@@ -308,8 +307,10 @@ before 可以创建或整理 SAS 数据集，后续 chunk 可以通过 source_da
 这些名称。由于平台不执行 SAS，也不维护 before_outputs，对象存在性、粒度和
 字段正确性由生成代码的使用者负责。
 
-after 的输入对象和可变更字段必须在实现中确认。默认建议它只接收生成的
-分析/布局数据集，不访问原始数据；这只是边界建议，不是本文件中的运行时检查。
+after 与 before 在同一个生成 SAS 程序上下文中运行。平台不限制或假设 custom code
+的输入、输出、依赖、可访问对象或副作用，也不检查语法、安全性或可执行性；after
+位于 table assembly/cell formatting 之后，且之后不再追加系统代码。custom code
+导致的运行时失败由调用方执行 SAS 时处理。
 
 ## 7. Template 模型
 
@@ -881,12 +882,11 @@ emitter registry。不要根据当前文档自行猜测 PROC、percentile defini
 5. 四类 chunk 的 SAS emitter、PROC 选择和中间/最终输出 schema；
 6. sd、分位数、n/pct、零分母、missing 和 rounding 的精确定义；
 7. cell_format 的 SAS 代码生成方式；
-8. custom_code.before/after 的插入点、变量作用域和信任边界；
-9. hierarchical 的动态行、排序、counting unit 和是否保留单 stub 约束；
-10. import 的替换/合并语义、download 的 canonical serialization 和 session
+8. hierarchical 的动态行、排序、counting unit 和是否保留单 stub 约束；
+9. import 的替换/合并语义、download 的 canonical serialization 和 session
     丢失策略；
-11. 传输/解析失败和生成前置引用失败的最小错误返回格式；
-12. 是否需要生成 PROC REPORT/ODS 代码，或只生成分析数据集代码。
+10. 传输/解析失败和生成前置引用失败的最小错误返回格式；
+11. 是否需要生成 PROC REPORT/ODS 代码，或只生成分析数据集代码。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。

@@ -64,7 +64,5 @@
    schema 和 hierarchical record-to-subject 广播实现。
 4. SAS percentile definition 是否采用与 ref R type 2 结果等价的方法，以及
    `base_digits` 在 SAS numeric/format 信息不可得时的取值来源。
-5. `custom_code.before`/`after` 在 SAS source 中的精确插入点、共享作用域和允许
-   改变的对象。
-6. 传输/解析错误和生成前置引用错误的最小稳定错误包络。
-7. YAML parser 的 R 包和版本；实现阶段通过依赖锁定确认，不改变 canonical profile。
+5. 传输/解析错误和生成前置引用错误的最小稳定错误包络。
+6. YAML parser 的 R 包和版本；实现阶段通过依赖锁定确认，不改变 canonical profile。

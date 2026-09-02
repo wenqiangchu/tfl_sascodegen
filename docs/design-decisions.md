@@ -42,8 +42,7 @@
 
 - dirty draft 时导入、切换和生成的拦截规则（第 3 组）。
 - YAML 解析器的具体 R 包和版本留到实施阶段锁定；不改变上述 canonical profile。
-- SAS 数据集绑定约定、emitter 输出 schema、custom code 作用域及错误包络
-  （后续子系统）。
+- SAS 数据集绑定约定、emitter 输出 schema 及错误包络（后续子系统）。
 
 ## 第 3 组：Session-owned Workspace 与 Draft 生命周期
 
@@ -74,6 +73,35 @@ revision 机制，以及删除影响控制采用方案 A。
 - dirty draft 存在时导入、切换 active table 和生成 SAS 的拦截/提示策略。
 - revision 的具体字段、并发模型和 UI 展示细节留到实现阶段；不改变本组的
   单 session、单 active draft 语义。
+
+## 第 4 组：`custom_code.before` / `custom_code.after`
+
+状态：已确认（2026-09-02）。采用方案 A：custom code 被视为调用方提供的、可直接
+插入生成程序的 SAS source text；平台不对其内容作任何假设或验证。
+
+### 已批准
+
+1. `TableSpec.custom_code` 是可选 mapping，包含可选的 `before` 和 `after` 字符串。
+   非空文本原样保留；空或只含空白的字段按 canonical YAML 规则省略。不得增加
+   `before_outputs` 或 runtime result 字段。
+2. 生成顺序固定为：外部 SAS binding/caller setup 占位、`before`、population/header
+   逻辑、template chunks、table assembly/cell formatting、`after`。`after` 是当前
+   产品生成的最后一个 custom section，不再追加系统分析或报表代码。
+3. `before` 与 `after` 均在同一个生成 SAS 程序上下文中插入并执行；平台不建立
+   sandbox，也不推断或自动加载宏、变量、库、数据集、package 或其他依赖。
+4. 平台不限制或假设 custom code 的输入、输出、访问对象、数据集粒度、名称冲突、
+   副作用或执行结果。`before` 可以创建、修改或删除对象，`after` 也可以修改、
+   替换或删除可见对象；后续 chunk 只有在其自身契约明确引用时才依赖某个名称。
+5. 导入阶段只检查字段类型和 bundle 结构，不检查 SAS 语法、静态安全性或可执行性；
+   生成阶段只原样拼接文本，不执行 SAS。custom code 引起的运行时失败完全由调用方
+   执行 SAS 时处理。
+
+### 被拒绝的替代方案
+
+- 为 custom code 增加声明式输入/输出或 `before_outputs`：未采用，会改变现有字段
+  契约并要求平台对代码行为作额外假设。
+- 对 custom code 做 AST/语法/安全扫描或放入隔离执行环境：未采用，当前产品只
+  生成 SAS source text，不执行或验证 SAS。
 
 ## 第 2 组补充：参考文档对齐与相对精度
 
