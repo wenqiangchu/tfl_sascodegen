@@ -15,7 +15,6 @@
    logical-cell 字段契约已在第 7 组冻结。
 4. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
    `NE` 实现。
-5. 传输/解析失败和生成前置引用失败的最小稳定错误包络。
 
 ## 本项目独立的后续确认
 
@@ -24,7 +23,8 @@
    逻辑输出职责已确认。
 3. `cell_format` 的 SAS 代码生成方式，以及 percentile、rounding、missing/NE 的
    最终实现细节。
-4. 传输/解析错误与生成前置引用错误的最小稳定错误包络。
+4. YAML parser 的 R 包和版本，以及 emitter 具体实现的依赖锁定；不改变已确认的
+   strict single-document import profile。
 
 ## 第 3 组：Session-owned Workspace 与 Draft
 

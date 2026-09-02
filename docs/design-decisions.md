@@ -42,7 +42,8 @@
 
 - dirty draft 时导入、切换和生成的拦截规则（第 3 组）。
 - YAML 解析器的具体 R 包和版本留到实施阶段锁定；不改变上述 canonical profile。
-- SAS 数据集绑定约定、emitter 输出 schema 及错误包络（后续子系统）。
+- SAS 数据集绑定约定和 emitter 输出 schema（后续子系统）；错误包络已在第 8 组
+  冻结。
 
 ## 第 3 组：Session-owned Workspace 与 Draft 生命周期
 
@@ -210,7 +211,7 @@ Rscript、study roots 或报表执行模型。
    chunk registry/emitters 和外部 SAS binding convention。generator 不接收数据 bytes、
    数据文件路径、study roots、SAS 执行状态或输出 artifact path。
 2. host-side 先解析目标 table 的 population/header/template 引用，形成内部的
-   `ResolvedTableInput`；引用无法解析属于生成前置失败，具体错误包络留到第 8 组。
+   `ResolvedTableInput`；引用无法解析属于生成前置失败，使用第 8 组的稳定错误包络。
    emitter 只接收展开后的普通对象和 opaque SAS references，不读取 YAML 或物理文件。
 3. 内部 `SourceSection` 至少携带 `section_id`、`kind`、`owner_id`、确定性顺序和
    `text`；section map/source line map 只允许作为内存调试信息，不写入 bundle，也
@@ -245,6 +246,90 @@ Rscript、study roots 或报表执行模型。
   metadata，不注入实现。
 - 在 generator 内执行生成的 SAS，或迁移 ref 的 R runtime/RTF reporter：未采用，
   当前产品交付物只有 SAS source text。
+
+## 第 8 组：结构性导入错误、生成前置错误与可复现性
+
+状态：已确认（2026-09-02）。采用方案 A：沿用 ref 的稳定错误项和有序错误列表，
+但将其适配为单文件 YAML bundle 与只生成 SAS source text 的边界。
+
+### 已批准
+
+1. 导入和生成错误共用最小 `ErrorItem` 形状：
+
+   - `stage`：`import` 或 `generation`；
+   - `code`：稳定的机器可读错误代码；
+   - `message`：英文、只描述事实，不提供建议；
+   - `path`：逻辑字段路径，例如 `$.tables[0].template_id`。
+
+   根级传输或解析错误使用 `$` 作为 path。错误项不包含 warning、suggestion、
+   stack trace、服务器临时路径、session 信息、原始数据或不稳定的 parser 文本。
+
+2. `BundleImportResult` 采用 `passed`、候选 `workspace` 和有序 `errors`：
+
+   - bytes 先解析为候选 workspace；只有整体结构成功时才替换当前 workspace；
+   - YAML 解析失败、编码失败或无法继续遍历的错误返回单个根级错误；
+   - 可继续遍历的结构错误一次返回多个，按 canonical 字段顺序、sequence 顺序和
+     字段路径稳定排序；
+   - 失败时保留当前 metadata、active draft 和 revision，只允许更新
+     `parse_diagnostic` 这一侧的导入状态；成功时清除旧导入诊断并清空旧 draft/选择；
+   - 不提供独立 validation API；导入只做 transport、YAML 和 metadata structure
+     decode，不读取 SAS 数据、不执行表达式或 custom code。
+
+3. 单文件 YAML 的导入 profile 采用严格单文档结构：
+
+   - 顶层和嵌套字段按已批准 schema 检查，未知字段、重复 mapping key、未知
+     chunk type、缺失/重复 ID 和 discriminator 不一致均失败；
+   - 多文档、anchor/alias、tag 和 merge key 不属于支持的 bundle 表达；
+   - canonical 下载仍固定为 UTF-8、无 BOM、LF；导入接受有效 UTF-8 的 BOM 或
+     CRLF，并在内存中规范化后按 canonical 规则导出；无效 UTF-8 导入失败；
+   - 跨对象引用是否存在不在结构导入阶段强制解析，继续沿用“结构严格、引用可
+     延迟”的决定。
+
+4. 导入结构错误使用以下稳定代码：
+
+   `bundle_input_missing`、`bundle_encoding_invalid`、`bundle_yaml_invalid`、
+   `bundle_structure_invalid`、`bundle_schema_unsupported`、
+   `bundle_required_field_missing`、`bundle_unknown_field`、
+   `bundle_value_invalid`、`bundle_id_invalid`、`bundle_duplicate_key`、
+   `bundle_chunk_type_unknown`。
+
+5. 生成前置失败使用同一 `ErrorItem` 形状，但不返回部分 SAS source。下列情况
+   可以在 source assembly 前报告：
+
+   `generation_table_missing`、`generation_reference_missing`、
+   `generation_emitter_unavailable`、`generation_binding_unavailable`、
+   `generation_contract_invalid`。
+
+   host-side 能确定的多个前置错误按 request、table 引用、template/chunk sequence
+   的确定性顺序返回；生成器不因数据内容、SAS expression 或 custom code 的语法、
+   安全性和执行结果产生错误。成功时第 7 组的对外结果仍只有 SAS source text。
+
+6. 生成器在内存中从 canonical YAML snapshot 计算确定性的
+   `GenerationProvenance`，并将其作为非执行性 SAS comment preamble 写入 source
+   的最前端；它不改变第 7 组规定的 executable section 顺序。preamble 至少包含：
+
+   `schema_version`、`table_id`、`metadata_sha256`、`generator_contract_id`、
+   `emitter_registry_id` 和调用方提供的 opaque `binding_profile_id`。
+
+   `metadata_sha256` 对已保存 snapshot 的 canonical YAML UTF-8/LF bytes 计算，使用
+   小写 SHA-256。不得写入 timestamp、session ID、绝对路径、临时文件路径、数据内容
+   或随机值；binding profile 的具体 SAS 语法仍由后续 binding 子系统确认。
+
+7. 不生成 provenance sidecar、manifest、日志或结果文件。可复现性依赖相同的
+   canonical snapshot、generator contract、emitter registry 和 binding profile；
+   `parse_diagnostic` 只保留最近的导入错误，不持久化生成错误或运行结果。
+
+### 被拒绝的替代方案
+
+- 采用 parser 原生的非确定性错误文本、warning/suggestion 列表或绝对上传路径：
+  未采用，会使 UI、测试和跨实现错误契约不稳定。
+- 导入成功后再异步修复引用，或在失败时部分替换 workspace：未采用，避免产生
+  半份 metadata 状态；引用缺失留到生成前置阶段。
+- 生成失败时返回已组装的部分 source：未采用，避免用户下载不可完整执行的程序。
+- 将 provenance 写入 YAML、单独 manifest 或 sidecar 文件：未采用，当前产品的
+  metadata 只描述业务对象，必需产物仍只有 SAS source text。
+- 将 timestamp、机器路径或 SAS 数据摘要作为 provenance：未采用，会破坏确定性
+  复现并越过当前产品的数据边界。
 
 ## 第 2 组补充：参考文档对齐与相对精度
 

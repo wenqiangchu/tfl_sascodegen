@@ -27,6 +27,8 @@ population、header、table、template、chunk 以及内存态编辑工作区，
 - 编辑过程维护内存对象；不把 metadata 绑定到物理文档路径。
 - 可以上传一个 metadata bundle 文件导入内存工作区，也可以把当前工作区下载
   为一个 metadata bundle 文件。
+- 导入结构错误和生成前置错误使用稳定的有序错误包络；失败不产生部分工作区
+  或部分 SAS source。
 - UI 技术栈继续使用 Shiny；population、header、table、template 的 UI 继续采用现有的编辑形式：
   列表、新建、删除、表单、嵌套行编辑、顺序调整和 dirty draft。
 - 系统不包含 AI candidate、AI agent、retry、capability 或 AI review。
@@ -53,9 +55,9 @@ bundle YAML、sequence 和导入替换语义记录在 `docs/design-decisions.md`
 - 自动修复重复 key、缺失 key、重叠分类或重复观测；
 - 自动推断统计方法、分母或业务规则。
 
-导入只需要最小的文件解析能力；若 bundle bytes 无法解析，导入可以返回传输/解析
-失败。生成器也可以因为缺少必要的结构字段或无法解析对象引用而返回生成前置
-失败。这些不是独立的 validation API，也不执行 SAS 语法或数据检查。
+导入只需要最小的文件解析能力；若 bundle bytes 无法解析，导入返回结构化的
+transport/解析错误。生成器也可以因为缺少必要的结构字段或无法解析对象引用而返回
+生成前置错误。这些错误不构成独立的 validation API，也不执行 SAS 语法或数据检查。
 
 ## 2. 对象关系
 
@@ -169,9 +171,18 @@ bundle 不包含 datasets、数据文件、数据路径、study 根目录、生�
 
 ### 3.2 导入与下载
 
-- **导入**：UI 接收一个 bundle 文件，读取其内容并构造新的
+- **导入**：UI 接收一个 bundle 文件，读取其内容并构造候选
   MetadataWorkspace。当前项目采用原子整体替换：只有整个 YAML bundle 成功
-  解析后才替换当前工作区；失败时保留旧工作区；合并导入不在当前契约内。
+  解析并通过结构解码后才替换当前工作区；失败时保留旧 metadata、active draft
+  和 revision；合并导入不在当前契约内。
+- **导入错误**：导入结果使用 `passed`、候选 workspace 和有序 `errors`。YAML
+  解析失败或无法继续遍历时只返回根路径 `$` 的错误；可继续遍历的结构错误按
+  canonical 字段和 sequence 顺序返回。失败时只允许更新 workspace 的
+  `parse_diagnostic`，成功时清除旧导入诊断并清空旧 draft/选择状态。
+- **YAML 导入 profile**：canonical 下载为 UTF-8、无 BOM、LF；导入接受有效 UTF-8
+  的 BOM 或 CRLF 并在内存中规范化。导入是严格单文档；未知字段、重复 key、
+  anchor/alias、tag、merge key、未知 chunk type、缺失/重复 ID 和 discriminator
+  不一致均为结构错误。跨对象引用存在性留到生成前置阶段。
 - **编辑**：所有修改先进入当前 session 的 draft，再写回内存工作区；不写入
   物理 metadata 文档。
 - **下载 metadata**：将当前内存工作区按 canonical YAML serialization 编码为
@@ -187,6 +198,39 @@ MetadataBundle、任何对象字段或导出的文件。
 当前项目的 canonical YAML profile 为 UTF-8、无 BOM、LF 换行、两空格缩进、
 固定字段顺序和原有 sequence 顺序；单行字符串使用 single-quoted scalar，
 多行 custom code 使用 literal block scalar；缺省可选字段不输出为 `null`。
+
+### 3.3 错误包络
+
+导入和生成前置错误共用以下最小错误项：
+
+| 字段 | 语义 |
+| --- | --- |
+| stage | `import` 或 `generation`。 |
+| code | 稳定的机器可读错误代码。 |
+| message | 英文事实描述，不包含建议。 |
+| path | 逻辑字段路径，例如 `$.tables[0].template_id`；根级错误使用 `$`。 |
+
+导入结果 `BundleImportResult` 至少包含 `passed`、成功时的候选 workspace 和有序
+`errors`。结构错误可一次返回多个，按 canonical 字段顺序、sequence 顺序和 path
+稳定排序；编码/YAML 解析失败或无法继续遍历时只返回一个根级错误。生成成功时仍只
+返回 SAS source text；生成前置失败返回同一错误项形状且不返回部分 source。
+
+导入错误代码为：
+
+`bundle_input_missing`、`bundle_encoding_invalid`、`bundle_yaml_invalid`、
+`bundle_structure_invalid`、`bundle_schema_unsupported`、
+`bundle_required_field_missing`、`bundle_unknown_field`、`bundle_value_invalid`、
+`bundle_id_invalid`、`bundle_duplicate_key`、`bundle_chunk_type_unknown`。
+
+生成前置错误代码为：
+
+`generation_table_missing`、`generation_reference_missing`、
+`generation_emitter_unavailable`、`generation_binding_unavailable`、
+`generation_contract_invalid`。
+
+错误项不包含 warning、suggestion、stack trace、服务器临时路径、session 信息、
+原始数据或不稳定的 parser 文本。导入不执行 SAS expression/custom code，也不读取
+SAS 数据；跨对象引用存在性由生成前置阶段处理。
 
 ## 4. Population 模型
 
@@ -724,7 +768,7 @@ MetadataWorkspace
 | tables | 保存 table 引用和 custom SAS code。 |
 | templates | 保存 template、chunk、level、block 和 row。 |
 | active_draft | 保存一个正在编辑对象的 base value、draft value、dirty 状态和解析诊断。 |
-| parse_diagnostic | 只记录 bundle 传输/解析失败，不记录数据分析结果或 validation 结果。 |
+| parse_diagnostic | 记录最近一次 bundle 传输/解析/结构解码错误项；不记录数据分析结果、生成错误或运行结果。 |
 | revision | 可选的内存版本号，用于 dirty guard 或并发 UI 保护。 |
 
 工作区不包含 study、roots、source_files、dataset_paths、artifact_paths、SAS
@@ -736,11 +780,16 @@ MetadataWorkspace
 
 - 创建空工作区；
 - 从 bundle bytes 导入工作区；
+- 返回 `BundleImportResult` 和稳定、有序的 `ErrorItem`，不把失败的候选 workspace
+  部分写入当前 workspace；
 - 获取、创建、更新、删除 population/header/table/template；
 - 对 template 中的 chunk、level、analysis block 和 row 做新增、删除、移动和
   位置 ID 重编号；
 - 将工作区导出为 bundle bytes；
 - 根据 table ID 解析引用并生成 SAS source text。
+
+导入失败只更新 `parse_diagnostic` 侧状态；生成器是纯内存操作，生成前置失败返回
+`ErrorItem` 列表且不修改 workspace、draft 或文件。
 
 这些操作只需要处理导入解析失败、对象 ID 缺失或引用无法定位等前置错误，
 不提供独立 validation API；它们不读取数据、不执行 SAS、不做变量/重复/key/
@@ -859,7 +908,8 @@ SAS source text
 
 可选的 section map、source line map 或生成失败上下文只能作为内部内存返回值，
 不属于产品输出，也不写入 metadata bundle。除非另行批准，平台不生成 manifest、RTF、HTML、SAS
-日志或执行结果。
+日志或执行结果。成功的 source 最前端可以包含确定性的非执行性 SAS provenance
+comment；该 comment 不改变 executable section 顺序。
 
 ### 13.3 SourceSection 与 Emitter Contract
 
@@ -898,6 +948,22 @@ DATA step 和临时对象命名是 emitter 实现细节，不写入 metadata。
 不同 chunk 不应通过隐式修改共享数据集互相传递状态。若需要中间数据集，
 名称和生命周期应由 SAS emitter contract 明确。
 
+### 13.5 错误与可复现性
+
+生成器在内存中从已保存 snapshot 的 canonical YAML 序列化计算
+`GenerationProvenance`，并将其作为 source 最前端的 SAS comment preamble。至少包含：
+
+`schema_version`、`table_id`、`metadata_sha256`、`generator_contract_id`、
+`emitter_registry_id` 和调用方提供的 opaque `binding_profile_id`。
+
+`metadata_sha256` 对 canonical YAML 的 UTF-8/LF bytes 计算，使用小写 SHA-256。不得
+包含 timestamp、session ID、绝对路径、临时文件路径、数据内容或随机值。binding
+profile 的具体 SAS 语法由后续 binding 子系统确认；其稳定 ID 用于区分不同调用方约定。
+
+provenance 不写入 YAML，不生成 sidecar 或 manifest。相同的 canonical snapshot、
+generator contract、emitter registry 和 binding profile 应生成相同的 source。生成失败
+时不返回部分 source，也不持久化错误或运行结果。
+
 ## 14. 四类 SAS Emitter 实施契约矩阵
 
 以下清单用于实现和回归测试；第 7 组已确认其职责边界，具体 SAS 语句和内部物理
@@ -921,8 +987,7 @@ DATA step 和临时对象命名是 emitter 实现细节，不写入 metadata。
 1. 外部 SAS dataset reference 和调用方提供的 libref/macro convention；
 2. dirty draft 下导入、切换 active table 和生成 SAS 的拦截策略，以及 revision
    的具体字段和 UI 展示；
-3. 传输/解析失败和生成前置引用失败的最小错误返回格式；
-4. YAML parser 的 R 包和版本，以及 emitter 具体实现的依赖锁定。
+3. YAML parser 的 R 包和版本，以及 emitter 具体实现的依赖锁定。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。
