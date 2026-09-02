@@ -33,16 +33,15 @@ population、header、table、template、chunk 以及内存态编辑工作区，
 
 ### 1.2 本文刻意不替实现决定的内容
 
-以下内容必须在实现中单独确认，本文只提供待确认的边界：
+以下内容仍需在实现中单独确认，本文只提供待确认的边界；本项目已批准的
+bundle YAML、sequence 和导入替换语义记录在 `docs/design-decisions.md`：
 
-- metadata bundle 使用 YAML 还是 JSON，以及文件扩展名；
 - 外部 SAS 数据集引用的精确写法（例如 LIBREF.MEMBER、宏变量或绑定名）；
 - 四类 chunk 的 SAS emitter、PROC 选择、中间数据集字段和最终输出字段；
 - 分位数方法、四舍五入、格式化和不可估计值的具体 SAS 实现；
 - cell_format 是生成字符型 cell 数据集、PROC REPORT 代码，还是两者都生成；
 - custom_code.after 的准确插入点和允许改变的输出对象；
 - 是否需要生成 ODS/报表代码。本文默认只返回 SAS 源码，不生成报告文件；
-- import 是替换整个工作区还是合并对象。本文建议默认替换；
 - 是否需要在 UI 中保留单 stub/层级布局限制。它不是 SAS 代码生成的必然限制。
 
 ### 1.3 明确不属于系统职责
@@ -172,12 +171,12 @@ bundle 不包含 datasets、数据文件、数据路径、study 根目录、生�
 ### 3.2 导入与下载
 
 - **导入**：UI 接收一个 bundle 文件，读取其内容并构造新的
-  MetadataWorkspace。建议导入成功后整体替换当前工作区；合并导入不在当前
-  契约内。
+  MetadataWorkspace。当前项目采用原子整体替换：只有整个 YAML bundle 成功
+  解析后才替换当前工作区；失败时保留旧工作区；合并导入不在当前契约内。
 - **编辑**：所有修改先进入当前 session 的 draft，再写回内存工作区；不写入
   物理 metadata 文档。
-- **下载 metadata**：将当前内存工作区按 canonical serialization 编码为一个
-  bundle 文件。下载内容不包含临时上传路径、session ID 或 UI 状态。
+- **下载 metadata**：将当前内存工作区按 canonical YAML serialization 编码为
+  一个 `.yaml` bundle 文件。下载内容不包含临时上传路径、session ID 或 UI 状态。
 - **下载 SAS**：选择一个 table 后，生成器返回 SAS source text，UI 将其作为
   .sas 文件下载或显示预览。
 - **会话边界**：浏览器/session 结束后，未下载的内存修改可以丢失；是否增加
@@ -185,6 +184,10 @@ bundle 不包含 datasets、数据文件、数据路径、study 根目录、生�
 
 上传控件产生的临时服务器文件名只能是传输适配器的内部细节，不能写入
 MetadataBundle、任何对象字段或导出的文件。
+
+当前项目的 canonical YAML profile 为 UTF-8、无 BOM、LF 换行、两空格缩进、
+固定字段顺序和原有 sequence 顺序；单行字符串使用 single-quoted scalar，
+多行 custom code 使用 literal block scalar；缺省可选字段不输出为 `null`。
 
 ## 4. Population 模型
 
@@ -238,14 +241,18 @@ columns:
 | columns[].id | string | header column 的逻辑 ID。 |
 | columns[].label | string | 列展示标签。 |
 | columns[].condition | string | SAS logical expression，判断 subject 是否属于该列。 |
-| columns[].display_order | positive integer | 列显示顺序。 |
-| columns[].width | positive number | 目标输出使用的列宽；单位由 SAS emitter 确认。 |
+| columns[].display_order | positive integer | 从 1 开始的连续列显示顺序；canonical sequence 按该顺序保存。 |
+| columns[].width | positive number | 目标输出使用的真实英寸宽度（例如 1.2 表示 1.2 inches）。 |
 | columns[].alignment | enum | left、center 或 right。 |
 | columns[].spanning_header_1 | string，可选 | level 1 spanning header 引用。 |
 | columns[].spanning_header_2 | string，可选 | level 2 spanning header 引用。 |
 
 每个 column condition 独立用于生成筛选代码，因此一个 subject 可以属于多个
-列。Overall 一类的无条件列建议使用 1，而不是其他语言的 TRUE。
+列。`display_order` 必须在当前 header 内唯一、从 1 开始连续；保存时 columns
+sequence 与 display order 一致，不按 ID 自动排序。`spanning_header_1` 只能引用
+level 1，`spanning_header_2` 只能引用 level 2；同一 spanning header 引用的列在
+最终顺序中必须连续。Overall 一类的无条件列使用 SAS 表达式 `1`，而不是其他
+语言的 `TRUE`。
 
 生成器通常需要构造一个逻辑 header membership 数据集，至少包含：
 
@@ -377,8 +384,12 @@ label row 只输出标签，不请求统计量。analysis row 必须有 statisti
 cell_format；分类 row 还需要 condition。placeholder 集合应与 statistic ID
 集合一致。具体的 SAS PUT、CATX、格式和字符缺失显示方式由 emitter 确认。
 
-digits 可以使用绝对非负整数。是否支持相对 digits（例如 +1）以及其 SAS
-实现必须在具体 emitter contract 中确认；本文不要求 generator 自动推导基础精度。
+digits 支持绝对非负整数以及 `+n`/`-n` 相对精度字符串。continuous 的 relative
+digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值先按最多
+15 位有效数字、非科学计数法、去除小数尾零的规则规范化，再计算
+`resolved_digits = base_digits + offset`；负 resolved digits 失败，不自动截断。
+`n` 不声明 digits，categorical `pct` 只接受非负绝对整数。具体 base_digits
+如何从外部 SAS 数值/格式信息取得，以及等价 SAS emitter 实现，仍需确认。
 
 ### 8.3 统计结果的抽象表示
 
@@ -522,6 +533,7 @@ source_contract:
   grain: record
   subject_key: USUBJID
   record_key: [USUBJID, AESEQ]
+  duplicate_policy: error
 levels:
   - id: ae_001_level_001
     variable: SOC
@@ -556,6 +568,7 @@ analysis_blocks:
 | grain | subject、record 或 observation。 |
 | subject_key | 通常为 USUBJID。 |
 | record_key | record/observation grain 的逻辑 key 字段序列。 |
+| duplicate_policy | 重复 key 的处理策略；当前 contract 固定为 error，不自动去重或聚合。 |
 
 这些字段告诉 SAS emitter 应按何种粒度生成排序、连接和计数代码。平台不读取
 数据、不检查 key 是否存在或重复，也不执行 duplicate policy。
@@ -566,9 +579,9 @@ analysis_blocks:
 | --- | --- |
 | variable | 分组值变量。 |
 | label_variable | 展示标签变量；缺省可使用 variable。 |
-| order_variable | 默认排序变量。 |
-| order_direction | asc 或 desc。 |
-| result_sort | 可选的统计结果驱动排序。 |
+| order_variable | 必填的默认排序变量；非缺失 group value 必须有对应排序值。 |
+| order_direction | 必填的默认排序方向，只能为 asc 或 desc。 |
+| result_sort | 可选的统计结果驱动排序 mapping，结构见下文；声明后覆盖展示顺序但不删除默认排序字段。 |
 | node_role | label 或 analysis。 |
 | node_analysis_id | node_role 为 analysis 时引用 same-row block。 |
 | missing_policy | exclude、label 或 error 的业务意图。 |
@@ -582,6 +595,23 @@ levels 按 sequence 形成父子层级。一个 level 最多一个 same-row bloc
   -> 当前 level 的 below 静态分析行
   -> 下一级动态子节点
 ~~~
+
+`result_sort` 仅引用当前 level 的 analysis block，避免父子 level 形成循环依赖：
+
+~~~yaml
+result_sort:
+  metric:
+    analysis_id: hierarchy_001_analysis_001
+    row_id: hierarchy_001_analysis_001_row_001
+    statistic_id: n
+  column_order: [5, 4, 3, 2, 1, 0]
+  direction: desc
+~~~
+
+`column_order` 是按 header `display_order` 排序后的 1-based 位置序列；`0` 表示
+当前节点 label，最多出现一次且只能位于末尾。正数不能重复或越过当前列数。
+排序比较 raw statistic value，NA/NE 排在有效值之后；label tie-break 使用稳定、
+不依赖 locale 的 Unicode 大小写不敏感升序。
 
 #### Analysis block
 
