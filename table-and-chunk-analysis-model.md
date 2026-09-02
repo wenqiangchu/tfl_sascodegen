@@ -42,7 +42,7 @@ bundle YAML、sequence 和导入替换语义记录在 `docs/design-decisions.md`
 - 四类 chunk 的 SAS emitter、PROC 选择、中间数据集字段和最终输出字段；
 - 分位数方法、四舍五入、格式化和不可估计值的具体 SAS 实现；
 - cell_format 是生成字符型 cell 数据集、PROC REPORT 代码，还是两者都生成；
-- 是否需要生成 ODS/报表代码。本文默认只返回 SAS 源码，不生成报告文件；
+- ODS/报表代码明确不属于当前范围；本文只返回 SAS 源码，不生成报告文件；
 - 是否需要在 UI 中保留单 stub/层级布局限制。它不是 SAS 代码生成的必然限制。
 
 ### 1.3 明确不属于系统职责
