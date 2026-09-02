@@ -428,8 +428,9 @@ digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值
 
 ## 9. 四类 Chunk 模型
 
-四类 chunk 的分析意图可直接复用；但每类的 SAS 实现、输出 schema 和精确过程
-必须在 emitter contract 中确认。以下字段是声明式输入。
+四类 chunk 的分析意图、数据粒度、merge 顺序以及 analysis/render 边界已确认；
+每类的具体 SAS 实现、输出 schema 和精确过程仍需在 emitter contract 中确认。
+以下字段是声明式输入。
 
 ### 9.1 continuous_summary
 
@@ -535,8 +536,9 @@ rows:
 SAS overlap guard；平台不执行或校验数据，重叠错误只会在调用方执行生成的 SAS 时
 暴露。未命中任何 row 的 counting unit 允许存在。
 
-独立使用时 counting unit 通常为 USUBJID。若嵌入 hierarchical block，计数
-单位由 block 声明。
+独立使用时首期 subject-level counting identity 固定为 `USUBJID`；若嵌入
+hierarchical block，`counting_unit` 由 block 显式声明为 `record`、
+`distinct_subject` 或 `distinct_key`，并在需要时提供 `distinct_key`。
 
 ### 9.4 hierarchical_summary
 
@@ -691,13 +693,10 @@ step WHERE/IF 可接受的语法为基准：
 
 ### 10.2 SAS 代码注入边界
 
-表达式和 custom code 最终会进入生成的 SAS 程序。实现必须确认：
-
-- 是否只允许 DATA step/PROC 内的受限语句；
-- 是否允许 %INCLUDE、宏定义、X、SYSTASK、FILENAME PIPE 等外部作用；
-- 是否需要对 source text 做转义或静态扫描。
-
-本文不提供安全扫描，也不承诺执行隔离；平台只负责按约定拼接源代码。
+表达式和 custom code 最终会进入生成的 SAS 程序。平台不限制 DATA step/PROC 语句、
+`%INCLUDE`、宏定义、`X`、`SYSTASK`、`FILENAME PIPE` 或其他 SAS 作用，也不对
+source text 做语法、安全、转义或可执行性验证；平台只负责按约定原样拼接源代码，
+调用方负责执行环境和运行结果。
 
 ## 11. 内存工作区模型
 
@@ -882,7 +881,7 @@ SAS source text
 | --- | --- | --- |
 | continuous_summary | PROC/排序、subject 去重假设、mean/sd/分位数、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段 |
 | categorical_summary_nonexclusive | denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段 |
-| categorical_summary_exclusive | 与 nonexclusive 的差异；是否完全不生成 overlap check | 同上，以及 counting unit 语义 |
+| categorical_summary_exclusive | 按 counting unit 生成 overlap guard；具体 PROC/失败处理 | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |
 
 确认这些内容后，才可以把抽象 ChunkTypeDefinition 冻结为具体 SAS
