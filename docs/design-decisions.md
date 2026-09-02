@@ -40,7 +40,7 @@
 
 ### 留待后续子系统确认
 
-- dirty draft 时导入、切换和生成的拦截规则（第 3 组）。
+- dirty draft 时导入、切换和生成的拦截规则已在第 9 组冻结；具体控件布局留到实现阶段。
 - YAML 解析器的具体 R 包和版本留到实施阶段锁定；不改变上述 canonical profile。
 - SAS 数据集绑定约定和 emitter 输出 schema（后续子系统）；错误包络已在第 8 组
   冻结。
@@ -69,10 +69,10 @@ revision 机制，以及删除影响控制采用方案 A。
 - dirty draft 导出时隐式保存：未采用，以避免下载动作改变 draft/revision 状态。
 - 删除时自动清空引用或级联改写：未采用，以避免静默改变其他 metadata 对象。
 
-### 留待后续子系统确认
+### 后续实现边界
 
-- dirty draft 存在时导入、切换 active table 和生成 SAS 的拦截/提示策略。
-- revision 的具体字段、并发模型和 UI 展示细节留到实现阶段；不改变本组的
+- dirty draft 存在时导入、切换 active table 和生成 SAS 的拦截/提示策略，以及
+  revision 字段已在第 9 组确认；具体 Shiny 控件布局留到实现阶段，不改变本组的
   单 session、单 active draft 语义。
 
 ## 第 4 组：`custom_code.before` / `custom_code.after`
@@ -256,7 +256,7 @@ Rscript、study roots 或报表执行模型。
 
 1. 导入和生成错误共用最小 `ErrorItem` 形状：
 
-   - `stage`：`import` 或 `generation`；
+   - `stage`：`import`、`workspace` 或 `generation`；
    - `code`：稳定的机器可读错误代码；
    - `message`：英文、只描述事实，不提供建议；
    - `path`：逻辑字段路径，例如 `$.tables[0].template_id`。
@@ -330,6 +330,71 @@ Rscript、study roots 或报表执行模型。
   metadata 只描述业务对象，必需产物仍只有 SAS source text。
 - 将 timestamp、机器路径或 SAS 数据摘要作为 provenance：未采用，会破坏确定性
   复现并越过当前产品的数据边界。
+
+## 第 9 组：Shiny UI 与 Core Logic 边界
+
+状态：已确认（2026-09-02）。采用方案 A：薄 Shiny 适配层、session-owned workspace
+以及不依赖 UI 运行时的 core 操作。
+
+### 已批准
+
+1. `app.R` 只负责启动 Shiny；UI server 负责读取输入、调用 core、更新 reactive
+   view state、展示结果和创建下载 handler。core 不接收 Shiny `session`、`input`、
+   `output`、`reactiveVal`、上传临时路径或下载路径。
+2. 每个 Shiny session 独占一个 `MetadataWorkspace` 实例，不使用跨 session 的全局
+   workspace、服务端持久化或共享可变 metadata。workspace 保存 metadata、
+   `active_draft`、`parse_diagnostic` 和 revision；当前页面、选中对象、待处理的
+   Save/Discard/Cancel 操作、源码预览状态属于 UI-owned `ViewState`，不进入 YAML。
+3. UI/core 之间只传递显式值对象：
+
+   - `ImportRequest` 只包含 bundle bytes；
+   - `BundleImportResult` 由 core 返回候选 workspace 或第 8 组错误项；
+   - `GenerationRequest` 只包含已保存 snapshot、目标 `table_id`、registry 和
+     binding convention；
+   - 成功生成返回 SAS source text；UI 再构造 `DownloadPayload`（文件名、MIME 和
+     内存内容）。
+
+   core 不创建、读取、替换或删除用户文件；UI 适配器负责把上传文件立即读成 bytes，
+   并负责源码预览和 `{table_id}.sas` 下载。上传路径和下载路径不得进入 workspace、
+   generator、错误项或 provenance。
+4. dirty draft 的拦截由 UI 统一处理：
+
+   - Import、清空 workspace、切换编辑对象或 active table 时，dirty 状态触发
+     `Save / Discard / Cancel`；不自动保存、不自动丢弃；
+   - Save 成功后继续原操作，Save 失败保留 draft，Discard 后继续，Cancel 不变更
+     workspace；
+   - Generate SAS 必须先 Save，不允许直接从 dirty draft 生成；
+   - Download metadata 始终导出最近一次已保存 snapshot，不改变 dirty 状态。
+
+   core 的生成接口只接受已保存 snapshot，因此不依赖 UI 是否存在 draft。
+5. revision 使用普通内存字段：
+
+   - `saved_revision` 为非负整数，空 workspace 从 0 开始；
+   - `draft_base_revision` 为 draft 建立时的 saved revision，没有 draft 时为 null；
+   - 成功 Import 或 Save 将 `saved_revision` 加 1；draft 编辑不改变 saved revision；
+   - Discard、Cancel 和失败操作不改变 saved revision；
+   - revision 只用于 session 内 dirty guard 和状态展示，不构成跨 session 并发或持久化
+     版本协议。
+
+6. Save 的结构错误复用第 8 组 `ErrorItem`，其 `stage` 为 `workspace`，沿用相同的
+   code/message/path 规则和严格结构、引用可延迟语义。Save 不执行 SAS、不求值表达式、
+   不读取数据；失败时原 draft 保持不变。
+7. UI 只展示 core 返回的英文事实型错误项，不建立第二套验证、翻译或建议模型。core
+   测试不启动 Shiny、不读取真实上传路径，也不依赖 session state；UI 测试使用内存
+   bytes 和 mock core 结果。
+
+### 被拒绝的替代方案
+
+- 让 core 直接持有 Shiny reactive 对象或调用 `downloadHandler`/上传路径：未采用，
+  会使核心逻辑无法独立测试并把传输细节带入 metadata。
+- 使用跨 session 全局 workspace、后台持久化或共享 draft：未采用，当前产品是单
+  session 内存工作区。
+- dirty draft 下自动 Save、自动 Discard 或直接 Generate：未采用，避免下载/生成
+  动作隐式改变用户编辑状态。
+- 由 UI 自己解析 YAML、解析 SAS expression 或生成第二套错误：未采用，解析、结构
+  错误和生成前置错误由 core 统一处理。
+- 让 core 写入 `.yaml` 或 `.sas` 文件，或把 `ViewState`/revision 写入 bundle：
+  未采用，文件传输和 UI 状态属于适配层。
 
 ## 第 2 组补充：参考文档对齐与相对精度
 

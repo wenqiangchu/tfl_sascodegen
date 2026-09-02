@@ -205,7 +205,7 @@ MetadataBundle、任何对象字段或导出的文件。
 
 | 字段 | 语义 |
 | --- | --- |
-| stage | `import` 或 `generation`。 |
+| stage | `import`、`workspace` 或 `generation`。 |
 | code | 稳定的机器可读错误代码。 |
 | message | 英文事实描述，不包含建议。 |
 | path | 逻辑字段路径，例如 `$.tables[0].template_id`；根级错误使用 `$`。 |
@@ -755,8 +755,13 @@ MetadataWorkspace
   ├─ templates
   ├─ active_draft
   ├─ import_status / parse_diagnostic
-  ├─ selected_object
   └─ revision
+
+UI-owned ViewState
+  ├─ current_view
+  ├─ selected_object / active_table
+  ├─ pending_operation
+  └─ source_preview
 ~~~
 
 ### 11.1 Workspace 对象职责
@@ -767,9 +772,9 @@ MetadataWorkspace
 | headers | 保存 header、columns 和 spanning header。 |
 | tables | 保存 table 引用和 custom SAS code。 |
 | templates | 保存 template、chunk、level、block 和 row。 |
-| active_draft | 保存一个正在编辑对象的 base value、draft value、dirty 状态和解析诊断。 |
+| active_draft | 保存一个正在编辑对象的 base value、draft value、dirty 状态和 draft base revision。 |
 | parse_diagnostic | 记录最近一次 bundle 传输/解析/结构解码错误项；不记录数据分析结果、生成错误或运行结果。 |
-| revision | 可选的内存版本号，用于 dirty guard 或并发 UI 保护。 |
+| revision | 保存 `saved_revision` 与 `draft_base_revision`；只用于当前 session 的 dirty guard 和状态展示。 |
 
 工作区不包含 study、roots、source_files、dataset_paths、artifact_paths、SAS
 数据集内容、SAS 执行状态或 AI state。
@@ -789,7 +794,8 @@ MetadataWorkspace
 - 根据 table ID 解析引用并生成 SAS source text。
 
 导入失败只更新 `parse_diagnostic` 侧状态；生成器是纯内存操作，生成前置失败返回
-`ErrorItem` 列表且不修改 workspace、draft 或文件。
+`ErrorItem` 列表且不修改 workspace、draft 或文件。Save 的结构错误使用同一
+`ErrorItem` 形状并将 `stage` 设为 `workspace`。
 
 这些操作只需要处理导入解析失败、对象 ID 缺失或引用无法定位等前置错误，
 不提供独立 validation API；它们不读取数据、不执行 SAS、不做变量/重复/key/
@@ -863,8 +869,36 @@ study 或 artifact path。
 - Save 将 draft 应用到内存 workspace，不写磁盘；
 - Import 成功后清空旧 draft 和选择状态；
 - Download 不改变 dirty 状态；
-- Generate 使用当前已保存到 workspace 的值，是否允许直接生成 dirty draft
-  由实现确认；建议要求先 Save。
+- Generate 只使用当前已保存到 workspace 的值；dirty draft 必须先 Save，不能
+  直接生成。
+
+### 12.7 UI 与 Core 边界
+
+`app.R` 只负责启动 Shiny。UI server 读取上传 bytes、调用 core、更新 reactive
+`ViewState`、展示 `ErrorItem` 并创建下载 handler；core 不接收 `session`、`input`、
+`output`、`reactiveVal`、上传临时路径或下载路径。
+
+UI-owned `ViewState` 至少包含当前 view、selected object/active table、待处理的
+Save/Discard/Cancel 操作和 source preview 状态；这些值不写入 YAML。每个 Shiny
+session 独占一个 `MetadataWorkspace`，不使用跨 session 的全局 workspace 或共享
+可变 metadata。
+
+UI/core 只传递显式值对象：`ImportRequest` 只含 bundle bytes；成功的
+`BundleImportResult` 提供候选 workspace；`GenerationRequest` 只含已保存 snapshot、
+table ID、registry 和 binding convention；生成成功返回 source text，UI 再构造
+包含文件名、MIME 和内存内容的 `DownloadPayload`。core 不创建、读取、替换或删除
+用户文件。
+
+Import、清空 workspace、切换编辑对象或 active table 时，dirty draft 统一提示
+`Save / Discard / Cancel`。Save 成功后继续原操作，失败保留 draft，Discard 后继续，
+Cancel 不变更 workspace。Download metadata 始终导出最近一次已保存 snapshot；
+Generate SAS 必须先 Save。
+
+revision 使用 `saved_revision` 和 `draft_base_revision`：空 workspace 的 saved
+revision 为 0，没有 draft 时 draft base 为 null；成功 Import/Save 递增 saved revision，
+draft 编辑不递增，Discard、Cancel 和失败操作不改变 saved revision。Save 结构错误
+复用第 3.3 节的 `ErrorItem`，`stage` 为 `workspace`；不执行 SAS、不求值表达式、
+不读取数据。
 
 ## 13. SAS 代码生成数据流
 

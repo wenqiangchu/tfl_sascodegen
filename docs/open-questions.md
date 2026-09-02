@@ -26,13 +26,5 @@
 4. YAML parser 的 R 包和版本，以及 emitter 具体实现的依赖锁定；不改变已确认的
    strict single-document import profile。
 
-## 第 3 组：Session-owned Workspace 与 Draft
-
-以下事项尚未获得用户确认：
-
-1. dirty draft 存在时，导入新 bundle、切换 active table 和生成 SAS 是否拒绝操作、
-   先提示用户，或允许操作并保留 draft。
-2. revision 的具体字段、并发模型和 UI 展示细节。
-
-已确认的 workspace、save、export 和删除语义见 `docs/design-decisions.md` 的第 3 组；
-`custom_code.before`/`after` 语义见第 4 组；population/header membership 语义见第 5 组。
+Session-owned workspace、draft guard 和 revision 已在第 3 组及第 9 组确认；具体
+Shiny 控件布局属于实施阶段，不再列为开放设计问题。
