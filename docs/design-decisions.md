@@ -137,6 +137,67 @@ population 和 header 条件均保留为 SAS source text。
 - 在应用侧执行、翻译或验证 SAS expression，或自动生成 Overall/去重记录：未采用，
   这些动作超出只生成 SAS source text 的产品边界。
 
+## 第 6 组：Chunk 扩展、数据粒度、Merge、Analysis 与 Render
+
+状态：已确认（2026-09-02）。采用方案 A，冻结 chunk 的业务边界和声明式 registry
+职责；具体 SAS PROC/DATA step、中间 dataset 名称和最终输出字段留到第 7 组。
+
+### 已批准
+
+1. `ChunkMetadata` 的公共字段为 `id`、`type`、`source_data`、可选 `filter` 和
+   有序 `rows`；类型专属字段由代码注册的 `ChunkTypeDefinition` 声明。YAML 只能
+   提供数据，不能注入函数或 handler。
+2. `RowMetadata` 保留 `id`、`type`、`label`、可选 `indent_level`、`condition`、
+   `statistics` 和 `cell_format`；label row 不请求统计，analysis row 才能声明
+   statistics/cell format，分类 analysis row 需要 condition。位置 ID、sequence、
+   statistic ID 唯一性和 placeholder 一致性属于结构契约。
+3. `continuous_summary`、`categorical_summary_nonexclusive` 和
+   `categorical_summary_exclusive` 是 analysis primitive；`hierarchical_summary`
+   是 layout/container。container 负责 group discovery、节点遍历、analysis
+   placement 和结果展平，不复制 primitive 的统计实现。
+4. 首期 subject-level primitive 使用 `USUBJID`；filter 后每个 subject 最多一条
+   source record。`hierarchical_summary` 可以显式声明 `subject`、`record` 或
+   `observation` grain；后两者必须声明 `record_key`，`duplicate_policy` 固定为
+   `error`，不得隐式 distinct、取第一条、取最大值、平均或其他聚合。
+5. 所有 chunk 固定遵循 `source -> filter -> filtered source -> type-specific
+   merge -> analysis -> render`。filter 只作用于当前 chunk source，先于 merge，
+   不修改原始 source，也不影响其他 chunk。分类 row condition 和 denominator
+   expression 在对应 filtered source 上、merge 前计算；hierarchical 的 nested
+   条件在当前节点 scope 中计算。
+6. 首期 primitive 的 subject merge key 为 `USUBJID`，cardinality 为每个 filtered
+   subject 一条记录；scaffold 中无 source record 的 subject 保留并按空数据规则
+   处理，source 中不属于 scaffold 的 subject 不参与分析。Record/observation
+   source 通过 `USUBJID` 广播到 header columns，不为每条 record 重新计算
+   population/header membership。
+7. categorical non-exclusive 允许多个 row condition 命中同一 counting unit；
+   exclusive 是独立 type，要求每个声明的 counting unit 最多命中一个 analysis
+   row，但不要求所有 unit 必须命中 row。`counting_unit` 必须显式声明为
+   `record`、`distinct_subject` 或 `distinct_key`，不得由实现推断。
+8. hierarchical 使用有序 `levels`、`analysis_blocks`、显式 source contract、
+   missing policy、`same_row`/`below` placement 和 nested denominator scope；
+   动态节点在所有展示 header columns 的联合 eligible source 上发现，static
+   analysis 先于 dynamic children，运行时 group value、node key 和 row ID 不写回
+   YAML。`order_variable`/`order_direction` 和已确认的 `result_sort` 规则继续有效。
+9. Analysis 输出内部 `ChunkStatisticValue`/`HierarchicalAnalysisResult`，负责 raw
+   statistic、estimability、statistic identity 和 resolved digits；Render 输出内部
+   `ChunkRenderResult`/`HierarchicalRenderRow`，负责 label、indent、row/column order、
+   `cell_format` 和 `NE` 文本。两者都不执行 RTF、报表或文件写入，运行期结果不写入
+   bundle。
+10. 平台不读取 SAS 数据、不执行表达式、不做数据级校验或隐式修复。上述 grain、
+    key、cardinality、exclusive overlap 和 counting-unit 规则是 generator/emitter
+    必须遵守的业务契约；实际数据错误由生成的 SAS 程序和调用方执行环境处理。
+
+### 被拒绝的替代方案
+
+- 让每个 chunk 自行决定是否先 filter 或 merge：未采用，以保持统一的
+  filter-before-merge 顺序。
+- 让 hierarchical 复制 continuous/categorical 统计逻辑：未采用，以避免两套统计
+  语义漂移。
+- 在平台或 generator 中隐式去重、选择记录、聚合或把动态运行值写回 metadata：未
+  采用，调用方必须通过显式 source contract 或 custom code 提供所需数据。
+- 将 Analysis 与 Render 合并，或让 chunk 直接写报表文件：未采用，以保持统计、
+  展示和产品输出边界独立。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下

@@ -11,23 +11,19 @@
 
 1. YAML canonical profile 的数值序列化细节，以及实施阶段使用的 R YAML 包和版本。
 2. SAS dataset reference 的具体语法和调用方绑定 convention。
-3. chunk filter、denominator 和 row expression 的 SAS dialect、source scope 和
-   SAS missing-value 处理。
-4. 四类 chunk 的 SAS emitter、PROC/DATA-step 选择、中间 dataset 和 logical cell
+3. 四类 chunk 的 SAS emitter、PROC/DATA-step 选择、中间 dataset 和 logical cell
    schema。
-5. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
+4. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
    `NE` 实现。
-6. 传输/解析失败和生成前置引用失败的最小稳定错误包络。
+5. 传输/解析失败和生成前置引用失败的最小稳定错误包络。
 
 ## 本项目独立的后续确认
 
 1. 外部 SAS dataset reference 的精确写法和调用方绑定 convention。
-2. chunk filter、denominator 和 row expression 的 source scope 及具体 SAS emitter
-   使用方式。
-3. 四类 chunk 的 SAS emitter、PROC/步骤选择、中间和最终逻辑输出 schema。
-4. `cell_format` 的 SAS 代码生成方式，以及 percentile、rounding、missing/NE 的
+2. 四类 chunk 的 SAS emitter、PROC/步骤选择、中间和最终逻辑输出 schema。
+3. `cell_format` 的 SAS 代码生成方式，以及 percentile、rounding、missing/NE 的
    最终实现细节。
-5. 传输/解析错误与生成前置引用错误的最小稳定错误包络。
+4. 传输/解析错误与生成前置引用错误的最小稳定错误包络。
 
 ## 第 3 组：Session-owned Workspace 与 Draft
 

@@ -412,7 +412,7 @@ digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值
 
 ### 8.3 统计结果的抽象表示
 
-虽然平台不执行分析，generator 仍需要为每个 cell 定义目标逻辑字段。建议每个
+虽然平台不执行分析，generator 仍需要为每个 cell 定义目标逻辑字段。已确认每个
 统计请求至少携带：
 
 | 字段 | 语义 |
@@ -455,9 +455,9 @@ rows:
 
 - analysis_variable 是待分析的 SAS numeric variable。
 - 支持的 statistic ID 为 n、mean、sd、median、q1、q3、min、max。
-- 目标分析粒度通常是 subject，subject key 通常为 USUBJID；这是生成代码的
-  业务假设，不由平台读取数据验证。
-- n 通常表示当前 header column 中 analysis variable 非缺失的唯一 subject
+- 首期目标分析粒度固定为 subject，subject key 固定为 USUBJID；平台不读取数据
+  验证该前提。
+- n 表示当前 header column 中 analysis variable 非缺失的唯一 subject
   数。
 - mean、sd、分位数、min、max 通常排除 SAS numeric missing values。
 - sd 通常表示 sample standard deviation；分母 n-1 的实现必须由 SAS emitter
@@ -501,8 +501,8 @@ rows:
 - analysis row 的 condition 定义分子。
 - 多个 row condition 可以命中同一个 counting unit；该类型不要求互斥。
 - 支持 n 和 pct。通常 pct = 100 * numerator / denominator。
-- header_population 通常使用当前 header column 的 population subjects；
-  non_missing 和 custom 通常在 filtered source 上构造分母。
+- header_population 使用当前 header column 的 population subjects；non_missing
+  和 custom 在 filtered source 上构造分母。
 - denominator 为零时，目标 SAS 结果应为 missing 或项目约定的不可估计标记；
   具体字段和显示方式待确认。
 
@@ -531,9 +531,9 @@ rows:
 ~~~
 
 该类型复用 nonexclusive 的 denominator、n/pct 和 row 字段，差异是业务声明
-要求各 analysis row 对 counting unit 互斥。生成器只生成按此假设工作的 SAS 代码；
-由于平台不执行或校验数据，不自动加入 overlap 检查。任何额外的数据检查都不
-属于当前系统生成的 SAS 源码。
+要求各 analysis row 对 counting unit 互斥。生成器/emitter 必须生成按此契约工作的
+SAS overlap guard；平台不执行或校验数据，重叠错误只会在调用方执行生成的 SAS 时
+暴露。未命中任何 row 的 counting unit 允许存在。
 
 独立使用时 counting unit 通常为 USUBJID。若嵌入 hierarchical block，计数
 单位由 block 声明。
