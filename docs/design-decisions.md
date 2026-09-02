@@ -103,6 +103,40 @@ revision 机制，以及删除影响控制采用方案 A。
 - 对 custom code 做 AST/语法/安全扫描或放入隔离执行环境：未采用，当前产品只
   生成 SAS source text，不执行或验证 SAS。
 
+## 第 5 组：Population Selection 与 Header Membership
+
+状态：已确认（2026-09-02）。采用方案 A，沿用 ref 的 subject scaffold 数据流；
+population 和 header 条件均保留为 SAS source text。
+
+### 已批准
+
+1. 生成的 SAS 程序在所引用 `HeaderSpec.source_data` 上求值
+   `PopulationSpec.expression`；PopulationSpec 不增加独立的 `source_data` 字段。
+   先应用 population expression，再构造 header membership。
+2. Header columns 按 `display_order` 的连续顺序生成。每个 column 的 `condition`
+   独立作用于 population 结果；同一个 subject 可以同时属于多个 columns。需要
+   Overall 或其他无条件列时，metadata 必须显式提供 SAS expression `1`，系统不
+   隐式添加列。
+3. 未命中任何 header column 的 subject 不进入 membership scaffold。内部 scaffold
+   的最小字段为 `USUBJID` 与 `header_column_id`，同一组合不得重复；它是生成期
+   派生对象，不写回 YAML、workspace 或导出 bundle。
+4. Population/header expression 原样作为 SAS expression 拼接，采用 SAS 原生逻辑和
+   missing-value 语义；平台不执行、翻译、求值、静态检查或语法验证。平台也不读
+   `source_data`，不检查 `USUBJID` 的存在、唯一性、非缺失或实际列 membership，
+   不做隐式去重或补列；这些前提由调用方和 SAS 执行环境负责。
+5. 生成器不修改外部 source dataset；只生成局部的 population/membership/scaffold
+   逻辑。header condition 的重叠不是错误，source 中不在 scaffold 的 subject 不
+   参与后续 chunk 分析。
+
+### 被拒绝的替代方案
+
+- 为 population 增加独立数据集引用：未采用，以保持 ref 的 `expression` 语义并避免
+  引入额外跨数据集身份匹配契约。
+- 让 population 和 header 分别在不同 source 上求值：未采用，当前 scaffold 以
+  header source 的同一 subject identity 为边界。
+- 在应用侧执行、翻译或验证 SAS expression，或自动生成 Overall/去重记录：未采用，
+  这些动作超出只生成 SAS source text 的产品边界。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下

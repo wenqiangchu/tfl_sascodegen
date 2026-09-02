@@ -58,8 +58,8 @@
 以下不是“自动继承”的决定，因为它们依赖 SAS 实现或当前产品边界：
 
 1. 外部 SAS dataset reference 的精确语法和调用方绑定约定。
-2. population expression 是否始终在 header.source_data 上求值，以及 SAS missing
-   value、日期/时间和字符比较 dialect。
+2. chunk filter、denominator 和 row expression 的 SAS dialect、source scope 及
+   具体 emitter 使用方式。
 3. 四类 chunk 的具体 PROC/DATA step、显式中间 dataset schema、最终 logical cell
    schema 和 hierarchical record-to-subject 广播实现。
 4. SAS percentile definition 是否采用与 ref R type 2 结果等价的方法，以及

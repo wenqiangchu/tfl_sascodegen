@@ -202,10 +202,10 @@ expression: 'SAFFL = "Y"'
 | label | string | UI 和生成代码注释可使用的展示标签。 |
 | expression | string | SAS logical expression，定义 population 成员。 |
 
-默认语义（仍需确认）是：population expression 在 header 使用的 subject source
-上求值，以便构造后续 header membership。实现必须确认是否保留这一语义；
-如果 population 可以来自独立 SAS 数据集，应新增明确的 source_data 字段，
-而不是隐式读取另一个对象。
+已确认的语义是：生成的 SAS 程序在所引用 header 的 `source_data` 上求值
+population expression，再以该 population 结果构造 header membership。Population 不增加
+独立的 `source_data` 字段；如果调用方需要准备或改变 source，应通过 table 的
+`custom_code.before` 提供 SAS code，平台不对此作假设或验证。
 
 平台将 expression 当作 SAS source text 传递给 generator，不执行、不翻译、不做
 SAS parser 校验。表达式中引用的变量、格式和数据集由调用方保证。
@@ -247,11 +247,29 @@ columns:
 | columns[].spanning_header_2 | string，可选 | level 2 spanning header 引用。 |
 
 每个 column condition 独立用于生成筛选代码，因此一个 subject 可以属于多个
-列。`display_order` 必须在当前 header 内唯一、从 1 开始连续；保存时 columns
-sequence 与 display order 一致，不按 ID 自动排序。`spanning_header_1` 只能引用
-level 1，`spanning_header_2` 只能引用 level 2；同一 spanning header 引用的列在
-最终顺序中必须连续。Overall 一类的无条件列使用 SAS 表达式 `1`，而不是其他
-语言的 `TRUE`。
+列。生成顺序按 `display_order`；该字段必须在当前 header 内唯一、从 1 开始连续，
+保存时 columns sequence 与 display order 一致，不按 ID 自动排序。`spanning_header_1`
+只能引用 level 1，`spanning_header_2` 只能引用 level 2；同一 spanning header
+引用的列在最终顺序中必须连续。Overall 一类的无条件列使用 SAS 表达式 `1`，而不
+使用其他语言的 `TRUE`。未命中任何 column condition 的 subject 不进入 membership
+scaffold；系统不隐式添加 Overall 或去重。
+
+### 5.2 Population 与 Header Membership 数据流
+
+已确认的生成顺序为：
+
+~~~text
+header.source_data
+    -> population.expression
+    -> columns[].condition（按 display_order 生成）
+    -> AnalysisScaffold(USUBJID, header_column_id)
+~~~
+
+`AnalysisScaffold` 是生成期的内部派生对象，不写回 metadata bundle。其最小字段为
+`USUBJID` 与 `header_column_id`，同一组合必须唯一；同一 `USUBJID` 可以因为条件
+重叠出现在多个 columns。Population/header expression 原样作为 SAS source text
+使用，平台不执行、翻译、求值或验证 SAS 语法，也不读取 source dataset 或检查
+`USUBJID` 前提。
 
 生成器通常需要构造一个逻辑 header membership 数据集，至少包含：
 
@@ -873,20 +891,19 @@ emitter registry。不要根据当前文档自行猜测 PROC、percentile defini
 
 ## 15. 启动前的确认清单
 
-以下项目确认后，文档才可作为完整的 SAS 生成实施契约：
+以下项目仍需确认，文档才可作为完整的 SAS 生成实施契约：
 
-1. bundle 的 canonical 格式、版本、sequence/mapping 表示和下载扩展名；
-2. population expression 的 source scope；
-3. 外部 SAS dataset reference 和调用方提供的 libref/macro convention；
-4. SAS 缺失值、日期/时间变量、字符比较和 logical expression dialect；
-5. 四类 chunk 的 SAS emitter、PROC 选择和中间/最终输出 schema；
-6. sd、分位数、n/pct、零分母、missing 和 rounding 的精确定义；
-7. cell_format 的 SAS 代码生成方式；
-8. hierarchical 的动态行、排序、counting unit 和是否保留单 stub 约束；
-9. import 的替换/合并语义、download 的 canonical serialization 和 session
-    丢失策略；
-10. 传输/解析失败和生成前置引用失败的最小错误返回格式；
-11. 是否需要生成 PROC REPORT/ODS 代码，或只生成分析数据集代码。
+1. 外部 SAS dataset reference 和调用方提供的 libref/macro convention；
+2. chunk filter、denominator 和 row expression 的 source scope 及具体 SAS emitter
+   使用方式；
+3. 四类 SAS emitter 的 PROC 选择和中间/最终输出 schema；
+4. sd、分位数、n/pct、零分母、missing 和 rounding 的精确定义；
+5. cell_format 的 SAS 代码生成方式；
+6. hierarchical 的动态行、排序、counting unit 和是否保留单 stub 约束；
+7. dirty draft 下导入、切换 active table 和生成 SAS 的拦截策略，以及 revision
+   的具体字段和 UI 展示；
+8. 传输/解析失败和生成前置引用失败的最小错误返回格式；
+9. 是否需要生成 PROC REPORT/ODS 代码，或只生成分析数据集代码。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。
