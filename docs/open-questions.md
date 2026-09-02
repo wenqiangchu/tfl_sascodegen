@@ -29,3 +29,13 @@
    最终实现细节。
 5. `custom_code.before`/`after` 的 SAS 插入点、共享作用域和允许改变的对象。
 6. 传输/解析错误与生成前置引用错误的最小稳定错误包络。
+
+## 第 3 组：Session-owned Workspace 与 Draft
+
+以下事项尚未获得用户确认：
+
+1. dirty draft 存在时，导入新 bundle、切换 active table 和生成 SAS 是否拒绝操作、
+   先提示用户，或允许操作并保留 draft。
+2. revision 的具体字段、并发模型和 UI 展示细节。
+
+已确认的 workspace、save、export 和删除语义见 `docs/design-decisions.md` 的第 3 组。

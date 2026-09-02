@@ -45,6 +45,36 @@
 - SAS 数据集绑定约定、emitter 输出 schema、custom code 作用域及错误包络
   （后续子系统）。
 
+## 第 3 组：Session-owned Workspace 与 Draft 生命周期
+
+状态：已确认（2026-09-02）。本组确认普通 R list workspace、单一 active draft、
+revision 机制，以及删除影响控制采用方案 A。
+
+### 已批准
+
+1. Workspace 使用普通 R list 表示，由当前 Shiny session 独占；session 内只有一
+   个 active draft，并通过 revision 记录已保存 snapshot 与当前 draft 的关系。
+2. Save 采用“结构严格、跨对象引用可延迟”：结构、必填字段、ID、discriminator
+   等不合格时保存失败；结构合法但暂时无法解析的跨对象引用可以保存。保存失败
+   保留原 draft，不自动重试；Save 不执行 SAS，也不求值或验证表达式。
+3. dirty draft 存在时，导出只导出最近一次已保存 snapshot；导出不自动保存，也不
+   改变 dirty 状态。
+4. 删除采用方案 A：删除前展示受影响的引用；被 table 引用的 population、header
+   或 template 不允许直接删除；不自动清空或改写引用，用户必须先解除引用。
+
+### 被拒绝的替代方案
+
+- 保存时强制解析并拒绝所有跨对象引用：未采用，以允许分步编辑和先保存结构合法
+  的 draft。
+- dirty draft 导出时隐式保存：未采用，以避免下载动作改变 draft/revision 状态。
+- 删除时自动清空引用或级联改写：未采用，以避免静默改变其他 metadata 对象。
+
+### 留待后续子系统确认
+
+- dirty draft 存在时导入、切换 active table 和生成 SAS 的拦截/提示策略。
+- revision 的具体字段、并发模型和 UI 展示细节留到实现阶段；不改变本组的
+  单 session、单 active draft 语义。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下
