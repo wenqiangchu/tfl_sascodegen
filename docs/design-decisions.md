@@ -41,15 +41,14 @@
 ### 留待后续子系统确认
 
 - dirty draft 时导入、切换和生成的拦截规则（第 3 组）。
-- YAML 中可选字段的省略/null 规范及未知字段策略（第 2 组）。
 - YAML 解析器的具体 R 包和版本留到实施阶段锁定；不改变上述 canonical profile。
 - SAS 数据集绑定约定、emitter 输出 schema、custom code 作用域及错误包络
   （后续子系统）。
 
 ## 第 2 组补充：参考文档对齐与相对精度
 
-状态：部分确认（2026-09-02）。YAML 与相对精度已确认；其余 ref 语义作为本项目
-的对齐基线，需在本组讨论结束时确认是否全部冻结。
+状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下
+语义已按该要求冻结，R 生成实现和超出本项目范围的 ref 内容除外。
 
 ### 已确认
 
@@ -59,10 +58,10 @@
 2. relative digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`，
    先按 ref 的 15 位有效数字、非科学计数法、去除小数尾零规则解析，再计算
    `resolved_digits = base_digits + offset`；负结果失败，不静默截断。
-### 待确认的对齐基线
+### 已确认的 ref 对齐语义
 
-1. 沿用 ref 的 precision、统计和显示语义：continuous 使用 sample SD、R
-   quantile type 2 对应的分位数定义、n=0/n=1 边界、非有限值失败、half-away-
+1. 沿用 ref 的 precision、统计和显示语义：continuous 使用 sample SD、与 ref R
+   quantile type 2 等价的分位数定义、n=0/n=1 边界、非有限值失败、half-away-
    from-zero、固定小数位、尾随零和 `NE`；这些语义必须在 SAS emitter 中实现
    等价结果，而不是复制 R 实现。
 2. 沿用 ref 的 chunk 边界：filter 先于 merge；subject-level 首期规则为
@@ -81,6 +80,16 @@
 6. 沿用 ref 的 hierarchical `result_sort` 结构：`metric.analysis_id`、
    `metric.row_id`、`metric.statistic_id`、整数 `column_order` 和 `direction`；
    `0` 表示 label 且只能位于末尾，NA/NE 排在有效值之后，比较 raw statistic。
+
+7. 采用 ref 的普通 R list 值语义加类型标记作为解析对象表示；不把 session、
+   runtime result 或 source location 写入 metadata。
+8. 采用 strict unknown-field 和 discriminator contract；缺失/重复 ID、类型结构
+   无法表示、未知 chunk type、重复 statistic ID、placeholder 不一致和
+   denominator/level/block 条件不满足时，bundle 导入失败；不自动修复。
+9. 可选字段保持缺省；只有已定义语义的缺省值在后续生成/渲染阶段解释，缺省字段
+   不序列化为 `null`。
+10. Header 的 `display_order` 是列顺序权威；canonical YAML 的 `columns` sequence
+    按该顺序规范化，且 spanning header 引用的 columns 必须连续。
 
 ### 本决定的适用边界
 

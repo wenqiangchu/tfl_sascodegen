@@ -5,30 +5,20 @@
 
 ## 第 2 组：解析后的 metadata 对象
 
-以下项目已根据 ref 形成对齐建议，但尚未在本项目中单独冻结：
+第 2 组中与 ref 重叠的字段语义已经按用户要求冻结，详见
+`docs/design-decisions.md` 和 `docs/ref-alignment.md`。以下只保留实现层面尚未
+冻结的项目：
 
-1. 内存对象采用带 S3 类标记的普通 R list、R6 对象，还是无类型 raw list；建议
-   采用普通 R list 加类型标记，保持值语义。
-2. schema version 1 是否采用 strict unknown fields；ref 建议拒绝未声明字段，
-   新能力通过 schema version 或 registry 扩展。
-3. 缺失或重复 ID、discriminator-specific 必填字段和引用字段的导入边界；建议
-   结构无法表示时导入失败，未解析的跨对象引用延迟到生成前置阶段。
-4. hierarchical chunk 是否省略顶层 `rows`；ref 建议只在 analysis block 中保存
-   rows。
-5. 可选字段是保持缺省还是物化默认值；建议保持缺省，只有已经定义语义的字段在
-   生成时解释默认值。
-6. header columns 的顺序；ref 以 `display_order` 为权威并在 canonical YAML 中
-   规范化 sequence，本项目需确认是否采用该规则。
-7. 未注册 chunk type 是否在导入时拒绝；ref 建议由 ChunkRegistry 严格拒绝，且
-   不允许 YAML 注入函数。
-8. hierarchical `result_sort` 是否采用 ref 的结构化字段：`metric`、整数
-   `column_order` 和 `direction`，其中 `0` 表示末尾 label。
-9. denominator、row、level、analysis block 的 discriminator-specific 字段是否
-   在导入时做结构检查；建议做结构检查，不做数据或 SAS 语义检查。
-10. YAML canonical profile 的数值序列化细节，以及实施阶段使用的 R YAML 包和版本。
-
-以下内容已由用户在本轮明确要求沿用，不再作为未决项：continuous `digits` 的
-绝对/`+n`/`-n` 相对精度、ref 的 `base_digits` 解析边界和负 resolved digits 失败。
+1. YAML canonical profile 的数值序列化细节，以及实施阶段使用的 R YAML 包和版本。
+2. SAS dataset reference 的具体语法和调用方绑定 convention。
+3. population/header/filter/denominator/row expression 的 SAS dialect、source
+   scope 和 SAS missing-value 处理。
+4. 四类 chunk 的 SAS emitter、PROC/DATA-step 选择、中间 dataset 和 logical cell
+   schema。
+5. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
+   `NE` 实现。
+6. `custom_code.before`/`after` 的 SAS 插入点、共享作用域和可变更对象。
+7. 传输/解析失败和生成前置引用失败的最小稳定错误包络。
 
 ## 本项目独立的后续确认
 
