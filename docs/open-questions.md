@@ -9,7 +9,7 @@
 `docs/design-decisions.md` 和 `docs/ref-alignment.md`。以下只保留实现层面尚未
 冻结的项目：
 
-1. YAML canonical profile 的数值序列化细节，以及实施阶段使用的 R YAML 包和版本。
+1. YAML canonical profile 的数值序列化细节（parser/toolchain 已在 P0-1 锁定）。
 2. SAS dataset reference 的具体语法和调用方绑定 convention。
 3. 四类 emitter 的具体 SAS 语句、物理中间 dataset 命名和实现依赖；业务职责与
    logical-cell 字段契约已在第 7 组冻结。
@@ -23,8 +23,8 @@
    逻辑输出职责已确认。
 3. `cell_format` 的 SAS 代码生成方式，以及 percentile、rounding、missing/NE 的
    最终实现细节。
-4. YAML parser 的 R 包和版本，以及 emitter 具体实现的依赖锁定；不改变已确认的
-   strict single-document import profile。
+4. emitter 具体实现的依赖锁定；不改变已确认的 strict single-document import
+   profile 和 P0-1 的 parser/toolchain 选择。
 
 Session-owned workspace、draft guard 和 revision 已在第 3 组及第 9 组确认；具体
 Shiny 控件布局属于实施阶段，不再列为开放设计问题。

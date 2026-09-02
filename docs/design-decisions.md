@@ -396,6 +396,44 @@ Rscript、study roots 或报表执行模型。
 - 让 core 写入 `.yaml` 或 `.sas` 文件，或把 `ViewState`/revision 写入 bundle：
   未采用，文件传输和 UI 状态属于适配层。
 
+## P0-1：R/YAML 工具链与严格解析边界
+
+状态：已确认（2026-09-03）。采用方案 A：`yaml` 作为底层 parser，项目自有严格
+封装和 schema-aware canonical encoder。
+
+### 已批准
+
+1. 当前实现基线为 R 4.4.0；脚本和测试统一通过 `Rscript` 执行。直接依赖版本
+   基线为 `yaml` 2.3.10、`digest` 0.6.35、`shiny` 1.8.1.1；开发测试依赖
+   为 `testthat` 3.3.2 和 `withr` 3.0.2；`renv` 1.2.3 用于依赖锁定而不是
+   业务运行时。transitive dependencies 由 lockfile 一并记录。
+2. `yaml::yaml.load()` 只负责把已读取的 UTF-8 bytes 转成普通 R list。调用时固定
+   `eval.expr = FALSE`；core 不允许 YAML `!expr` 或其他 tag 触发代码执行。
+3. parser wrapper 在解析前规范化可接受的 UTF-8 BOM/CRLF，并执行严格单文档的
+   feature gate：拒绝 multi-document、anchor、alias、tag 和 merge key；quoted
+   scalar 与 literal block 中的普通文本不应被误判为控制语法。重复 mapping key
+   统一映射为 `bundle_duplicate_key`，parser 原始错误文本不进入对外错误包络。
+4. canonical YAML 不直接使用 `yaml::as.yaml()`。项目自有 schema-aware encoder
+   负责固定字段顺序、两空格缩进、LF、无 BOM、single-quoted 单行字符串、literal
+   block 多行 custom code、可选字段省略和业务 sequence 顺序，并输出供 provenance
+   使用的 canonical UTF-8/LF bytes。数值 scalar 的具体规范列入 P0-2。
+5. YAML parser、canonical encoder 和错误 wrapper 属于 core；UI 不自行解析或序列化
+   YAML。P0-1 不实现 metadata model、workspace 或 generator business logic。
+6. P0 gate 必须在依赖恢复后重新运行 parser/round-trip focused tests；当前环境中
+   `yaml` package 显示 built under R 4.4.3，但在 R 4.4.0 下已完成可用性实测，这
+   一点不改变 R 4.4.0 的当前基线。
+
+### 被拒绝的替代方案
+
+- 直接把 `yaml::as.yaml()` 作为 canonical encoder：未采用，因为默认不强制
+  single quote，且可能输出 scientific notation。
+- 接受 parser 默认的 multi-document、anchor/alias、tag 或 merge 行为：未采用，
+  会超出已确认的 strict single-document bundle profile。
+- 让 UI 或各业务模块各自解析/序列化 YAML：未采用，会产生多套类型和 canonical
+  规则。
+- 现在为了绕过 package build warning 改用未实测的 parser 或升级 R：未采用；先以
+  当前可验证基线锁定，恢复依赖时再执行 gate。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下

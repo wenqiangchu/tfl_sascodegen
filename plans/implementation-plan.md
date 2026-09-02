@@ -1,6 +1,7 @@
 # SAS Code Generation 实施计划
 
-状态：阶段划分已确认；详细计划 v1（2026-09-02）。
+状态：阶段划分已确认；详细计划 v1（2026-09-02）。P0-1 工具链与 YAML 解析
+边界已于 2026-09-03 确认，P0 仍在进行中。
 
 本计划基于 `table-and-chunk-analysis-model.md`、`docs/design-decisions.md` 和
 `docs/ref-alignment.md`。它只描述实现阶段、输入、产物、验收和依赖关系；在
@@ -106,6 +107,9 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 
 **验收**：依赖可安装且可锁定；每项实现级选择有唯一记录；没有 production
 business code；`git diff --check` 通过。
+
+**当前进度**：P0-1（R/YAML 工具链与严格解析边界）已确认；P0-2 数值序列化、
+SAS binding profile 和 emitter 微契约仍未确认。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 

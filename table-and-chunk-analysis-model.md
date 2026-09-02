@@ -199,6 +199,13 @@ MetadataBundle、任何对象字段或导出的文件。
 固定字段顺序和原有 sequence 顺序；单行字符串使用 single-quoted scalar，
 多行 custom code 使用 literal block scalar；缺省可选字段不输出为 `null`。
 
+实现使用 `yaml` 作为底层 UTF-8 parser，但不直接使用其默认 encoder。parser wrapper
+固定关闭 expression evaluation，并在解析前拒绝 multi-document、anchor、alias、tag
+和 merge key；重复 key 映射为稳定的 `bundle_duplicate_key`。canonical bytes 由
+schema-aware encoder 生成；其数值 scalar 规则留到 P0-2 确认。当前工具链基线为
+R 4.4.0、yaml 2.3.10、digest 0.6.35、testthat 3.3.2、shiny 1.8.1.1 和
+withr 3.0.2，使用 renv 1.2.3 锁定依赖。
+
 ### 3.3 错误包络
 
 导入和生成前置错误共用以下最小错误项：
