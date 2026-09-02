@@ -36,6 +36,9 @@ are authoritative when they refine an unresolved point in that document.
   explicit predecessor outputs, never on later code or placeholders.
 - Keep supporting components fit for purpose. Reserve broader abstraction for
   core contracts where it removes real duplication or clarifies ownership.
+- Implement only what the approved contract and current work item require;
+  avoid speculative features, abstractions, and configuration without a
+  demonstrated implementation need.
 
 ### 2.1 Design-session workflow
 

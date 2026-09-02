@@ -199,10 +199,27 @@ MetadataBundle、任何对象字段或导出的文件。
 固定字段顺序和原有 sequence 顺序；单行字符串使用 single-quoted scalar，
 多行 custom code 使用 literal block scalar；缺省可选字段不输出为 `null`。
 
+### 3.2.1 Numeric scalar 规范
+
+metadata numeric scalar 的 canonical 文件表示采用已确认的方案 A：
+
+| 字段类别 | canonical 表示 |
+| --- | --- |
+| `schema_version`、`display_order`、`level`、`indent_level`、`column_order` | 有限整数的普通十进制表示；不带小数点或指数。 |
+| `width` 等有限实数 | 最多 15 位有效数字的普通十进制；不使用科学计数法，去除小数尾零和末尾小数点，负零写为 `0`。 |
+| absolute `digits`、categorical `pct` digits | 整数 numeric scalar。 |
+| relative `digits`（`+n`/`-n`） | single-quoted string，保留相对精度语义。 |
+
+有限实数超过 15 位有效数字时按上述规则规范化，不保留 binary floating-point tail。
+`NaN`、`Inf`、`-Inf` 等非有限 metadata numeric 值导入或保存时返回
+`bundle_value_invalid`，不写成 `null`。输入词法可以不同，但 canonical bytes 只由
+schema-aware encoder 的统一输出决定。该文件表示规则不改变运行期
+`base_digits`/relative precision 的分析语义。
+
 实现使用 `yaml` 作为底层 UTF-8 parser，但不直接使用其默认 encoder。parser wrapper
 固定关闭 expression evaluation，并在解析前拒绝 multi-document、anchor、alias、tag
 和 merge key；重复 key 映射为稳定的 `bundle_duplicate_key`。canonical bytes 由
-schema-aware encoder 生成；其数值 scalar 规则留到 P0-2 确认。当前工具链基线为
+schema-aware encoder 生成；其 numeric scalar 规则已按 P0-2 锁定。当前工具链基线为
 R 4.4.0、yaml 2.3.10、digest 0.6.35、testthat 3.3.2、shiny 1.8.1.1 和
 withr 3.0.2，使用 renv 1.2.3 锁定依赖。
 
@@ -458,8 +475,10 @@ digits 支持绝对非负整数以及 `+n`/`-n` 相对精度字符串。continuo
 digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值先按最多
 15 位有效数字、非科学计数法、去除小数尾零的规则规范化，再计算
 `resolved_digits = base_digits + offset`；负 resolved digits 失败，不自动截断。
-`n` 不声明 digits，categorical `pct` 只接受非负绝对整数。具体 base_digits
-如何从外部 SAS 数值/格式信息取得，以及等价 SAS emitter 实现，仍需确认。
+`n` 不声明 digits，categorical `pct` 只接受非负绝对整数。这里的 15 位规范化是
+运行期 precision 语义的一部分，与 metadata numeric scalar 的 canonical 文件表示
+规则相容但彼此独立；具体 base_digits 如何从外部 SAS 数值/格式信息取得，以及等价
+SAS emitter 实现，仍需确认。
 
 ### 8.3 统计结果的抽象表示
 
@@ -1026,9 +1045,7 @@ generator contract、emitter registry 和 binding profile 应生成相同的 sou
 以下项目仍需确认，文档才可作为完整的 SAS 生成实施契约：
 
 1. 外部 SAS dataset reference 和调用方提供的 libref/macro convention；
-2. dirty draft 下导入、切换 active table 和生成 SAS 的拦截策略，以及 revision
-   的具体字段和 UI 展示；
-3. YAML parser 的 R 包和版本，以及 emitter 具体实现的依赖锁定。
+2. emitter 具体实现的依赖锁定；YAML parser/toolchain 已由 P0-1 锁定。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。

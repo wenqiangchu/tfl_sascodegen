@@ -9,11 +9,10 @@
 `docs/design-decisions.md` 和 `docs/ref-alignment.md`。以下只保留实现层面尚未
 冻结的项目：
 
-1. YAML canonical profile 的数值序列化细节（parser/toolchain 已在 P0-1 锁定）。
-2. SAS dataset reference 的具体语法和调用方绑定 convention。
-3. 四类 emitter 的具体 SAS 语句、物理中间 dataset 命名和实现依赖；业务职责与
+1. SAS dataset reference 的具体语法和调用方绑定 convention。
+2. 四类 emitter 的具体 SAS 语句、物理中间 dataset 命名和实现依赖；业务职责与
    logical-cell 字段契约已在第 7 组冻结。
-4. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
+3. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
    `NE` 实现。
 
 ## 本项目独立的后续确认

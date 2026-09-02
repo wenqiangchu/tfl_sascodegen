@@ -108,8 +108,8 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 **验收**：依赖可安装且可锁定；每项实现级选择有唯一记录；没有 production
 business code；`git diff --check` 通过。
 
-**当前进度**：P0-1（R/YAML 工具链与严格解析边界）已确认；P0-2 数值序列化、
-SAS binding profile 和 emitter 微契约仍未确认。
+**当前进度**：P0-1（R/YAML 工具链与严格解析边界）和 P0-2（canonical YAML
+数值序列化）已确认；SAS binding profile 和 emitter 微契约仍未确认。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 

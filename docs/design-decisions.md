@@ -41,7 +41,7 @@
 ### 留待后续子系统确认
 
 - dirty draft 时导入、切换和生成的拦截规则已在第 9 组冻结；具体控件布局留到实现阶段。
-- YAML 解析器的具体 R 包和版本留到实施阶段锁定；不改变上述 canonical profile。
+- YAML parser/toolchain 已在 P0-1 锁定；后续只需在依赖恢复后重跑对应 gate。
 - SAS 数据集绑定约定和 emitter 输出 schema（后续子系统）；错误包络已在第 8 组
   冻结。
 
@@ -416,7 +416,7 @@ Rscript、study roots 或报表执行模型。
 4. canonical YAML 不直接使用 `yaml::as.yaml()`。项目自有 schema-aware encoder
    负责固定字段顺序、两空格缩进、LF、无 BOM、single-quoted 单行字符串、literal
    block 多行 custom code、可选字段省略和业务 sequence 顺序，并输出供 provenance
-   使用的 canonical UTF-8/LF bytes。数值 scalar 的具体规范列入 P0-2。
+   使用的 canonical UTF-8/LF bytes；numeric scalar 规则见已确认的 P0-2。
 5. YAML parser、canonical encoder 和错误 wrapper 属于 core；UI 不自行解析或序列化
    YAML。P0-1 不实现 metadata model、workspace 或 generator business logic。
 6. P0 gate 必须在依赖恢复后重新运行 parser/round-trip focused tests；当前环境中
@@ -433,6 +433,39 @@ Rscript、study roots 或报表执行模型。
   规则。
 - 现在为了绕过 package build warning 改用未实测的 parser 或升级 R：未采用；先以
   当前可验证基线锁定，恢复依赖时再执行 gate。
+
+## P0-2：Canonical YAML 数值序列化
+
+状态：已确认（2026-09-03）。采用方案 A：面向人工阅读的有限精度十进制规范化。
+
+### 已批准
+
+1. 本规则只约束 metadata bundle 中 numeric scalar 的文件表示；运行期的
+   `base_digits`、relative `digits` 解析和 SAS 结果精度语义不由 YAML 文件表示
+   改写。
+2. `schema_version`、`display_order`、`level`、`indent_level` 和 `column_order`
+   是整数语义字段。它们必须是有限的整数值；canonical YAML 使用普通十进制整数，
+   不使用小数点、指数或多余的前导形式。
+3. `width` 等有限实数使用确定性的普通十进制表示，最多保留 15 位有效数字；
+   不使用科学计数法，去除小数尾零和末尾小数点，并将负零规范化为 `0`。超过
+   15 位有效数字的有限输入按该规则规范化，不保留 binary floating-point tail。
+4. `digits` 的绝对值和 categorical `pct` 的 digits 以整数 scalar 表示；relative
+   digits（例如 `+1`、`-1`）始终以 single-quoted string 表示，不把它们解析为
+   YAML numeric scalar。
+5. `NaN`、`Inf`、`-Inf` 及其他非有限 metadata numeric 值属于
+   `bundle_value_invalid`；不序列化为 `null`，也不静默替换为缺省值。
+6. decoder 可以接受语义上有效但词法不同的 numeric scalar，encoder 统一输出上述
+   canonical 形式。canonical bytes 的稳定性和 provenance hash 以 encoder 输出为
+   准，不以输入文件的原始词法为准。
+
+### 被拒绝的替代方案
+
+- 使用 17 位或更高位的 binary round-trip 表示：未采用，会把实现细节和难读的尾数
+  暴露给人工编辑；本项目选择 15 位有效数字的人类可读规范化。
+- 允许 numeric scalar 使用科学计数法或保留 `-0`/尾随零差异：未采用，会增加
+  canonical bytes 的非必要变体。
+- 将 relative digits 当作 numeric scalar：未采用，`+n`/`-n` 的相对精度语义必须
+  保留为字符串。
 
 ## 第 2 组补充：参考文档对齐与相对精度
 
