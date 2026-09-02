@@ -198,6 +198,54 @@ population 和 header 条件均保留为 SAS source text。
 - 将 Analysis 与 Render 合并，或让 chunk 直接写报表文件：未采用，以保持统计、
   展示和产品输出边界独立。
 
+## 第 7 组：SAS Source Generation、Section Ordering 与 Emitter Contract
+
+状态：已确认（2026-09-02）。采用方案 A：generator 是只生成 SAS source text 的
+纯 host-side 组装器，emitter 由代码 registry 按类型负责；不迁移 ref 的 R 程序、
+Rscript、study roots 或报表执行模型。
+
+### 已批准
+
+1. `GenerationRequest` 的输入为 `workspace_snapshot`、目标 `table_id`、代码注册的
+   chunk registry/emitters 和外部 SAS binding convention。generator 不接收数据 bytes、
+   数据文件路径、study roots、SAS 执行状态或输出 artifact path。
+2. host-side 先解析目标 table 的 population/header/template 引用，形成内部的
+   `ResolvedTableInput`；引用无法解析属于生成前置失败，具体错误包络留到第 8 组。
+   emitter 只接收展开后的普通对象和 opaque SAS references，不读取 YAML 或物理文件。
+3. 内部 `SourceSection` 至少携带 `section_id`、`kind`、`owner_id`、确定性顺序和
+   `text`；section map/source line map 只允许作为内存调试信息，不写入 bundle，也
+   不作为用户下载产物。
+4. `ChunkTypeDefinition` 的 code-owned contract 至少声明 type/capability、允许和
+   必需字段、输入与 data-grain/merge contract、analysis/render contract、source
+   emitter 以及显式中间对象名称和生命周期。不同 emitter 不得通过未声明的共享
+   mutation 传递状态；hierarchical container 通过 registry 调用 primitive emitter。
+5. 生成 section 的顺序固定为：
+
+   `caller setup/binding placeholder -> custom_code.before -> population -> header
+   membership -> template chunks（按 sequence） -> table assembly/cell formatting
+   -> custom_code.after`。
+
+   `custom_code.after` 之后不再追加系统分析、报表或其他代码。
+6. emitter 生成的内部 logical result 使用已确认的 identity：普通 chunk cell 携带
+   `chunk_id`、`row_id`、`header_column_id`、`statistic_id`、raw value、estimable
+   和 `resolved_digits`；hierarchical result 额外携带 `analysis_id`、`group_path`
+   和 runtime row context。Render 再形成 row/cell text，所有运行期结果不落盘。
+7. 对外 `GenerationResult` 只有 SAS source text；UI 再负责预览或以清理后的
+   `{table_id}.sas` 下载。generator 不执行 SAS，不生成 R/RTF/PDF/HTML/ODS/PROC
+   REPORT，不检查数据或 custom code。
+8. 具体 PROC/DATA-step 组合、临时 dataset 的物理命名以及等价 SAS 语句是 emitter
+   的实现细节，不进入 YAML，不形成第二套用户可编辑契约；实现必须以第 2、5、6
+   组冻结的语义和 focused source regression tests 为准。
+
+### 被拒绝的替代方案
+
+- 用全局 type switch 和直接字符串拼接取代 code-owned emitter contract：未采用，
+  会使 section 顺序、类型职责和输出字段分散并容易漂移。
+- 把 emitter handler、PROC 名称或临时表名写入用户 YAML：未采用，YAML 只描述
+  metadata，不注入实现。
+- 在 generator 内执行生成的 SAS，或迁移 ref 的 R runtime/RTF reporter：未采用，
+  当前产品交付物只有 SAS source text。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下

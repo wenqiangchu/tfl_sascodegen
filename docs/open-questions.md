@@ -11,8 +11,8 @@
 
 1. YAML canonical profile 的数值序列化细节，以及实施阶段使用的 R YAML 包和版本。
 2. SAS dataset reference 的具体语法和调用方绑定 convention。
-3. 四类 chunk 的 SAS emitter、PROC/DATA-step 选择、中间 dataset 和 logical cell
-   schema。
+3. 四类 emitter 的具体 SAS 语句、物理中间 dataset 命名和实现依赖；业务职责与
+   logical-cell 字段契约已在第 7 组冻结。
 4. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
    `NE` 实现。
 5. 传输/解析失败和生成前置引用失败的最小稳定错误包络。
@@ -20,7 +20,8 @@
 ## 本项目独立的后续确认
 
 1. 外部 SAS dataset reference 的精确写法和调用方绑定 convention。
-2. 四类 chunk 的 SAS emitter、PROC/步骤选择、中间和最终逻辑输出 schema。
+2. 四类 emitter 的具体 SAS PROC/步骤、中间对象命名和 source regression 实现；
+   逻辑输出职责已确认。
 3. `cell_format` 的 SAS 代码生成方式，以及 percentile、rounding、missing/NE 的
    最终实现细节。
 4. 传输/解析错误与生成前置引用错误的最小稳定错误包络。

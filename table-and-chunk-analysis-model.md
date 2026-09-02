@@ -842,7 +842,7 @@ study 或 artifact path。
 
 生成器只需要：
 
-- 一个完整的 MetadataWorkspace；
+- 一个已保存的 MetadataWorkspace snapshot；
 - 目标 table_id；
 - 四类 chunk 的 registry/emitters；
 - 实现约定的外部 SAS binding convention。
@@ -861,7 +861,32 @@ SAS source text
 不属于产品输出，也不写入 metadata bundle。除非另行批准，平台不生成 manifest、RTF、HTML、SAS
 日志或执行结果。
 
-### 13.3 Chunk 生成顺序
+### 13.3 SourceSection 与 Emitter Contract
+
+generator 先将各阶段输出组织为内部 `SourceSection`，每个 section 至少包含：
+
+| 字段 | 语义 |
+| --- | --- |
+| section_id | 当前生成程序内唯一的 section 身份。 |
+| kind | caller setup、custom、population、header、chunk 或 assembly。 |
+| owner_id | 负责该 section 的 table/chunk/analysis identity；caller section 可缺省。 |
+| sequence | 确定性的源代码顺序。 |
+| text | 原样 SAS source text。 |
+
+每个代码注册的 `ChunkTypeDefinition` 至少声明：
+
+- type/capability（primitive 或 container）；
+- allowed/required metadata fields；
+- data grain、source/filter 和 merge contract；
+- analysis/render contract；
+- source emitter 绑定；
+- 生成的中间对象名称、输入、输出和生命周期。
+
+emitter 只能返回自己的 source fragment 和声明的 logical result，不读取 YAML、不访问
+物理路径、不执行 SAS，也不通过未声明的共享 dataset mutation 传递状态。具体 PROC、
+DATA step 和临时对象命名是 emitter 实现细节，不写入 metadata。
+
+### 13.4 Chunk 生成顺序
 
 1. 先生成 population/header 相关的 subject membership 逻辑；
 2. 按 template.body.chunks 的顺序生成每个 chunk；
@@ -873,9 +898,10 @@ SAS source text
 不同 chunk 不应通过隐式修改共享数据集互相传递状态。若需要中间数据集，
 名称和生命周期应由 SAS emitter contract 明确。
 
-## 14. 四类 SAS Emitter 待确认矩阵
+## 14. 四类 SAS Emitter 实施契约矩阵
 
-这是实现必须确认的实施清单，而不是本文已经承诺的实现：
+以下清单用于实现和回归测试；第 7 组已确认其职责边界，具体 SAS 语句和内部物理
+对象不成为用户 YAML 契约：
 
 | Chunk | 需要确认的 SAS 实现 | 需要确认的输出 |
 | --- | --- | --- |
@@ -884,25 +910,19 @@ SAS source text
 | categorical_summary_exclusive | 按 counting unit 生成 overlap guard；具体 PROC/失败处理 | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |
 
-确认这些内容后，才可以把抽象 ChunkTypeDefinition 冻结为具体 SAS
-emitter registry。不要根据当前文档自行猜测 PROC、percentile definition 或
-最终字段名。
+实现不得根据 YAML 注入 handler，也不得把 PROC、percentile definition 或物理临时
+表名反向写入 metadata；应以已确认的业务语义和 focused source regression tests
+锁定每个 emitter 的实现。
 
 ## 15. 启动前的确认清单
 
 以下项目仍需确认，文档才可作为完整的 SAS 生成实施契约：
 
 1. 外部 SAS dataset reference 和调用方提供的 libref/macro convention；
-2. chunk filter、denominator 和 row expression 的 source scope 及具体 SAS emitter
-   使用方式；
-3. 四类 SAS emitter 的 PROC 选择和中间/最终输出 schema；
-4. sd、分位数、n/pct、零分母、missing 和 rounding 的精确定义；
-5. cell_format 的 SAS 代码生成方式；
-6. hierarchical 的动态行、排序、counting unit 和是否保留单 stub 约束；
-7. dirty draft 下导入、切换 active table 和生成 SAS 的拦截策略，以及 revision
+2. dirty draft 下导入、切换 active table 和生成 SAS 的拦截策略，以及 revision
    的具体字段和 UI 展示；
-8. 传输/解析失败和生成前置引用失败的最小错误返回格式；
-9. 是否需要生成 PROC REPORT/ODS 代码，或只生成分析数据集代码。
+3. 传输/解析失败和生成前置引用失败的最小错误返回格式；
+4. YAML parser 的 R 包和版本，以及 emitter 具体实现的依赖锁定。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。
