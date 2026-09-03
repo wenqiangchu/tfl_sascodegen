@@ -9,17 +9,15 @@
 `docs/design-decisions.md` 和 `docs/ref-alignment.md`。以下只保留实现层面尚未
 冻结的项目：
 
-1. 四类 emitter 的具体 SAS 语句、物理中间 dataset 命名和实现依赖；业务职责与
+1. 四类 emitter 的完整输出 schema、物理中间 dataset 命名和实现依赖；业务职责与
    logical-cell 字段契约已在第 7 组冻结。
-2. SAS 中与 ref 结果等价的 percentile、base_digits、rounding、formatting 和
-   `NE` 实现。
+2. 运行期数据契约失败是否统一输出确定性的 `ERROR:` 并执行 `ABORT CANCEL`。
 
 ## 本项目独立的后续确认
 
-1. 四类 emitter 的具体 SAS PROC/步骤、中间对象命名和 source regression 实现；
-   逻辑输出职责已确认。
-2. `cell_format` 的 SAS 代码生成方式，以及 percentile、rounding、missing/NE 的
-   最终实现细节。
+1. 四类 emitter 的具体 SAS 步骤、中间对象命名和 source regression 实现；连续统计
+   使用 `PROC MEANS` 默认 percentile，分类计数使用 `PROC FREQ`。
+2. `cell_format` 的最终 SAS 代码细节，以及运行期 missing/NE 边界测试。
 3. emitter 具体实现的依赖锁定；不改变已确认的 strict single-document import
    profile 和 P0-1 的 parser/toolchain 选择。
 

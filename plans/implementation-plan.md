@@ -97,8 +97,8 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
   boundary；
 - 四类 emitter 的具体 SAS PROC/DATA step、临时对象生命周期和 logical output
   映射；
-- `cell_format`、percentile、base digits、rounding、missing/`NE` 的 SAS 等价
-  微契约；
+- `cell_format`、`PROC MEANS`/`PROC FREQ`、base digits、`ROUND`/`PUTN`、missing/`NE`
+  的 SAS 微契约；
 - synthetic fixture 规则、测试命令和 generated-output 排除规则；
 - 对应的设计决策补充和 open-question 清理。
 
@@ -109,7 +109,8 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 business code；`git diff --check` 通过。
 
 **当前进度**：P0-1（R/YAML 工具链与严格解析边界）、P0-2（canonical YAML
-数值序列化）和 P0-3（source_data 与关键操作注释）已确认；emitter 微契约仍未确认。
+数值序列化）、P0-3（source_data 与关键操作注释）以及 P0-4 的 PROC、内部长表和
+数值格式化选择已确认；运行期数据契约失败的中止方式仍未确认。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 
@@ -236,9 +237,9 @@ mock emitter 完成完整 source assembly。
   dispatch、row flattening 和 result sort；
 - filter-before-merge、subject/record/observation grain、cardinality 和 scaffold
   相关 SAS source；
-- relative digits、15 significant digits、sample SD、type-2-equivalent percentile、
-  half-away-from-zero、fixed digits、trailing zero、negative zero 和 `NE` 的等价
-  source implementation；
+- relative digits、15 significant digits、sample SD、`PROC MEANS` 默认 percentile、
+  `ROUND`/`PUTN` fixed digits、trailing zero、negative zero 和 `NE` 的 source
+  implementation；
 - 每类 emitter 的 source regression fixtures。
 
 **不做**：不执行生成的 SAS，不保存 runtime result，不产生 report artifact；不由

@@ -469,7 +469,8 @@ chunk 不携带数据集路径、上传内容或运行结果。
 
 label row 只输出标签，不请求统计量。analysis row 必须有 statistics 和
 cell_format；分类 row 还需要 condition。placeholder 集合应与 statistic ID
-集合一致。具体的 SAS PUT、CATX、格式和字符缺失显示方式由 emitter 确认。
+集合一致。字符 cell 使用 SAS `PUTN` 和 emitter 定义的格式化步骤生成；具体的内部
+DATA step 仍不进入 metadata 契约。
 
 digits 支持绝对非负整数以及 `+n`/`-n` 相对精度字符串。continuous 的 relative
 digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值先按最多
@@ -477,8 +478,8 @@ digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值
 `resolved_digits = base_digits + offset`；负 resolved digits 失败，不自动截断。
 `n` 不声明 digits，categorical `pct` 只接受非负绝对整数。这里的 15 位规范化是
 运行期 precision 语义的一部分，与 metadata numeric scalar 的 canonical 文件表示
-规则相容但彼此独立；具体 base_digits 如何从外部 SAS 数值/格式信息取得，以及等价
-SAS emitter 实现，仍需确认。
+规则相容但彼此独立；`base_digits` 从实际分析数值推导，不依赖原始 SAS format，
+并由 emitter 在运行期 materialize。
 
 ### 8.3 统计结果的抽象表示
 
@@ -536,12 +537,9 @@ rows:
 - 同一个 subject 出现多条记录时，平台不自动取第一条、最大值或平均值。调用方
   必须在外部准备符合预期粒度的数据，或在 custom before 中明确整理。
 
-必须在 emitter contract 中确认：
-
-- 使用 PROC MEANS、PROC SUMMARY、PROC UNIVARIATE、DATA step 或组合；
-- q1/median/q3 使用的 SAS percentile definition；
-- missing、n=0、n=1 时的输出值和显示文本；
-- rounding、digits 和最终字符 cell 的字段类型。
+emitter 固定使用 `PROC MEANS` 生成上述统计量；不显式设置 `PCTLDEF`，直接采用
+SAS 默认的 percentile definition。missing、n=0、n=1、rounding、digits 和最终字符
+cell 的字段类型按已确认的 emitter contract 处理。
 
 ### 9.2 categorical_summary_nonexclusive
 
@@ -1021,7 +1019,7 @@ source。生成失败时不返回部分 source，也不持久化错误或运行�
 
 | Chunk | 需要确认的 SAS 实现 | 需要确认的输出 |
 | --- | --- | --- |
-| continuous_summary | PROC/排序、subject 去重假设、mean/sd/分位数、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段 |
+| continuous_summary | `PROC MEANS` 默认 percentile、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段 |
 | categorical_summary_nonexclusive | denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段 |
 | categorical_summary_exclusive | 按 counting unit 生成 overlap guard；具体 PROC/失败处理 | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |

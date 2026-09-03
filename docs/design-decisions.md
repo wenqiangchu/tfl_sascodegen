@@ -42,7 +42,7 @@
 
 - dirty draft 时导入、切换和生成的拦截规则已在第 9 组冻结；具体控件布局留到实现阶段。
 - YAML parser/toolchain 已在 P0-1 锁定；后续只需在依赖恢复后重跑对应 gate。
-- 四类 emitter 的具体 SAS 语句和输出 schema（后续子系统）；错误包络已在第 8 组
+- 四类 emitter 的完整输出 schema 和运行期失败处理（后续子系统）；错误包络已在第 8 组
   冻结。
 
 ## 第 3 组：Session-owned Workspace 与 Draft 生命周期
@@ -490,6 +490,45 @@ binding profile 或 provenance 输出。
 - 在 SAS source 中输出 provenance comment 或 binding profile：未采用，保持生成代码
   简洁；可追踪性由 metadata 和版本控制承担。
 
+## P0-4：SAS emitter 过程、内部长表与数值格式
+
+状态：部分确认（2026-09-03）。连续统计采用 `PROC MEANS`，分类计数采用
+`PROC FREQ`；内部结果使用 long-form SAS 数据集。运行期数据契约失败的中止方式仍待
+确认。
+
+### 已批准
+
+1. `continuous_summary` 使用 `PROC MEANS` 生成 `n`、`mean`、`sd`、`median`、
+   `q1`、`q3`、`min` 和 `max`。不在生成的 SAS source 中显式设置 `PCTLDEF`，
+   直接采用 `PROC MEANS` 的 SAS 默认分位数定义；这覆盖此前“与 ref 的 R
+   `quantile(type = 2)` 等价”的实现建议。字段名称、统计边界和 n=0/n=1 语义仍按
+   已确认的 metadata contract 处理。
+2. `categorical_summary_nonexclusive` 和 `categorical_summary_exclusive` 使用
+   `PROC FREQ` 生成 counting-unit 的 numerator/denominator counts。必要的 DATA
+   step 或其他简单准备步骤只负责 materialize counting unit、header membership 和
+   row match；百分比按显式分母计算为 `100 * n / denominator`，不依赖 FREQ 默认的
+   百分比含义。
+3. emitter 的 statistic output 使用内部 long-form 结构：每行对应一个
+   `chunk_id`、`row_id`、`header_column_id`、`statistic_id` 组合，并携带 raw value、
+   estimable 和 resolved digits。render output 同样按一个 logical cell 一行保存，
+   最终 assembly 再按 row/column 顺序组织。上述数据集只存在于生成 SAS 的运行期，
+   不进入 YAML、workspace 或下载产物。
+4. 中间对象使用 `_TFL_` 系统前缀和确定性 sequence 名称，位于 SAS `WORK` 库，
+   不使用用户 ID 作为物理名称；系统不在 `custom_code.after` 之前主动清理这些对象，
+   由 SAS `WORK` 生命周期管理。
+5. relative digits 继续使用当前 chunk 的统一 `base_digits`。最终显示先用 SAS
+   `ROUND` 按 `10 ** (-resolved_digits)` 舍入，再用 `PUTN` 和动态 `F<w>.<d>` 格式
+   输出固定小数位和尾随零；不可估计字段直接输出 `NE`，`n` 不输出小数位。
+6. 15 位有效数字只用于 `base_digits` 的十进制规范化，避免 SAS double 的二进制
+   尾数被误判为真实小数位；不改变 raw statistic 的计算精度，也不替代最终的
+   `ROUND`。
+
+### 待确认
+
+1. 运行期数据契约失败（例如 subject cardinality、exclusive overlap 或
+   hierarchical order 冲突）是否统一输出确定性的 `ERROR:` 并执行 `ABORT CANCEL`；
+   这不是 host-side 的 `generation_contract_invalid`，平台也不会执行 SAS 来捕获它。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下
@@ -505,10 +544,9 @@ binding profile 或 provenance 输出。
    `resolved_digits = base_digits + offset`；负结果失败，不静默截断。
 ### 已确认的 ref 对齐语义
 
-1. 沿用 ref 的 precision、统计和显示语义：continuous 使用 sample SD、与 ref R
-   quantile type 2 等价的分位数定义、n=0/n=1 边界、非有限值失败、half-away-
-   from-zero、固定小数位、尾随零和 `NE`；这些语义必须在 SAS emitter 中实现
-   等价结果，而不是复制 R 实现。
+1. 沿用 ref 的 precision、统计和显示语义：continuous 使用 sample SD、n=0/n=1
+   边界、非有限值失败、half-away-from-zero、固定小数位、尾随零和 `NE`；分位数在
+   本项目中由 `PROC MEANS` 的 SAS 默认定义产生，而不是复制 R 的 type 2 实现。
 2. 沿用 ref 的 chunk 边界：filter 先于 merge；subject-level 首期规则为
    `USUBJID` 且 filtered source 每个 subject 至多一条；analysis 与 render
    分离；categorical nonexclusive 允许 row condition 重叠。

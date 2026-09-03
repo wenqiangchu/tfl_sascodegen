@@ -19,9 +19,9 @@
 | Template/Chunk/Row | `body.chunks` 有序；chunk 公共字段、类型专属字段、row 的 label/analysis、statistics、cell_format | 沿用；未知 type 不静默解释 |
 | Position ID | chunk、row、level、analysis block 使用位置 ID，插入/删除/移动后重编号并同步引用 | 沿用；动态 group value/runtime row ID 不写回 YAML |
 | Filter/merge | source filter 先于 merge；不修改原始 source；subject-level 首期每个 `USUBJID` 至多一条 | 沿用为 SAS 生成器的逻辑顺序 |
-| Continuous | n/mean/sd/median/q1/q3/min/max；sample SD；R quantile type 2 的等价分位数；n=0/n=1 与非有限值边界 | 沿用业务结果语义；PROC/DATA step 实现另行确认 |
+| Continuous | n/mean/sd/median/q1/q3/min/max；sample SD；n=0/n=1 与非有限值边界 | 沿用字段、统计名称和边界；本项目用 `PROC MEANS` 的 SAS 默认分位数定义，不显式设置 `PCTLDEF`，因此不强制复现 ref 的 R quantile type 2 |
 | Precision | base digits 来自实际分析 subjects；15 位有效数字规范化；绝对和 `+n`/`-n` 相对 digits；负 resolved digits 失败 | 已确认沿用；SAS emitter 必须实现等价结果 |
-| Formatting | half-away-from-zero、固定小数位、尾随零、负零归一化、字段级 `NE` | 沿用显示语义；SAS PUT/ROUND/格式化实现另行确认 |
+| Formatting | half-away-from-zero、固定小数位、尾随零、负零归一化、字段级 `NE` | 沿用显示语义；使用 SAS `ROUND` 和 `PUTN` 实现 |
 | Categorical | `header_population`、`non_missing`、`custom` denominator；n/pct；pct 为 0–100；百分号由 cell format 提供；nonexclusive 允许 row overlap | 沿用；表达式由 SAS source 直接生成 |
 | Registry | `ChunkTypeDefinition` 声明 required/optional fields、row/data/merge/analysis/render contract；用户 YAML 不能注入函数 | 沿用职责分离；registry binding 不进入 bundle |
 | Hierarchical | ordered levels + analysis blocks；source grain/key；order variable/direction；missing policy；same_row/below；显式 denominator scope；static analyses 在 dynamic children 前 | 沿用字段和输出顺序语义；不生成 RTF |
@@ -33,8 +33,8 @@
 1. 所有 population/header/filter/denominator/row condition 从 R expression 改为
    SAS expression；平台保存原文、生成器拼接原文，不执行或翻译表达式。
 2. ref 的 R data frame、`dplyr`、R quantile、R round 和 `reporter` package 只是实现
-   例子，不能成为 SAS 契约。SAS PROC、DATA step、percentile definition、PUT/format
-   和缺失显示需要在 emitter contract 中指定等价行为。
+   例子，不能成为 SAS 契约。当前 emitter 已选择 `PROC MEANS`、`PROC FREQ`、SAS
+   `ROUND` 和 `PUTN`；具体 DATA step 和内部对象仍属于实现细节。
 3. ref 的直接 R binding、`.tfl_*` 临时对象、`init.R`、`tfl_runtime.R`、Rscript 和
    RTF artifact 不进入当前产品；SAS source 的 section 和中间 dataset 名称需要
    另行定义。
@@ -59,9 +59,11 @@
 
 1. 四类 chunk 的具体 PROC/DATA step、显式中间 dataset schema、最终 logical cell
    schema 和 hierarchical record-to-subject 广播实现。
-2. SAS percentile definition 是否采用与 ref R type 2 结果等价的方法，以及
-   `base_digits` 在 SAS numeric/format 信息不可得时的取值来源。
-3. 传输/解析错误和生成前置引用错误的最小稳定错误包络。
+2. 传输/解析错误和生成前置引用错误的最小稳定错误包络。
 
 source_data 的非空字符串和关键操作注释策略已由本项目独立确认；它们不再依赖 ref
 中的 R binding 或执行约定。
+
+continuous 的分位数过程已独立确认：使用 `PROC MEANS` 的 SAS 默认定义，不在生成
+source 中显式设置 `PCTLDEF`。这属于实现选择，不改变字段名称、统计量列表或其他
+已确认的业务边界。
