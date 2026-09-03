@@ -27,6 +27,7 @@
 | Hierarchical | ordered levels + analysis blocks；source grain/key；order variable/direction；missing policy；same_row/below；显式 denominator scope；static analyses 在 dynamic children 前 | 沿用字段和输出顺序语义；不生成 RTF |
 | Hierarchical sorting | `result_sort.metric`、`column_order`、`direction`；0 为 label 且只能末尾；比较 raw value，NA/NE 在有效值后 | 沿用并冻结为结构化字段，不再使用 opaque mapping |
 | Runtime result | `ChunkStatisticValue` 保留 chunk/row/header/statistic identity、raw value、estimable、resolved_digits；render 再形成 cell text | 沿用为 SAS generator 内部逻辑对象，是否落盘仍禁止 |
+| Table 内批处理 | ref 未定义 SAS 过程批处理；本项目新增同一 table 内兼容顶层 primitive 共用一次同类分析过程的策略 | 只合并契约兼容 chunk；各 source 先显式规范化，最终 template/chunk/row/header 顺序不变；首期不跨 hierarchical container |
 
 ## 需要从 R 改写为 SAS 的内容
 

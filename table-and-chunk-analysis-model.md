@@ -944,9 +944,10 @@ draft 编辑不递增，Discard、Cancel 和失败操作不改变 saved revision
    1. table.custom_code.before
    2. population selection
    3. header column membership
-   4. template chunks（按 sequence）
-   5. Table assembly / cell formatting
-   6. table.custom_code.after
+   4. template chunks（按 sequence）并按兼容性分成分析 batch
+   5. 每个 batch 的规范化输入与一次类型专属分析过程
+   6. 按 template/chunk/row/header 顺序 render、Table assembly / cell formatting
+   7. table.custom_code.after
   -> 返回 SAS source text
   -> 用户预览或下载 .sas
 ~~~
@@ -999,17 +1000,27 @@ emitter 只能返回自己的 source fragment 和声明的 logical result，不�
 物理路径、不执行 SAS，也不通过未声明的共享 dataset mutation 传递状态。具体 PROC、
 DATA step 和临时对象命名是 emitter 实现细节，不写入 metadata。
 
-### 13.4 Chunk 生成顺序
+### 13.4 Chunk 生成顺序与 Table 内批处理
 
 1. 先生成 population/header 相关的 subject membership 逻辑；
-2. 按 template.body.chunks 的顺序生成每个 chunk；
-3. hierarchical chunk 在其内部按 levels、analysis blocks 和固定遍历顺序
-   生成逻辑行；
-4. 将各 chunk 的逻辑结果合并为实现约定的分析/布局数据集；
-5. 最后插入 custom_code.after。
+2. 按 `template.body.chunks` 的 sequence 读取顶层 chunk，并为每个 chunk 独立生成
+   `source -> filter -> filtered source -> type-specific merge` 规范化步骤；
+3. 对 type、grain、counting unit、merge/cardinality、输入值类型以及 analysis/render
+   语义兼容的同类 primitive chunk，按首次出现顺序组成 batch。每个 chunk 的 source
+   和 analysis variable 不同并不妨碍合批，但必须先映射为共同的 batch analysis 维度，
+   并保留 chunk/row/header/statistic identity；不兼容 chunk 分入不同 batch；
+4. 一个 continuous batch 生成一次 `PROC MEANS`，一个 categorical batch 生成一次
+   `PROC FREQ`。批处理只复用过程调用，不改变每个 chunk 自己的 denominator、row
+   condition、counting unit、digits、`NE` 或 warning 契约；
+5. `hierarchical_summary` 首期不跨 container 合批。其动态节点发现、节点 scope 和
+   analysis block 遍历保持独立，block 在自身 scope 内调用已注册的 primitive emitter；
+6. 分析完成后将 long-form logical result 转为 render rows，并继续按原 template/chunk/
+   row/header sequence 组装最终 table；批次的执行顺序不得改变可见输出顺序；
+7. 最后插入 `custom_code.after`。
 
-不同 chunk 不应通过隐式修改共享数据集互相传递状态。若需要中间数据集，
-名称和生命周期应由 SAS emitter contract 明确。
+不同 chunk 不应通过隐式修改共享数据集互相传递状态。原始 `source_data` 不直接做无
+条件 `SET`；各 chunk 必须先由 emitter 生成显式规范化对象。批次输入、输出、临时对象
+名称和生命周期由 SAS emitter contract 明确，不能用隐式类型转换、去重或聚合强行合批。
 
 ### 13.5 错误与可复现性
 
@@ -1027,9 +1038,9 @@ source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARN
 
 | Chunk | 需要确认的 SAS 实现 | 需要确认的输出 |
 | --- | --- | --- |
-| continuous_summary | `PROC MEANS` 默认 percentile、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段 |
-| categorical_summary_nonexclusive | denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段 |
-| categorical_summary_exclusive | 按 counting unit 生成 overlap guard 和 `WARNING: [USER] ...`；具体 PROC/继续执行细节 | 同上，以及 counting unit 语义 |
+| continuous_summary | `PROC MEANS` 默认 percentile、兼容 batch 的规范化输入、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段；batch identity 不改变 logical-cell identity |
+| categorical_summary_nonexclusive | `PROC FREQ`、兼容 batch 的规范化输入、denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段；batch identity 不改变 logical-cell identity |
+| categorical_summary_exclusive | `PROC FREQ`、兼容 batch 的规范化输入、按 counting unit 生成 overlap guard 和 `WARNING: [USER] ...`；具体继续执行细节 | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |
 
 实现不得根据 YAML 注入 handler，也不得把 PROC、percentile definition 或物理临时
@@ -1040,7 +1051,8 @@ source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARN
 
 以下项目仍需确认，文档才可作为完整的 SAS 生成实施契约：
 
-1. emitter 具体实现的依赖锁定；YAML parser/toolchain 已由 P0-1 锁定。
+1. emitter 具体实现的依赖锁定、兼容 batch 的 concrete normalization fields/key 和
+   source regression fixtures；YAML parser/toolchain 已由 P0-1 锁定。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。

@@ -537,6 +537,48 @@ error。
 1. warning 文本的具体字段顺序和每类 emitter 的 source regression fixture；不改变
    `WARNING: [USER]` 前缀、非阻断和不自动修复的边界。
 
+## P0-5：Table 内兼容 Chunk 的批处理
+
+状态：已确认（2026-09-03）。采用方案 A：在不改变 chunk 业务语义和最终输出顺序的
+前提下，对同一 table 内契约兼容的同类顶层 primitive chunk 进行批量分析。
+
+### 已批准
+
+1. 批处理只适用于同一 table 内的 primitive chunk。兼容性至少同时要求 type/capability、
+   data grain、适用时的 counting unit、merge/cardinality contract、emitter/output
+   semantics 以及所需的 SAS 值类型兼容。兼容性由 metadata contract 和 code-owned
+   registry 决定；平台不读取 SAS 数据来推断或确认兼容性。
+2. 每个 chunk 仍独立执行 `source -> filter -> filtered source -> type-specific
+   merge`。之后由该 chunk 的 emitter 将 source/analysis variable/row match 等信息
+   规范化为批次约定的共同逻辑输入，并保留 chunk、row、header 和 statistic identity。
+   不直接把可能存在变量类型冲突的原始 `source_data` 做无条件 `SET`，也不通过隐式
+   类型转换、去重或聚合来强行合批。
+3. 一个兼容的 continuous batch 只生成一次 `PROC MEANS`，一个兼容的 categorical
+   batch 只生成一次 `PROC FREQ`。不同 chunk 的 source 或 analysis variable 可以
+   不同，但必须先映射到共同的 batch analysis 维度；denominator、row condition、
+   counting unit、digits 和 `NE` 语义仍按各自 chunk contract 保持独立。
+4. batch grouping 以 template chunk sequence 为输入，按兼容性 key 和首次出现顺序
+   确定性分组。分析代码可以按 batch 集中生成，但 logical statistic/render 结果和
+   最终 table assembly 必须继续按 template/chunk/row/header 的原有顺序输出；批处理
+   不得改变可见行、列、cell 或统计值语义。
+5. 首期不跨 `hierarchical_summary` container 合批。hierarchical 的动态节点发现和
+   container scope 保持独立；其 analysis block 在自身 scope 内调用已注册的 primitive
+   contract。后续若要跨 container 批处理，必须另行确认兼容性和动态节点边界。
+6. 不兼容的 chunk 分入不同 batch，而不是生成新的隐式兼容规则。重复 key、cardinality、
+   exclusive overlap 等运行期异常继续按 P0-4 以 `WARNING: [USER] ...` 非阻断地写入
+   SAS log，不因批处理自动修复输入或中止程序。
+
+### 被拒绝的替代方案
+
+- 对每个 chunk 固定生成独立的 `PROC MEANS/FREQ`：未采用，会重复执行相同类型的分析
+  过程；兼容 chunk 应共享一次过程调用。
+- 直接合并所有原始 `source_data`，或依赖隐式类型转换、去重和聚合解决冲突：未采用，
+  各 chunk 必须先经过显式的 source/chunk 级规范化。
+- 跨不兼容 grain、counting unit、cardinality 或 hierarchical container 强行合批：
+  未采用，以免改变统计和动态布局语义。
+- 按 batch 顺序重排最终 table 行或 cell：未采用，batch 只优化分析过程，template
+  sequence 仍是最终输出顺序的事实来源。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下

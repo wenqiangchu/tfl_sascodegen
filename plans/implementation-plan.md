@@ -95,6 +95,8 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 - `source_data` 非空字符串的结构边界和原样插入规则；
 - code-owned registry interface、四类 type discriminator set 和 registry extension
   boundary；
+- 同一 table 内兼容的同类顶层 primitive batch 规则、兼容性 key、规范化输入边界和
+  最终 template 顺序保持规则；
 - 四类 emitter 的具体 SAS PROC/DATA step、临时对象生命周期和 logical output
   映射；
 - `cell_format`、`PROC MEANS`/`PROC FREQ`、base digits、`ROUND`/`PUTN`、missing/`NE`
@@ -109,8 +111,9 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 business code；`git diff --check` 通过。
 
 **当前进度**：P0-1（R/YAML 工具链与严格解析边界）、P0-2（canonical YAML
-数值序列化）、P0-3（source_data 与关键操作注释）以及 P0-4 的 PROC、内部长表、
-数值格式化和非阻断 warning 选择已确认；warning 文本的字段顺序仍需锁定。
+数值序列化）、P0-3（source_data 与关键操作注释）、P0-4 的 PROC、内部长表、
+数值格式化和非阻断 warning 选择，以及 P0-5 的 table 内兼容 chunk 批处理策略已
+确认；warning 文本的字段顺序和 batch 的具体物理字段仍需锁定。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 
@@ -180,6 +183,8 @@ row/statistic contract。
 - code-owned `ChunkTypeDefinition` registry；
 - primitive/container capability、allowed/required fields、data grain、filter/merge、
   analysis/render 和 source-emitter contract；
+- primitive 的 batch compatibility key/capability，以及 source/chunk 规范化输入和
+  logical identity 保留规则；
 - 四类类型的 metadata shape rules；hierarchical 对 primitive registry 的调用边界；
 - registry lookup、unknown type 和 unavailable emitter 的稳定 host-side errors；
 - registry 测试夹具和最小 mock emitter。
@@ -205,6 +210,8 @@ P3 的 registry。
 - `GenerationRequest` 和 host-side `ResolvedTableInput`；
 - table population/header/template 引用解析和确定性 prerequisite error collection；
 - `SourceSection` assembly，固定 executable 顺序和 section ownership；
+- 按 template sequence 形成确定性的 compatible-batch plan，并协调 batch analysis 与
+  原有 chunk/render 输出顺序；
 - `source_data` 原样插入以及 custom before/after 原样插入；
 - population、header membership、chunk filter/merge、analysis 和 table render/assembly
   的确定性 English operation comments；
@@ -231,7 +238,11 @@ mock emitter 完成完整 source assembly。
 
 - `continuous_summary` 的 source emitter、analysis/raw statistic 和 render/cell
   formatting；
+- continuous 兼容 batch 的 source/chunk 规范化、共同 analysis 维度和单次
+  `PROC MEANS`；
 - `categorical_summary_nonexclusive` 的 denominator、numerator、n/pct 和 render；
+- categorical 兼容 batch 的 source/chunk 规范化、共同 analysis 维度和单次
+  `PROC FREQ`；
 - `categorical_summary_exclusive` 的 explicit counting-unit overlap guard；
 - `hierarchical_summary` 的 level/group discovery、ordering、nested primitive
   dispatch、row flattening 和 result sort；
@@ -240,7 +251,9 @@ mock emitter 完成完整 source assembly。
 - relative digits、15 significant digits、sample SD、`PROC MEANS` 默认 percentile、
   `ROUND`/`PUTN` fixed digits、trailing zero、negative zero、`NE` 和
   `WARNING: [USER]` diagnostics 的 source implementation；
-- 每类 emitter 的 source regression fixtures。
+- 每类 emitter 的 source regression fixtures；包括 compatible/incompatible chunk
+  batching、不同 source/analysis variable 的规范化、hierarchical 不跨 container 合批
+  以及最终 template 顺序保持。
 
 **不做**：不执行生成的 SAS，不保存 runtime result，不产生 report artifact；不由
 emitter 通过未声明的 shared mutation 传递状态。
@@ -310,7 +323,8 @@ payload contract。
 - synthetic YAML bundle 到确定性 SAS source 的完整闭环测试；
 - import failure、save failure、reference failure、emitter failure 和 dirty guard
   的 UI/core boundary tests；
-- source section order、operation comments、relative precision 和 mixed chunks 的回归证据；
+- source section order、operation comments、relative precision、compatible mixed chunks
+  的单次过程调用和最终顺序保持的回归证据；
 - README、运行/测试说明、`plans/` 维护说明和最终验收记录；
 - Git 检查：`git status`、staged diff review、`git diff --check`、适用的 R test
   commands；generated outputs、cache、logs 和 local environment 均不提交。
