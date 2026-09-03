@@ -579,6 +579,56 @@ error。
 - 按 batch 顺序重排最终 table 行或 cell：未采用，batch 只优化分析过程，template
   sequence 仍是最终输出顺序的事实来源。
 
+## P0-6：Primitive Batch 的专用规范化输入
+
+状态：已确认（2026-09-03）。采用方案 A：按分析类型使用专用的规范化 SAS 输入
+数据集，不建立包含所有类型字段的通用宽表。
+
+### 已批准
+
+1. `PrimitiveBatchPlan` 是生成期间的内部规划对象，不进入 YAML、workspace 或下载
+   产物。它至少保存 `batch_order`、`chunk_type`、有序 `chunk_orders`、批次
+   `input_dataset` 和 `raw_dataset`；continuous batch 另外保存 `precision_dataset`。
+   batch order 按 template 中首个 chunk 的出现顺序确定。
+2. continuous batch 的规范化输入至少包含 `chunk_order`、`column_order` 和统一的
+   numeric `analysis_value`。每个 chunk 仍先独立完成 source/filter、重复 key
+   warning、scaffold merge，再把自身 analysis variable 映射到 `analysis_value`。
+   `precision_dataset` 至少包含 `chunk_order` 和 `analysis_value`，只保留 filtered
+   source 与至少一个展示 header column 的 subject 交集；同一 subject 即使属于多个
+   columns，也只参与一次该 chunk 的 base-digits 计算。
+3. 一个 continuous batch 通过一次 `PROC MEANS` 按 `chunk_order` 和 `column_order`
+   分组分析 `analysis_value`。批次规范化不改变各 chunk 的 statistic identity、
+   resolved digits、`n=0/n=1` 或 `NE` 语义；raw output 再按保留的 chunk/row/header/
+   statistic identity 映射回 logical result。
+4. categorical batch 的规范化输入至少包含 `chunk_order`、`row_order` 和
+   `column_order`，每行表示一个 counting event：`row_order = 0` 表示 denominator
+   event，正数表示对应 analysis row 的 numerator event。各 chunk 自己的 filter、
+   denominator、row condition 和 counting unit 在规范化阶段处理；不同 source 或
+   analysis variable 不直接做无条件 `SET`。
+5. `categorical_summary_nonexclusive` 与 `categorical_summary_exclusive` 是不同的
+   batch type，各自使用一次 `PROC FREQ`。最终 expected-cell skeleton 负责补回未被
+   FREQ 产生的零计数；denominator 为零时 `n` 为 0，`pct` 为 not estimable 并渲染为
+   `NE`。该补全不改变 nonexclusive 的 row overlap 语义，也不替 exclusive 隐藏
+   overlap warning。
+6. 规范化对象使用确定性的 `_TFL_` 系统前缀和类型/序号命名，位于 SAS `WORK` 库；
+   例如 continuous 的 input/precision/raw 对象和 categorical nonexclusive/exclusive
+   的 input/raw 对象均按 batch order 生成。用户 chunk、row 或 table ID 不进入物理
+   dataset 名称。系统不在 `custom_code.after` 前主动清理这些对象，由 `WORK` 生命周期
+   管理。
+7. 平台不读取 SAS 数据来检查 `analysis_value` 的实际类型，也不把规范化步骤变成
+   隐式类型转换、去重或聚合规则。调用方将非 numeric source variable 用于
+   continuous 等输入错误，由生成的 SAS 编译/运行环境负责；系统仍只生成 source text。
+
+### 被拒绝的替代方案
+
+- 建立同时包含 continuous、categorical、denominator、numerator 和 display 字段的
+  通用宽批次输入表：未采用，会引入大量空字段和类型分支。
+- 让每个 batch 直接读取或无条件 `SET` 原始 `source_data`：未采用，各 chunk 必须先
+  形成专用规范化输入。
+- 让 `PROC FREQ` 自动决定零计数或百分比：未采用，零 cell 由 expected skeleton
+  补齐，百分比继续按显式分母计算。
+- 在生成器中验证 SAS 变量类型或提前执行批次：未采用，平台不读取数据、不执行 SAS。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下

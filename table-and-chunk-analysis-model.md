@@ -39,7 +39,8 @@ population、header、table、template、chunk 以及内存态编辑工作区，
 bundle YAML、sequence 和导入替换语义记录在 `docs/design-decisions.md`：
 
 - source_data 仅要求为非空字符串；其 SAS 语法和宏变量含义由调用方保证；
-- 四类 chunk 的 SAS emitter、PROC 选择、中间数据集字段和最终输出字段；
+- 四类 chunk 的具体 SAS emitter 步骤、中间 raw 输出字段和最终输出字段；兼容 batch
+  的专用规范化输入字段和 `_TFL_` 命名边界已在 P0-6 确认；
 - 分位数方法、四舍五入、格式化和不可估计值的具体 SAS 实现；
 - cell_format 是生成字符型 cell 数据集、PROC REPORT 代码，还是两者都生成；
 - ODS/报表代码明确不属于当前范围；本文只返回 SAS 源码，不生成报告文件；
@@ -572,8 +573,8 @@ rows:
 - 支持 n 和 pct。通常 pct = 100 * numerator / denominator。
 - header_population 使用当前 header column 的 population subjects；non_missing
   和 custom 在 filtered source 上构造分母。
-- denominator 为零时，目标 SAS 结果应为 missing 或项目约定的不可估计标记；
-  具体字段和显示方式待确认。
+- denominator 为零时，已确认 `n=0`、`pct` 为 not estimable，最终显示为 `NE`；具体
+  SAS 字段和 DATA/PROC 实现仍由 emitter contract 确认。
 
 SAS emitter 必须确认 denominator 的 DATA step/SQL 实现、subject 去重方式、
 百分比精度和字符格式。平台不读取数据，也不检查 numerator 是否超过
@@ -755,9 +756,9 @@ step WHERE/IF 可接受的语法为基准：
 - SAS 数值缺失参与比较时有其自身排序规则；如果业务意图是“非缺失值”，
   必须显式写 not missing(variable)，不能依赖比较结果排除缺失。
 - 连续统计通常排除缺失值；分类 row condition 返回缺失时通常不进入分子。
-- denominator 为零、统计量不可估计或 source 没有符合记录时，应使用 SAS
-  numeric missing 或实现定义的字符标记。平台只生成相应代码，不决定最终显示
-  文本。
+- denominator 为零的 categorical cell 使用 `n=0` 与 `pct` not estimable，并在 render
+  中显示为 `NE`；其他统计量不可估计或 source 没有符合记录时，按对应 emitter contract
+  生成 SAS numeric missing/`NE` 结果。平台只生成相应代码，不读取数据或执行代码。
 
 表达式是 opaque SAS source text。平台不把 TRUE、NA、!is.na(x)、== 等其他语言
 写入生成的 SAS 程序，也不尝试把其他语言表达式自动翻译成 SAS。
@@ -1000,6 +1001,41 @@ emitter 只能返回自己的 source fragment 和声明的 logical result，不�
 物理路径、不执行 SAS，也不通过未声明的共享 dataset mutation 传递状态。具体 PROC、
 DATA step 和临时对象命名是 emitter 实现细节，不写入 metadata。
 
+#### PrimitiveBatchPlan 与专用规范化输入
+
+`PrimitiveBatchPlan` 只存在于生成期间，至少保存 `batch_order`、`chunk_type`、有序
+`chunk_orders`、`input_dataset` 和 `raw_dataset`；continuous batch 另外保存
+`precision_dataset`。`batch_order` 按 template 中首个 chunk 的出现顺序确定。
+
+continuous batch 的规范化输入至少包含：
+
+| 字段 | 语义 |
+| --- | --- |
+| `chunk_order` | 原 template 中的 chunk 顺序身份。 |
+| `column_order` | header `display_order` 的 1-based 列位置。 |
+| `analysis_value` | 当前 chunk analysis variable 映射后的 numeric value。 |
+
+每个 chunk 先独立完成 source/filter、重复 key warning 和 scaffold merge，再写入上述
+输入。precision input 至少保存 `chunk_order` 与 `analysis_value`，只包含至少命中一个
+展示列的 subject；同一 subject 属于多个列时只参与一次该 chunk 的 `base_digits`。
+兼容 continuous chunk 通过一次 `PROC MEANS` 按 `chunk_order`/`column_order` 分组
+分析 `analysis_value`，raw output 再映射回原 chunk/row/column/statistic identity。
+
+categorical batch 的规范化输入至少包含：
+
+| 字段 | 语义 |
+| --- | --- |
+| `chunk_order` | 原 template 中的 chunk 顺序身份。 |
+| `row_order` | `0` 表示 denominator event，正数表示 analysis row。 |
+| `column_order` | header `display_order` 的 1-based 列位置。 |
+
+每条记录表示一个 counting event；各 chunk 的 filter、denominator、row condition 和
+counting unit 在规范化阶段处理。`categorical_summary_nonexclusive` 与
+`categorical_summary_exclusive` 分别形成自己的 batch，并各自只调用一次 `PROC FREQ`。
+expected-cell skeleton 负责补回零计数；分母为零时 `n=0`、`pct` 为 not estimable，
+最终显示为 `NE`。规范化数据集和 raw 数据集使用确定性的 `_TFL_` 类型/序号命名并
+位于 `WORK` 库；用户 ID 不进入物理名称。
+
 ### 13.4 Chunk 生成顺序与 Table 内批处理
 
 1. 先生成 population/header 相关的 subject membership 逻辑；
@@ -1038,9 +1074,9 @@ source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARN
 
 | Chunk | 需要确认的 SAS 实现 | 需要确认的输出 |
 | --- | --- | --- |
-| continuous_summary | `PROC MEANS` 默认 percentile、兼容 batch 的规范化输入、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段；batch identity 不改变 logical-cell identity |
-| categorical_summary_nonexclusive | `PROC FREQ`、兼容 batch 的规范化输入、denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段；batch identity 不改变 logical-cell identity |
-| categorical_summary_exclusive | `PROC FREQ`、兼容 batch 的规范化输入、按 counting unit 生成 overlap guard 和 `WARNING: [USER] ...`；具体继续执行细节 | 同上，以及 counting unit 语义 |
+| continuous_summary | `PROC MEANS` 默认 percentile、兼容 batch 的规范化输入（`chunk_order`/`column_order`/`analysis_value`）、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段；batch identity 不改变 logical-cell identity |
+| categorical_summary_nonexclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段；batch identity 不改变 logical-cell identity |
+| categorical_summary_exclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、按 counting unit 生成 overlap guard 和 `WARNING: [USER] ...`；具体继续执行细节 | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |
 
 实现不得根据 YAML 注入 handler，也不得把 PROC、percentile definition 或物理临时
@@ -1051,8 +1087,9 @@ source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARN
 
 以下项目仍需确认，文档才可作为完整的 SAS 生成实施契约：
 
-1. emitter 具体实现的依赖锁定、兼容 batch 的 concrete normalization fields/key 和
-   source regression fixtures；YAML parser/toolchain 已由 P0-1 锁定。
+1. emitter 具体实现的依赖锁定、具体 DATA/PROC 语句、raw output schema 和 source
+   regression fixtures；P0-6 已锁定专用 normalization fields/key 的高层边界，YAML
+   parser/toolchain 已由 P0-1 锁定。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。
