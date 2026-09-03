@@ -484,19 +484,46 @@ digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值
 
 ### 8.3 统计结果的抽象表示
 
-虽然平台不执行分析，generator 仍需要为每个 cell 定义目标逻辑字段。已确认每个
-统计请求至少携带：
+虽然平台不执行分析，generator 仍需要为每个 cell 定义目标逻辑字段。统一的 raw
+statistic 对象为 `ChunkStatisticValue`：
 
 | 字段 | 语义 |
 | --- | --- |
 | chunk_id | 来源 chunk。 |
-| row_id | 目标行。 |
+| row_id | 目标 analysis row。 |
 | header_column_id | 目标 header column。 |
 | statistic_id | 统计量 ID。 |
-| value 或 SAS expression | emitter 产生的 numeric/character 结果。 |
+| value | 未舍入 numeric value；不可估计时不承载伪造值。 |
+| estimable | 当前 statistic 是否可估计；`n` 始终为 true。 |
+| resolved_digits | render 使用的最终非负小数位；`n` 不适用。 |
 
-这些是生成器内部的抽象，不要求作为文件字段导出，也不表示平台已经得到真实
+continuous 和 categorical 都必须转换到该结构。categorical 的 denominator、numerator
+和 overlap guard 计数可以保留在 emitter-private 对象中；公共结果只保存 `n` 或
+`pct`，其中 `pct = 100 * n / denominator`，denominator 为零时 `n=0` 且 `pct`
+不可估计。上述对象只在生成期存在，不作为文件字段导出，也不表示平台已经得到真实
 统计值。
+
+统一的逻辑展示结果为 `ChunkRenderResult`，至少包含：
+
+| 字段 | 语义 |
+| --- | --- |
+| chunk_id | 来源 chunk。 |
+| row_id | 目标 row。 |
+| label | 行标签。 |
+| indent_level | 逻辑行缩进级别。 |
+| header_column_id | 目标 header column。 |
+| cell_text | 最终非缺失字符型 cell 文本。 |
+
+每个 row/header column 组合恰好一行；label row 对每个展示列输出空字符串。analysis
+不拼接 cell text，render 按 `cell_format` 对每个 statistic 独立格式化后替换
+placeholder。不可估计的 statistic 只替换为 `NE`，不使同一 cell 中其他 statistic
+失效；`n` 使用无小数位整数，其他可估计值使用 `resolved_digits`、`ROUND`、`PUTN`、
+固定小数位和尾随零，literal `%` 保持原样。
+
+hierarchical result 在公共 statistic 字段上增加 `analysis_id`、`group_path` 和
+`node_key`；hierarchical render row 增加 `runtime_row_id`、`row_role`、动态 label、
+`indent_level` 和各 header column 的 `cell_text`。这些运行时值不写回 YAML，不替代
+metadata position ID。所有 statistic/render 对象均只存在于 SAS `WORK` 的生成期对象中。
 
 ## 9. 四类 Chunk 模型
 

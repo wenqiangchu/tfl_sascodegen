@@ -629,6 +629,50 @@ error。
   补齐，百分比继续按显式分母计算。
 - 在生成器中验证 SAS 变量类型或提前执行批次：未采用，平台不读取数据、不执行 SAS。
 
+## P0-7：统一 Long-form Statistic 与 Render 结果
+
+状态：已确认（2026-09-04）。采用方案 A：所有 primitive emitter 使用统一的
+long-form raw statistic 和 render 结果；hierarchical 只增加节点与运行时行上下文。
+
+### 已批准
+
+1. `ChunkStatisticValue` 是统一的 raw statistic 逻辑对象，每行对应一个
+   `chunk_id`、`row_id`、`header_column_id`、`statistic_id` 组合，并至少包含：
+   `value`、`estimable` 和 `resolved_digits`。`value` 是未舍入 numeric value；不可
+   估计时不填充伪造数值；`n` 的 `estimable` 始终为 true，`resolved_digits` 对 `n`
+   不适用。它是生成期内部结果，不进入 YAML、workspace 或下载产物。
+2. continuous 和 categorical 都必须转换到上述公共结构。categorical 的 denominator、
+   numerator 和 overlap guard 所需计数可以保留在 emitter-private 中间对象；公共结果
+   只保存 `n` 或 `pct` 的 logical statistic。`pct` raw value 为显式的
+   `100 * n / denominator`；denominator 为零时 `n=0`、`pct` 不可估计。
+3. `ChunkRenderResult` 是统一的 logical cell 结果，每行至少包含 `chunk_id`、`row_id`、
+   `label`、`indent_level`、`header_column_id` 和非缺失字符型 `cell_text`。每个
+   row/header column 组合恰好一行；label row 对每个展示列输出空字符串。
+4. render 按 metadata 的 `cell_format` 对每个 statistic 独立格式化后替换 placeholder。
+   不可估计的 statistic 只替换为 `NE`，不使同一 cell 中其他 statistic 失效；`n` 为
+   无小数位整数，其他可估计值使用 `resolved_digits`、`ROUND`、`PUTN`、固定小数位和
+   尾随零，literal `%` 保持原样。analysis 不拼接 cell text，render 不重新计算 raw
+   statistic，也不执行通用表达式。
+5. hierarchical 的 statistic 结果在公共字段上增加 `analysis_id`、`group_path` 和
+   `node_key`；hierarchical render 行增加 `runtime_row_id`、`row_role`、动态 label、
+   `indent_level` 和各 header column 的 `cell_text`。这些运行时值不写回 metadata，
+   不替代 position ID，也不进入导出 bundle。
+6. raw statistic、render 和 hierarchical 结果均只存在于 SAS `WORK` 的生成期对象中，
+   使用 P0-6 的确定性 `_TFL_` 类型/序号命名。最终 assembly 继续按
+   template/chunk/row/header 顺序输出，不按 batch 或 raw dataset 的物理顺序输出。
+7. 对外 `GenerationResult` 仍只有 SAS source text；long-form 结果不成为第二种下载
+   产物，不触发 RTF、HTML、ODS、PROC REPORT 或持久化结果存储。
+
+### 被拒绝的替代方案
+
+- 为 continuous、categorical 和 hierarchical 定义互不兼容的 raw/result shape：未采用，
+  会使 batch 映射和 table assembly 产生多套逻辑。
+- 用宽表或在 analysis 阶段直接拼接字符 cell：未采用，无法稳定表达可变 statistic
+  列表，也会混合统计与展示职责。
+- 把 denominator、batch ID、SAS 物理 dataset 名或 runtime node value 暴露到 YAML：未
+  采用，这些属于 emitter 或生成期内部状态。
+- 将整个 cell 统一替换为 `NE`：未采用，字段级 `NE` 允许例如 `5.0 (NE)` 的结果。
+
 ## 第 2 组补充：参考文档对齐与相对精度
 
 状态：已确认（2026-09-02）。用户要求本项目重叠字段的含义与 ref 一致；以下

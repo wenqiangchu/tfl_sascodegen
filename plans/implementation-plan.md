@@ -99,6 +99,8 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
   最终 template 顺序保持规则；
 - `PrimitiveBatchPlan` 及 continuous/categorical 专用规范化输入的最小字段、
   `_TFL_` 命名边界和零计数/分母为零处理；
+- 公共 `ChunkStatisticValue`、`ChunkRenderResult` 以及 hierarchical 运行时扩展的字段
+  和 analysis/render 分工；
 - 四类 emitter 的具体 SAS PROC/DATA step、临时对象生命周期和 logical output
   映射；
 - `cell_format`、`PROC MEANS`/`PROC FREQ`、base digits、`ROUND`/`PUTN`、missing/`NE`
@@ -115,8 +117,8 @@ business code；`git diff --check` 通过。
 **当前进度**：P0-1（R/YAML 工具链与严格解析边界）、P0-2（canonical YAML
 数值序列化）、P0-3（source_data 与关键操作注释）、P0-4 的 PROC、内部长表、
 数值格式化和非阻断 warning 选择、P0-5 的 table 内兼容 chunk 批处理策略，以及
-P0-6 的专用规范化输入方案已确认；warning 文本顺序、raw output schema 和具体
-SAS 步骤仍需锁定。
+P0-6 的专用规范化输入方案、P0-7 的公共 long-form statistic/render 方案已确认；
+warning 文本顺序、物理列类型、raw/render 转换语句和具体 SAS 步骤仍需锁定。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 
@@ -190,6 +192,8 @@ row/statistic contract。
   logical identity 保留规则；
 - continuous 的 `chunk_order`/`column_order`/`analysis_value` 与 precision input，
   categorical 的 `chunk_order`/`row_order`/`column_order` 最小字段契约；
+- 公共 `ChunkStatisticValue`/`ChunkRenderResult` 字段、placeholder 替换和 hierarchical
+  `analysis_id`/`group_path`/`node_key`/runtime-row 扩展；
 - 四类类型的 metadata shape rules；hierarchical 对 primitive registry 的调用边界；
 - registry lookup、unknown type 和 unavailable emitter 的稳定 host-side errors；
 - registry 测试夹具和最小 mock emitter。
@@ -219,6 +223,7 @@ P3 的 registry。
   原有 chunk/render 输出顺序；
 - 消费 `PrimitiveBatchPlan`，将各 chunk 的专用规范化对象和 batch raw output 映射回
   原有 logical identities；
+- 生成公共 long-form statistic/render 结果，并保持字段级 `NE` 和最终 template 顺序；
 - `source_data` 原样插入以及 custom before/after 原样插入；
 - population、header membership、chunk filter/merge、analysis 和 table render/assembly
   的确定性 English operation comments；
@@ -252,6 +257,8 @@ mock emitter 完成完整 source assembly。
   `PROC FREQ`；
 - expected-cell skeleton 的零计数补全、分母为零的 `NE` 映射，以及 batch input/raw
   object 的确定性 `_TFL_` 命名；
+- `ChunkStatisticValue` 到 `ChunkRenderResult` 的统一转换、`cell_format` placeholder
+  替换和 hierarchical 运行时行展平；
 - `categorical_summary_exclusive` 的 explicit counting-unit overlap guard；
 - `hierarchical_summary` 的 level/group discovery、ordering、nested primitive
   dispatch、row flattening 和 result sort；

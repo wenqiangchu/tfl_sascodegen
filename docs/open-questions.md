@@ -9,17 +9,18 @@
 `docs/design-decisions.md` 和 `docs/ref-alignment.md`。以下只保留实现层面尚未
 冻结的项目：
 
-1. 四类 emitter 的完整输出 schema、具体 SAS DATA/PROC 语句和实现依赖；P0-5 的兼容
-   batch 分组策略以及 P0-6 的专用规范化输入字段、`_TFL_` 命名边界和 logical-cell
-   identity 保留规则已冻结。
+1. 四类 emitter 的具体 SAS DATA/PROC 语句、物理列类型和实现依赖；P0-5 的兼容 batch
+   分组策略、P0-6 的专用规范化输入字段和 P0-7 的公共 statistic/render 字段及
+   `_TFL_` 命名边界已冻结。
 2. warning 文本的具体字段顺序和每类 emitter 的 source regression fixture。
 
 ## 本项目独立的后续确认
 
-1. 四类 emitter 的具体 SAS 步骤、raw output schema、兼容 batch 的规范化实现和
-   source regression；连续统计使用 `PROC MEANS` 默认 percentile，分类计数使用
+1. 四类 emitter 的具体 SAS 步骤、raw/render 物理对象转换、兼容 batch 的规范化实现
+   和 source regression；连续统计使用 `PROC MEANS` 默认 percentile，分类计数使用
    `PROC FREQ`。
-2. `cell_format` 的最终 SAS 代码细节，以及运行期 missing/NE/warning 边界测试。
+2. `cell_format`、公共 long-form 结果的 SAS 列类型，以及运行期 missing/NE/warning
+   边界测试。
 3. emitter 具体实现的依赖锁定；不改变已确认的 strict single-document import
    profile 和 P0-1 的 parser/toolchain 选择。
 
