@@ -42,7 +42,7 @@
 
 - dirty draft 时导入、切换和生成的拦截规则已在第 9 组冻结；具体控件布局留到实现阶段。
 - YAML parser/toolchain 已在 P0-1 锁定；后续只需在依赖恢复后重跑对应 gate。
-- SAS 数据集绑定约定和 emitter 输出 schema（后续子系统）；错误包络已在第 8 组
+- 四类 emitter 的具体 SAS 语句和输出 schema（后续子系统）；错误包络已在第 8 组
   冻结。
 
 ## 第 3 组：Session-owned Workspace 与 Draft 生命周期
@@ -85,8 +85,8 @@ revision 机制，以及删除影响控制采用方案 A。
 1. `TableSpec.custom_code` 是可选 mapping，包含可选的 `before` 和 `after` 字符串。
    非空文本原样保留；空或只含空白的字段按 canonical YAML 规则省略。不得增加
    `before_outputs` 或 runtime result 字段。
-2. 生成顺序固定为：外部 SAS binding/caller setup 占位、`before`、population/header
-   逻辑、template chunks、table assembly/cell formatting、`after`。`after` 是当前
+2. 生成顺序固定为：`before`、population/header 逻辑、template chunks、table
+   assembly/cell formatting、`after`。`after` 是当前
    产品生成的最后一个 custom section，不再追加系统分析或报表代码。
 3. `before` 与 `after` 均在同一个生成 SAS 程序上下文中插入并执行；平台不建立
    sandbox，也不推断或自动加载宏、变量、库、数据集、package 或其他依赖。
@@ -207,34 +207,42 @@ Rscript、study roots 或报表执行模型。
 
 ### 已批准
 
-1. `GenerationRequest` 的输入为 `workspace_snapshot`、目标 `table_id`、代码注册的
-   chunk registry/emitters 和外部 SAS binding convention。generator 不接收数据 bytes、
-   数据文件路径、study roots、SAS 执行状态或输出 artifact path。
+1. `GenerationRequest` 的输入为 `workspace_snapshot`、目标 `table_id` 和代码注册的
+   chunk registry/emitters。generator 不接收数据 bytes、数据文件路径、study roots、
+   SAS 执行状态或输出 artifact path。
 2. host-side 先解析目标 table 的 population/header/template 引用，形成内部的
    `ResolvedTableInput`；引用无法解析属于生成前置失败，使用第 8 组的稳定错误包络。
-   emitter 只接收展开后的普通对象和 opaque SAS references，不读取 YAML 或物理文件。
-3. 内部 `SourceSection` 至少携带 `section_id`、`kind`、`owner_id`、确定性顺序和
+   emitter 只接收展开后的普通对象和 `source_data` 字符串，不读取 YAML 或物理文件。
+3. Header 和 chunk 的 `source_data` 是必填的非空字符串，作为 opaque SAS source
+   text 原样保留和插入。它可以是 `adsl`、`adam.adsl`、`&ADSL` 或
+   `&lib..&member` 等调用方提供的引用；generator 不做 SAS 语法解析、宏变量展开、
+   大小写/空白重写，也不检查 libref、member、宏变量、数据集或变量是否存在。
+4. 内部 `SourceSection` 至少携带 `section_id`、`kind`、`owner_id`、确定性顺序和
    `text`；section map/source line map 只允许作为内存调试信息，不写入 bundle，也
    不作为用户下载产物。
-4. `ChunkTypeDefinition` 的 code-owned contract 至少声明 type/capability、允许和
+5. `ChunkTypeDefinition` 的 code-owned contract 至少声明 type/capability、允许和
    必需字段、输入与 data-grain/merge contract、analysis/render contract、source
    emitter 以及显式中间对象名称和生命周期。不同 emitter 不得通过未声明的共享
    mutation 传递状态；hierarchical container 通过 registry 调用 primitive emitter。
-5. 生成 section 的顺序固定为：
+6. 生成 section 的顺序固定为：
 
-   `caller setup/binding placeholder -> custom_code.before -> population -> header
+   `custom_code.before -> population -> header
    membership -> template chunks（按 sequence） -> table assembly/cell formatting
    -> custom_code.after`。
 
    `custom_code.after` 之后不再追加系统分析、报表或其他代码。
-6. emitter 生成的内部 logical result 使用已确认的 identity：普通 chunk cell 携带
+7. 系统在 population selection、header membership、chunk filter/merge、analysis
+   和 table render/assembly 等关键数据操作阶段前加入简短、确定性的 English comment。
+   注释只说明阶段意图，不逐句注释，不包含 provenance、session、路径或数据内容；
+   用户提供的 `custom_code.before/after` 保持原样，不在其内部插入系统注释。
+8. emitter 生成的内部 logical result 使用已确认的 identity：普通 chunk cell 携带
    `chunk_id`、`row_id`、`header_column_id`、`statistic_id`、raw value、estimable
    和 `resolved_digits`；hierarchical result 额外携带 `analysis_id`、`group_path`
    和 runtime row context。Render 再形成 row/cell text，所有运行期结果不落盘。
-7. 对外 `GenerationResult` 只有 SAS source text；UI 再负责预览或以清理后的
+9. 对外 `GenerationResult` 只有 SAS source text；UI 再负责预览或以清理后的
    `{table_id}.sas` 下载。generator 不执行 SAS，不生成 R/RTF/PDF/HTML/ODS/PROC
    REPORT，不检查数据或 custom code。
-8. 具体 PROC/DATA-step 组合、临时 dataset 的物理命名以及等价 SAS 语句是 emitter
+10. 具体 PROC/DATA-step 组合、临时 dataset 的物理命名以及等价 SAS 语句是 emitter
    的实现细节，不进入 YAML，不形成第二套用户可编辑契约；实现必须以第 2、5、6
    组冻结的语义和 focused source regression tests 为准。
 
@@ -296,28 +304,17 @@ Rscript、study roots 或报表执行模型。
 5. 生成前置失败使用同一 `ErrorItem` 形状，但不返回部分 SAS source。下列情况
    可以在 source assembly 前报告：
 
-   `generation_table_missing`、`generation_reference_missing`、
-   `generation_emitter_unavailable`、`generation_binding_unavailable`、
-   `generation_contract_invalid`。
+    `generation_table_missing`、`generation_reference_missing`、
+    `generation_emitter_unavailable`、`generation_contract_invalid`。
 
    host-side 能确定的多个前置错误按 request、table 引用、template/chunk sequence
    的确定性顺序返回；生成器不因数据内容、SAS expression 或 custom code 的语法、
    安全性和执行结果产生错误。成功时第 7 组的对外结果仍只有 SAS source text。
 
-6. 生成器在内存中从 canonical YAML snapshot 计算确定性的
-   `GenerationProvenance`，并将其作为非执行性 SAS comment preamble 写入 source
-   的最前端；它不改变第 7 组规定的 executable section 顺序。preamble 至少包含：
-
-   `schema_version`、`table_id`、`metadata_sha256`、`generator_contract_id`、
-   `emitter_registry_id` 和调用方提供的 opaque `binding_profile_id`。
-
-   `metadata_sha256` 对已保存 snapshot 的 canonical YAML UTF-8/LF bytes 计算，使用
-   小写 SHA-256。不得写入 timestamp、session ID、绝对路径、临时文件路径、数据内容
-   或随机值；binding profile 的具体 SAS 语法仍由后续 binding 子系统确认。
-
-7. 不生成 provenance sidecar、manifest、日志或结果文件。可复现性依赖相同的
-   canonical snapshot、generator contract、emitter registry 和 binding profile；
-   `parse_diagnostic` 只保留最近的导入错误，不持久化生成错误或运行结果。
+6. 不生成 provenance comment、metadata hash、binding profile、sidecar、manifest、
+   日志或结果文件。生成 source 只包含第 7 组规定的系统代码、关键操作注释和用户
+   提供的 custom code；`parse_diagnostic` 只保留最近的导入错误，不持久化生成错误
+   或运行结果。
 
 ### 被拒绝的替代方案
 
@@ -326,10 +323,10 @@ Rscript、study roots 或报表执行模型。
 - 导入成功后再异步修复引用，或在失败时部分替换 workspace：未采用，避免产生
   半份 metadata 状态；引用缺失留到生成前置阶段。
 - 生成失败时返回已组装的部分 source：未采用，避免用户下载不可完整执行的程序。
-- 将 provenance 写入 YAML、单独 manifest 或 sidecar 文件：未采用，当前产品的
-  metadata 只描述业务对象，必需产物仍只有 SAS source text。
-- 将 timestamp、机器路径或 SAS 数据摘要作为 provenance：未采用，会破坏确定性
-  复现并越过当前产品的数据边界。
+- 将 provenance 或 binding profile 写入 SAS source、YAML、manifest 或 sidecar：未
+  采用，当前产品只需要简洁的 SAS source text 和关键操作注释。
+- 为 source_data 增加 SAS 语法解析、宏展开、libref 映射或数据集存在性检查：未采用，
+  这些责任属于调用方执行环境。
 
 ## 第 9 组：Shiny UI 与 Core Logic 边界
 
@@ -349,14 +346,13 @@ Rscript、study roots 或报表执行模型。
 
    - `ImportRequest` 只包含 bundle bytes；
    - `BundleImportResult` 由 core 返回候选 workspace 或第 8 组错误项；
-   - `GenerationRequest` 只包含已保存 snapshot、目标 `table_id`、registry 和
-     binding convention；
+   - `GenerationRequest` 只包含已保存 snapshot、目标 `table_id` 和 registry；
    - 成功生成返回 SAS source text；UI 再构造 `DownloadPayload`（文件名、MIME 和
      内存内容）。
 
    core 不创建、读取、替换或删除用户文件；UI 适配器负责把上传文件立即读成 bytes，
-   并负责源码预览和 `{table_id}.sas` 下载。上传路径和下载路径不得进入 workspace、
-   generator、错误项或 provenance。
+   并负责源码预览和 `{table_id}.sas` 下载。上传路径和下载路径不得进入 workspace
+   或 generator。
 4. dirty draft 的拦截由 UI 统一处理：
 
    - Import、清空 workspace、切换编辑对象或 active table 时，dirty 状态触发
@@ -404,7 +400,7 @@ Rscript、study roots 或报表执行模型。
 ### 已批准
 
 1. 当前实现基线为 R 4.4.0；脚本和测试统一通过 `Rscript` 执行。直接依赖版本
-   基线为 `yaml` 2.3.10、`digest` 0.6.35、`shiny` 1.8.1.1；开发测试依赖
+   基线为 `yaml` 2.3.10、`shiny` 1.8.1.1；开发测试依赖
    为 `testthat` 3.3.2 和 `withr` 3.0.2；`renv` 1.2.3 用于依赖锁定而不是
    业务运行时。transitive dependencies 由 lockfile 一并记录。
 2. `yaml::yaml.load()` 只负责把已读取的 UTF-8 bytes 转成普通 R list。调用时固定
@@ -415,8 +411,8 @@ Rscript、study roots 或报表执行模型。
    统一映射为 `bundle_duplicate_key`，parser 原始错误文本不进入对外错误包络。
 4. canonical YAML 不直接使用 `yaml::as.yaml()`。项目自有 schema-aware encoder
    负责固定字段顺序、两空格缩进、LF、无 BOM、single-quoted 单行字符串、literal
-   block 多行 custom code、可选字段省略和业务 sequence 顺序，并输出供 provenance
-   使用的 canonical UTF-8/LF bytes；numeric scalar 规则见已确认的 P0-2。
+   block 多行 custom code、可选字段省略和业务 sequence 顺序，并输出 canonical
+   UTF-8/LF bytes；numeric scalar 规则见已确认的 P0-2。
 5. YAML parser、canonical encoder 和错误 wrapper 属于 core；UI 不自行解析或序列化
    YAML。P0-1 不实现 metadata model、workspace 或 generator business logic。
 6. P0 gate 必须在依赖恢复后重新运行 parser/round-trip focused tests；当前环境中
@@ -455,8 +451,8 @@ Rscript、study roots 或报表执行模型。
 5. `NaN`、`Inf`、`-Inf` 及其他非有限 metadata numeric 值属于
    `bundle_value_invalid`；不序列化为 `null`，也不静默替换为缺省值。
 6. decoder 可以接受语义上有效但词法不同的 numeric scalar，encoder 统一输出上述
-   canonical 形式。canonical bytes 的稳定性和 provenance hash 以 encoder 输出为
-   准，不以输入文件的原始词法为准。
+   canonical 形式。canonical bytes 的稳定性以 encoder 输出为准，不以输入文件的
+   原始词法为准。
 
 ### 被拒绝的替代方案
 
@@ -466,6 +462,33 @@ Rscript、study roots 或报表执行模型。
   canonical bytes 的非必要变体。
 - 将 relative digits 当作 numeric scalar：未采用，`+n`/`-n` 的相对精度语义必须
   保留为字符串。
+
+## P0-3：`source_data` 与生成注释
+
+状态：已确认（2026-09-03）。采用最小方案：保留调用方提供的 source text，不建立
+binding profile 或 provenance 输出。
+
+### 已批准
+
+1. Header 和 chunk 的 `source_data` 是必填的非空字符串。典型值包括 `adsl`、
+   `adam.adsl`、`&ADSL` 和 `&lib..&member`；具体 SAS 数据集引用语义由调用方保证。
+2. 导入和 Save 只检查字段存在、值类型为 string 且内容非空；不检查 SAS 语法、
+   libref/member、宏变量定义、数据集或变量存在性。
+3. generator 和 emitter 原样保留并插入 `source_data`，不做宏展开、解析、大小写或
+   空白重写，不生成 `LIBNAME`、映射代码或 binding placeholder。
+4. 生成的 SAS source 不包含 provenance comment、metadata hash、binding profile、
+   sidecar 或 manifest。系统仅在 population selection、header membership、chunk
+   filter/merge、analysis 和 table render/assembly 等关键阶段前加入简短、确定性的
+   English operation comment；用户 custom code 原样保留。
+
+### 被拒绝的替代方案
+
+- 为 `source_data` 建立逻辑 ID 到实际 SAS 名称的映射：未采用，会增加当前需求不需要
+  的运行期对象和配置。
+- 由 generator 生成 `LIBNAME`、宏定义或其他绑定代码：未采用，调用方负责准备执行
+  环境。
+- 在 SAS source 中输出 provenance comment 或 binding profile：未采用，保持生成代码
+  简洁；可追踪性由 metadata 和版本控制承担。
 
 ## 第 2 组补充：参考文档对齐与相对精度
 

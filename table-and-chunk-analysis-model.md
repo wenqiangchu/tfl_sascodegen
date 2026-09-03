@@ -38,7 +38,7 @@ population、header、table、template、chunk 以及内存态编辑工作区，
 以下内容仍需在实现中单独确认，本文只提供待确认的边界；本项目已批准的
 bundle YAML、sequence 和导入替换语义记录在 `docs/design-decisions.md`：
 
-- 外部 SAS 数据集引用的精确写法（例如 LIBREF.MEMBER、宏变量或绑定名）；
+- source_data 仅要求为非空字符串；其 SAS 语法和宏变量含义由调用方保证；
 - 四类 chunk 的 SAS emitter、PROC 选择、中间数据集字段和最终输出字段；
 - 分位数方法、四舍五入、格式化和不可估计值的具体 SAS 实现；
 - cell_format 是生成字符型 cell 数据集、PROC REPORT 代码，还是两者都生成；
@@ -220,7 +220,7 @@ schema-aware encoder 的统一输出决定。该文件表示规则不改变运�
 固定关闭 expression evaluation，并在解析前拒绝 multi-document、anchor、alias、tag
 和 merge key；重复 key 映射为稳定的 `bundle_duplicate_key`。canonical bytes 由
 schema-aware encoder 生成；其 numeric scalar 规则已按 P0-2 锁定。当前工具链基线为
-R 4.4.0、yaml 2.3.10、digest 0.6.35、testthat 3.3.2、shiny 1.8.1.1 和
+R 4.4.0、yaml 2.3.10、testthat 3.3.2、shiny 1.8.1.1 和
 withr 3.0.2，使用 renv 1.2.3 锁定依赖。
 
 ### 3.3 错误包络
@@ -249,8 +249,7 @@ withr 3.0.2，使用 renv 1.2.3 锁定依赖。
 生成前置错误代码为：
 
 `generation_table_missing`、`generation_reference_missing`、
-`generation_emitter_unavailable`、`generation_binding_unavailable`、
-`generation_contract_invalid`。
+`generation_emitter_unavailable`、`generation_contract_invalid`。
 
 错误项不包含 warning、suggestion、stack trace、服务器临时路径、session 信息、
 原始数据或不稳定的 parser 文本。导入不执行 SAS expression/custom code，也不读取
@@ -302,7 +301,7 @@ columns:
 | 字段 | 类型 | 语义 |
 | --- | --- | --- |
 | id | string | 工作区内唯一的 header ID。 |
-| source_data | string | 外部 SAS 数据集引用；不表示上传文件或物理路径。 |
+| source_data | non-empty string | 外部 SAS 数据集引用；原样保留，不表示上传文件或物理路径。可使用 `adsl`、`adam.adsl`、`&ADSL` 或 `&lib..&member` 等调用方提供的 SAS 文本。 |
 | spanning_headers | sequence，可选 | 跨列表头；每项有 id、level、label。 |
 | columns | sequence | 有序展示列。 |
 | columns[].id | string | header column 的逻辑 ID。 |
@@ -346,7 +345,8 @@ USUBJID | header_column_id
 ~~~
 
 这里的字段名和中间数据集名属于待确认的 SAS emitter contract。平台不读取
-source_data，也不检查 USUBJID 是否存在、唯一或非缺失。
+source_data，也不检查其 SAS 语法、宏变量、libref、member、数据集或变量是否存在，
+不检查 USUBJID 是否存在、唯一或非缺失。
 
 ## 6. Table 模型（精简版）
 
@@ -436,7 +436,7 @@ rows:
 | --- | --- | --- |
 | id | string | chunk 的位置/逻辑 ID。 |
 | type | registered type ID | 四类 chunk 之一，或实现注册的扩展类型。 |
-| source_data | string | 外部 SAS 数据集或 custom code 创建的数据集引用。 |
+| source_data | non-empty string | 外部 SAS 数据集或 custom code 创建的数据集引用；作为 opaque SAS source text 原样保留。 |
 | filter | string，可选 | SAS logical expression，作用于当前 chunk source。 |
 | rows | sequence | primitive chunk 的静态行；hierarchical chunk 的行位于 analysis blocks。 |
 
@@ -911,7 +911,7 @@ session 独占一个 `MetadataWorkspace`，不使用跨 session 的全局 worksp
 
 UI/core 只传递显式值对象：`ImportRequest` 只含 bundle bytes；成功的
 `BundleImportResult` 提供候选 workspace；`GenerationRequest` 只含已保存 snapshot、
-table ID、registry 和 binding convention；生成成功返回 source text，UI 再构造
+table ID 和 registry；生成成功返回 source text，UI 再构造
 包含文件名、MIME 和内存内容的 `DownloadPayload`。core 不创建、读取、替换或删除
 用户文件。
 
@@ -936,13 +936,12 @@ draft 编辑不递增，Discard、Cancel 和失败操作不改变 saved revision
   -> 选择 table
   -> 解析 population/header/template 引用
   -> 生成 SAS source sections
-       1. 外部数据集引用/调用方 setup 占位
-       2. table.custom_code.before
-       3. population selection
-       4. header column membership
-       5. template chunks（按 sequence）
-       6. Table assembly / cell formatting
-       7. table.custom_code.after
+   1. table.custom_code.before
+   2. population selection
+   3. header column membership
+   4. template chunks（按 sequence）
+   5. Table assembly / cell formatting
+   6. table.custom_code.after
   -> 返回 SAS source text
   -> 用户预览或下载 .sas
 ~~~
@@ -953,8 +952,7 @@ draft 编辑不递增，Discard、Cancel 和失败操作不改变 saved revision
 
 - 一个已保存的 MetadataWorkspace snapshot；
 - 目标 table_id；
-- 四类 chunk 的 registry/emitters；
-- 实现约定的外部 SAS binding convention。
+- 四类 chunk 的 registry/emitters。
 
 它不需要数据 bytes、数据路径或 study roots。
 
@@ -967,9 +965,9 @@ SAS source text
 ~~~
 
 可选的 section map、source line map 或生成失败上下文只能作为内部内存返回值，
-不属于产品输出，也不写入 metadata bundle。除非另行批准，平台不生成 manifest、RTF、HTML、SAS
-日志或执行结果。成功的 source 最前端可以包含确定性的非执行性 SAS provenance
-comment；该 comment 不改变 executable section 顺序。
+不属于产品输出，也不写入 metadata bundle。除非另行批准，平台不生成 provenance
+comment、manifest、RTF、HTML、SAS 日志或执行结果。系统只在关键数据操作阶段前加入
+简短、确定性的 English operation comment；用户提供的 custom code 保持原样。
 
 ### 13.3 SourceSection 与 Emitter Contract
 
@@ -978,8 +976,8 @@ generator 先将各阶段输出组织为内部 `SourceSection`，每个 section 
 | 字段 | 语义 |
 | --- | --- |
 | section_id | 当前生成程序内唯一的 section 身份。 |
-| kind | caller setup、custom、population、header、chunk 或 assembly。 |
-| owner_id | 负责该 section 的 table/chunk/analysis identity；caller section 可缺省。 |
+| kind | custom、population、header、chunk 或 assembly。 |
+| owner_id | 负责该 section 的 table/chunk/analysis identity。 |
 | sequence | 确定性的源代码顺序。 |
 | text | 原样 SAS source text。 |
 
@@ -1010,19 +1008,11 @@ DATA step 和临时对象命名是 emitter 实现细节，不写入 metadata。
 
 ### 13.5 错误与可复现性
 
-生成器在内存中从已保存 snapshot 的 canonical YAML 序列化计算
-`GenerationProvenance`，并将其作为 source 最前端的 SAS comment preamble。至少包含：
-
-`schema_version`、`table_id`、`metadata_sha256`、`generator_contract_id`、
-`emitter_registry_id` 和调用方提供的 opaque `binding_profile_id`。
-
-`metadata_sha256` 对 canonical YAML 的 UTF-8/LF bytes 计算，使用小写 SHA-256。不得
-包含 timestamp、session ID、绝对路径、临时文件路径、数据内容或随机值。binding
-profile 的具体 SAS 语法由后续 binding 子系统确认；其稳定 ID 用于区分不同调用方约定。
-
-provenance 不写入 YAML，不生成 sidecar 或 manifest。相同的 canonical snapshot、
-generator contract、emitter registry 和 binding profile 应生成相同的 source。生成失败
-时不返回部分 source，也不持久化错误或运行结果。
+生成器不计算或输出 `GenerationProvenance`、metadata hash 或 binding profile。成功
+source 只包含系统生成的 SAS code、关键数据操作的简短 English operation comments
+和用户提供的 custom code；不生成 provenance comment、sidecar、manifest、日志或
+结果文件。相同的 canonical snapshot、registry 和 generator contract 应生成相同的
+source。生成失败时不返回部分 source，也不持久化错误或运行结果。
 
 ## 14. 四类 SAS Emitter 实施契约矩阵
 
@@ -1044,8 +1034,7 @@ generator contract、emitter registry 和 binding profile 应生成相同的 sou
 
 以下项目仍需确认，文档才可作为完整的 SAS 生成实施契约：
 
-1. 外部 SAS dataset reference 和调用方提供的 libref/macro convention；
-2. emitter 具体实现的依赖锁定；YAML parser/toolchain 已由 P0-1 锁定。
+1. emitter 具体实现的依赖锁定；YAML parser/toolchain 已由 P0-1 锁定。
 
 在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
 SAS 代码生成实现规范。

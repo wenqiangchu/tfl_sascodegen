@@ -14,7 +14,7 @@
 |---|---|---|
 | 集合与顺序 | 对象是有序 sequence；位置 ID 是由 sequence 产生的编辑身份 | 沿用；不把位置 ID 当跨版本数据库主键 |
 | Population | `id`、`label`、`expression`；表达式是 opaque source text | 沿用字段和不执行边界；表达式改为 SAS dialect |
-| Header | `id`、`source_data`、`spanning_headers`、`columns`；column 有 condition、display_order、width、alignment 和 spanner 引用 | 沿用字段含义；`source_data` 表示外部 SAS 数据集引用，不是 R dataset binding |
+| Header | `id`、`source_data`、`spanning_headers`、`columns`；column 有 condition、display_order、width、alignment 和 spanner 引用 | 沿用字段含义；`source_data` 是原样保留的非空 SAS source text，可包含宏变量，不是 R dataset binding |
 | Table 引用 | `population_id`、`header_id`、`template_id` 是引用而非内联对象 | 沿用；当前项目继续排除 ref 的展示/报告字段 |
 | Template/Chunk/Row | `body.chunks` 有序；chunk 公共字段、类型专属字段、row 的 label/analysis、statistics、cell_format | 沿用；未知 type 不静默解释 |
 | Position ID | chunk、row、level、analysis block 使用位置 ID，插入/删除/移动后重编号并同步引用 | 沿用；动态 group value/runtime row ID 不写回 YAML |
@@ -57,11 +57,11 @@
 
 以下不是“自动继承”的决定，因为它们依赖 SAS 实现或当前产品边界：
 
-1. 外部 SAS dataset reference 的精确语法和调用方绑定约定。
-2. 四类 chunk 的具体 PROC/DATA step、显式中间 dataset schema、最终 logical cell
+1. 四类 chunk 的具体 PROC/DATA step、显式中间 dataset schema、最终 logical cell
    schema 和 hierarchical record-to-subject 广播实现。
-3. SAS percentile definition 是否采用与 ref R type 2 结果等价的方法，以及
+2. SAS percentile definition 是否采用与 ref R type 2 结果等价的方法，以及
    `base_digits` 在 SAS numeric/format 信息不可得时的取值来源。
-4. 传输/解析错误和生成前置引用错误的最小稳定错误包络。
-5. （已关闭）YAML parser/toolchain 已在 P0-1 锁定；这一项不再属于 ref 对齐待确认
-   事项。
+3. 传输/解析错误和生成前置引用错误的最小稳定错误包络。
+
+source_data 的非空字符串和关键操作注释策略已由本项目独立确认；它们不再依赖 ref
+中的 R binding 或执行约定。

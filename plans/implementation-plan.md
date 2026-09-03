@@ -69,11 +69,11 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 
 | 阶段 | 名称 | 依赖 | 主要交付物 |
 | --- | --- | --- | --- |
-| P0 | 实施基线与剩余实现级契约锁定 | 设计文档 | 依赖锁定、SAS binding profile、emitter 微契约、测试基线 |
+| P0 | 实施基线与剩余实现级契约锁定 | 设计文档 | 依赖锁定、emitter 微契约、测试基线 |
 | P1 | Metadata 对象、canonical YAML 与结构错误 | P0 | value model、YAML codec、结构错误和 round-trip tests |
 | P2 | Workspace、draft 与 revision | P1 | session-owned state service、CRUD、draft tests |
 | P3 | Chunk registry 与类型契约 | P0 | `ChunkTypeDefinition`、字段规则、registry tests |
-| P4 | SAS source generator 核心 | P0、P1、P3 | source sections、reference resolution、provenance、generation errors |
+| P4 | SAS source generator 核心 | P0、P1、P3 | source sections、reference resolution、operation comments、generation errors |
 | P5 | SAS emitter 与分析/render 实现 | P0、P3、P4 | 四类 emitter、precision/formatting source tests |
 | P6 | UI 无关的 application orchestration | P2、P4、P5 | import/export/generate service、显式 value-object boundary |
 | P7 | Shiny UI 与 `app.R` | P2、P6 | ViewState、编辑器、dirty guard、preview/download |
@@ -92,7 +92,7 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 **必须产出**：
 
 - R 版本、YAML parser 包和版本、测试框架及依赖锁定策略；
-- 外部 SAS dataset reference 的表示和 caller binding profile；
+- `source_data` 非空字符串的结构边界和原样插入规则；
 - code-owned registry interface、四类 type discriminator set 和 registry extension
   boundary；
 - 四类 emitter 的具体 SAS PROC/DATA step、临时对象生命周期和 logical output
@@ -108,8 +108,8 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 **验收**：依赖可安装且可锁定；每项实现级选择有唯一记录；没有 production
 business code；`git diff --check` 通过。
 
-**当前进度**：P0-1（R/YAML 工具链与严格解析边界）和 P0-2（canonical YAML
-数值序列化）已确认；SAS binding profile 和 emitter 微契约仍未确认。
+**当前进度**：P0-1（R/YAML 工具链与严格解析边界）、P0-2（canonical YAML
+数值序列化）和 P0-3（source_data 与关键操作注释）已确认；emitter 微契约仍未确认。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 
@@ -127,7 +127,7 @@ business code；`git diff --check` 通过。
   discriminator 和 required-field 的结构错误；registry-dependent type checks use the
   P0 discriminator/interface contract；跨对象引用继续允许延迟；
 - `BundleImportResult`、`ErrorItem` 和稳定 path/error ordering；
-- canonical bytes 与 SHA-256 计算值对象，供 provenance 使用。
+- canonical bytes value object，供稳定导出使用；不计算或保存 metadata hash。
 
 **不做**：不读取 SAS 数据，不执行表达式，不解析 custom code，不实现 workspace
 替换，不检查跨对象引用是否存在。
@@ -178,7 +178,7 @@ row/statistic contract。
 
 - code-owned `ChunkTypeDefinition` registry；
 - primitive/container capability、allowed/required fields、data grain、filter/merge、
-  analysis/render 和 emitter binding contract；
+  analysis/render 和 source-emitter contract；
 - 四类类型的 metadata shape rules；hierarchical 对 primitive registry 的调用边界；
 - registry lookup、unknown type 和 unavailable emitter 的稳定 host-side errors；
 - registry 测试夹具和最小 mock emitter。
@@ -194,37 +194,37 @@ type switch；registry contract 可被 P4/P5 消费，不依赖 YAML codec 的�
 
 ### P4：SAS source generator 核心
 
-**依赖**：P0 的 binding/profile 约定，P1 的 parsed snapshot 和 errors，P3 的 registry。
+**依赖**：P0 的 source_data/operation-comment 约定，P1 的 parsed snapshot 和 errors，
+P3 的 registry。
 
-**输入**：已保存 snapshot、目标 `table_id`、registry/emitters 和 caller binding profile。
+**输入**：已保存 snapshot、目标 `table_id` 和 registry/emitters。
 
 **必须产出**：
 
 - `GenerationRequest` 和 host-side `ResolvedTableInput`；
 - table population/header/template 引用解析和确定性 prerequisite error collection；
 - `SourceSection` assembly，固定 executable 顺序和 section ownership；
-- caller setup placeholder、custom before/after 原样插入；
-- `GenerationProvenance` canonical snapshot digest、contract IDs 和 SAS comment
-  preamble；
+- `source_data` 原样插入以及 custom before/after 原样插入；
+- population、header membership、chunk filter/merge、analysis 和 table render/assembly
+  的确定性 English operation comments；
 - 不返回 partial source 的 generation failure boundary；
 - 使用 mock emitter 的 source regression tests。
 
 **不做**：不执行 SAS、不读取路径或数据、不验证 expression/custom code、不写 `.sas`
 文件；具体 chunk 统计由 P5 提供。
 
-**测试**：section order、custom-code placement、reference errors、missing emitter/binding、
-deterministic source、provenance stability、absence of paths/session/timestamps、
-no partial source on failure。
+**测试**：section order、custom-code placement、source_data passthrough including macro
+text、reference errors、missing emitter、deterministic operation comments、absence of
+binding/provenance metadata、no partial source on failure。
 
-**完成 gate**：相同 snapshot、registry、binding profile 和 generator contract 产生
-相同 source；P4 可用 mock emitter 完成完整 source assembly。
+**完成 gate**：相同 snapshot、registry 和 generator contract 产生相同 source；P4 可用
+mock emitter 完成完整 source assembly。
 
 ### P5：SAS emitter 与分析/render 实现
 
 **依赖**：P0 的 SAS 微契约，P3 的 registry，P4 的 generator/emitter interface。
 
-**输入**：四类 chunk metadata、scaffold contract、SAS binding convention 和 P4
-source assembly boundary。
+**输入**：四类 chunk metadata、scaffold contract 和 P4 source assembly boundary。
 
 **必须产出**：
 
@@ -256,14 +256,13 @@ assembly source tests。
 
 **依赖**：P2 的 workspace/draft service，P4 的 generator，P5 的 emitters。
 
-**输入**：raw bundle bytes、workspace state、saved snapshot、table ID 和 caller
-binding profile。
+**输入**：raw bundle bytes、workspace state、saved snapshot 和 table ID。
 
 **必须产出**：
 
 - import application flow：bytes -> candidate -> atomic workspace apply；
 - save/discard/export/generate 的 UI-neutral orchestration；
-- generated source text 与 provenance comment 的内存返回；
+- generated source text 与关键操作 comments 的内存返回；
 - 第 8 组错误在 import/workspace/generation boundary 的统一传递；
 - 不含 Shiny、文件路径或 server session 的 service-level tests。
 
@@ -310,7 +309,7 @@ payload contract。
 - synthetic YAML bundle 到确定性 SAS source 的完整闭环测试；
 - import failure、save failure、reference failure、emitter failure 和 dirty guard
   的 UI/core boundary tests；
-- source section order、provenance、relative precision 和 mixed chunks 的回归证据；
+- source section order、operation comments、relative precision 和 mixed chunks 的回归证据；
 - README、运行/测试说明、`plans/` 维护说明和最终验收记录；
 - Git 检查：`git status`、staged diff review、`git diff --check`、适用的 R test
   commands；generated outputs、cache、logs 和 local environment 均不提交。
