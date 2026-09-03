@@ -601,8 +601,9 @@ rows:
 
 该类型复用 nonexclusive 的 denominator、n/pct 和 row 字段，差异是业务声明
 要求各 analysis row 对 counting unit 互斥。生成器/emitter 必须生成按此契约工作的
-SAS overlap guard；平台不执行或校验数据，重叠错误只会在调用方执行生成的 SAS 时
-暴露。未命中任何 row 的 counting unit 允许存在。
+SAS overlap guard；平台不执行或校验数据，重叠异常只会在调用方执行生成的 SAS 时
+以 `WARNING: [USER] ...` 暴露，不自动中止或修复。未命中任何 row 的 counting unit
+允许存在。
 
 独立使用时首期 subject-level counting identity 固定为 `USUBJID`；若嵌入
 hierarchical block，`counting_unit` 由 block 显式声明为 `record`、
@@ -657,10 +658,12 @@ analysis_blocks:
 | grain | subject、record 或 observation。 |
 | subject_key | 通常为 USUBJID。 |
 | record_key | record/observation grain 的逻辑 key 字段序列。 |
-| duplicate_policy | 重复 key 的处理策略；当前 contract 固定为 error，不自动去重或聚合。 |
+| duplicate_policy | 重复 key 违反 contract；当前 contract 固定为 `error`，但生成的 SAS 以
+  `WARNING: [USER] ...` 记录，不自动去重或聚合。 |
 
 这些字段告诉 SAS emitter 应按何种粒度生成排序、连接和计数代码。平台不读取
-数据、不检查 key 是否存在或重复，也不执行 duplicate policy。
+数据、不检查 key 是否存在或重复；duplicate policy 由生成的 SAS 以非阻断 warning
+实现，调用方负责根据 log 判断结果。
 
 #### Grouping level
 
@@ -765,6 +768,10 @@ step WHERE/IF 可接受的语法为基准：
 `%INCLUDE`、宏定义、`X`、`SYSTASK`、`FILENAME PIPE` 或其他 SAS 作用，也不对
 source text 做语法、安全、转义或可执行性验证；平台只负责按约定原样拼接源代码，
 调用方负责执行环境和运行结果。
+
+对于 emitter 能够在 SAS 内部检查的重复 key、subject cardinality、exclusive overlap
+或排序一致性异常，生成代码可以使用 `PUTLOG` 输出确定性的
+`WARNING: [USER] ...`。这些 warning 不由应用捕获或持久化，也不隐式改变输入数据。
 
 ## 11. 内存工作区模型
 
@@ -1008,9 +1015,10 @@ DATA step 和临时对象命名是 emitter 实现细节，不写入 metadata。
 
 生成器不计算或输出 `GenerationProvenance`、metadata hash 或 binding profile。成功
 source 只包含系统生成的 SAS code、关键数据操作的简短 English operation comments
-和用户提供的 custom code；不生成 provenance comment、sidecar、manifest、日志或
-结果文件。相同的 canonical snapshot、registry 和 generator contract 应生成相同的
-source。生成失败时不返回部分 source，也不持久化错误或运行结果。
+和用户提供的 custom code；不生成 provenance comment、sidecar、manifest、持久化日志
+或结果文件。相同的 canonical snapshot、registry 和 generator contract 应生成相同的
+source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARNING: [USER] ...` 只
+写入调用方的 SAS log。
 
 ## 14. 四类 SAS Emitter 实施契约矩阵
 
@@ -1021,7 +1029,7 @@ source。生成失败时不返回部分 source，也不持久化错误或运行�
 | --- | --- | --- |
 | continuous_summary | `PROC MEANS` 默认 percentile、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段 |
 | categorical_summary_nonexclusive | denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段 |
-| categorical_summary_exclusive | 按 counting unit 生成 overlap guard；具体 PROC/失败处理 | 同上，以及 counting unit 语义 |
+| categorical_summary_exclusive | 按 counting unit 生成 overlap guard 和 `WARNING: [USER] ...`；具体 PROC/继续执行细节 | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |
 
 实现不得根据 YAML 注入 handler，也不得把 PROC、percentile definition 或物理临时

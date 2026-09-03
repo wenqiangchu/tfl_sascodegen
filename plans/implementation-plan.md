@@ -109,8 +109,8 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 business code；`git diff --check` 通过。
 
 **当前进度**：P0-1（R/YAML 工具链与严格解析边界）、P0-2（canonical YAML
-数值序列化）、P0-3（source_data 与关键操作注释）以及 P0-4 的 PROC、内部长表和
-数值格式化选择已确认；运行期数据契约失败的中止方式仍未确认。
+数值序列化）、P0-3（source_data 与关键操作注释）以及 P0-4 的 PROC、内部长表、
+数值格式化和非阻断 warning 选择已确认；warning 文本的字段顺序仍需锁定。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 
@@ -238,8 +238,8 @@ mock emitter 完成完整 source assembly。
 - filter-before-merge、subject/record/observation grain、cardinality 和 scaffold
   相关 SAS source；
 - relative digits、15 significant digits、sample SD、`PROC MEANS` 默认 percentile、
-  `ROUND`/`PUTN` fixed digits、trailing zero、negative zero 和 `NE` 的 source
-  implementation；
+  `ROUND`/`PUTN` fixed digits、trailing zero、negative zero、`NE` 和
+  `WARNING: [USER]` diagnostics 的 source implementation；
 - 每类 emitter 的 source regression fixtures。
 
 **不做**：不执行生成的 SAS，不保存 runtime result，不产生 report artifact；不由
@@ -247,7 +247,7 @@ emitter 通过未声明的 shared mutation 传递状态。
 
 **测试**：每类 source structure、section ownership、row/column identity、relative
 digits boundaries、n=0/1、non-finite handling、denominator zero/`NE`、exclusive
-overlap guard、hierarchical order and dynamic-node rules，以及 mixed-template
+overlap warning、hierarchical order and dynamic-node warnings，以及 mixed-template
 assembly source tests。
 
 **完成 gate**：P4 可以通过 registry 调用所有已纳入首期的 emitter；输出满足第

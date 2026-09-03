@@ -493,8 +493,9 @@ binding profile 或 provenance 输出。
 ## P0-4：SAS emitter 过程、内部长表与数值格式
 
 状态：部分确认（2026-09-03）。连续统计采用 `PROC MEANS`，分类计数采用
-`PROC FREQ`；内部结果使用 long-form SAS 数据集。运行期数据契约失败的中止方式仍待
-确认。
+`PROC FREQ`；内部结果使用 long-form SAS 数据集；运行期数据契约异常采用 SAS log
+warning。应用可以提示自身的生成错误，但当前不执行 SAS，不能自动捕获 SAS compiler
+error。
 
 ### 已批准
 
@@ -522,12 +523,19 @@ binding profile 或 provenance 输出。
 6. 15 位有效数字只用于 `base_digits` 的十进制规范化，避免 SAS double 的二进制
    尾数被误判为真实小数位；不改变 raw statistic 的计算精度，也不替代最终的
    `ROUND`。
+7. 对生成代码能够检查的运行期重复性或其他数据契约异常，使用 SAS `PUTLOG` 输出
+   `WARNING: [USER] ...`，不执行 `ABORT CANCEL`。warning 只提供诊断，不隐式去重、
+   聚合、跳过或改写输入；在没有其他 SAS 错误时，代码继续沿既定路径运行，结果是否
+   可接受由调用方根据 log 判断。例如生成代码可输出
+   `putlog "WARNING: [USER] Duplicate subject key in chunk=c001.";`。
+8. host-side 的 table/reference/emitter 错误继续使用 `ErrorItem` 并可由 UI 立即提示。
+   SAS compiler 或运行期 log 不由本应用执行、捕获或持久化；如需集成 SAS 编译/执行，
+   必须另行扩大产品边界并确认新的 subsystem。
 
 ### 待确认
 
-1. 运行期数据契约失败（例如 subject cardinality、exclusive overlap 或
-   hierarchical order 冲突）是否统一输出确定性的 `ERROR:` 并执行 `ABORT CANCEL`；
-   这不是 host-side 的 `generation_contract_invalid`，平台也不会执行 SAS 来捕获它。
+1. warning 文本的具体字段顺序和每类 emitter 的 source regression fixture；不改变
+   `WARNING: [USER]` 前缀、非阻断和不自动修复的边界。
 
 ## 第 2 组补充：参考文档对齐与相对精度
 
