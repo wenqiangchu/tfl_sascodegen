@@ -5,21 +5,26 @@
 
 ## 第 1 组：应用入口、Bundle 导入导出与 SAS 输出
 
-状态：已确认；第 2 项及第 4 项的 serialization 部分于 2026-09-02 根据 ref
-对齐请求修订。
+状态：已确认；serialization 于 2026-09-05 修订为 ZIP 多文件 bundle，并保留
+最小 `manifest.yaml`。
 
 ### 已批准
 
 1. 使用根目录的薄 `app.R` 作为 Shiny 启动入口；生产代码按职责放在
    `src/` 子目录。
-2. Metadata bundle 采用 YAML，`schema_version` 从 1 开始；集合使用有序
-   sequence，每个对象显式保存 `id`；下载扩展名为 `.yaml`。
-3. 导入是原子替换：只有在整个 bundle 成功解析后才替换当前工作区；传输或
-   解析失败时保留原工作区；当前范围不支持 merge 导入。
-4. 导出使用稳定字段顺序的 canonical YAML，只包含已保存的工作区，不写入
-   上传临时路径、session 信息或 UI 状态。采用 UTF-8、无 BOM、LF 换行、
-   两空格缩进；sequence 保持业务顺序；单行字符串使用 single-quoted
-   scalar，多行代码使用 literal block scalar；缺省可选字段不输出为 null。
+2. Metadata bundle 采用 ZIP 压缩包，内部 YAML 文件使用 schema version 1；
+   保留最小 `manifest.yaml`，仅包含 `schema_version: 1`。压缩包固定包含
+   `populations.yaml`、`headers.yaml`，并使用 `tables/<table_id>.yaml` 和
+   `templates/<template_id>.yaml` 保存独立对象文件。集合按文件名 ID 字典序形成
+   顶层 sequence，每个对象显式保存 `id`；下载扩展名为 `.zip`。
+3. 导入是原子替换：只有在整个 ZIP 的 manifest、catalog 和所有对象文件成功
+   解析后才替换当前工作区；传输、entry 或 YAML 解析失败时保留原工作区；当前
+   范围不支持 merge 导入。
+4. 导出使用稳定 entry 顺序和稳定字段顺序的 canonical YAML，只包含已保存的
+   工作区，不写入上传临时路径、session 信息或 UI 状态。每个 YAML 文件采用
+   UTF-8、无 BOM、LF 换行、两空格缩进；sequence 保持业务顺序；单行字符串使用
+   single-quoted scalar，多行代码使用 literal block scalar；缺省可选字段不输出
+   为 null。
 5. SAS 结果的产品边界是源代码文本。下载文件名采用清理后的
    `{table_id}.sas`，并提供源码预览。
 6. 当前阶段不生成 ODS、PROC REPORT 或 RTF/PDF/HTML 等报表文件；具体分析和
@@ -30,6 +35,8 @@
 
 - JSON canonical bundle：已被 2026-09-02 的 YAML 决定替代；YAML 更适合人工
   阅读和编辑，canonical 规则承担跨实现稳定性。
+- 单一 YAML 文件 bundle：已被 2026-09-05 的 ZIP 多文件 bundle 决定替代；独立
+  template 文件便于跨研究复制和移动。
 - 以 ID 为键的 mapping：未采用，原因是 sequence 能直接保留 UI 业务顺序，
   且避免额外的顺序字段。
 - 合并导入：未采用，原因是会引入 ID 冲突、引用重写和回滚语义；当前产品
@@ -257,8 +264,9 @@ Rscript、study roots 或报表执行模型。
 
 ## 第 8 组：结构性导入错误、生成前置错误与可复现性
 
-状态：已确认（2026-09-02）。采用方案 A：沿用 ref 的稳定错误项和有序错误列表，
-但将其适配为单文件 YAML bundle 与只生成 SAS source text 的边界。
+状态：已确认（2026-09-02；bundle transport 于 2026-09-05 修订）。采用方案 A：
+沿用 ref 的稳定错误项和有序错误列表，并适配为 ZIP 多文件 YAML bundle 与只生成
+SAS source text 的边界。
 
 ### 已批准
 
@@ -283,13 +291,17 @@ Rscript、study roots 或报表执行模型。
    - 不提供独立 validation API；导入只做 transport、YAML 和 metadata structure
      decode，不读取 SAS 数据、不执行表达式或 custom code。
 
-3. 单文件 YAML 的导入 profile 采用严格单文档结构：
+3. ZIP 多文件 bundle 的导入 profile 采用严格 entry 和单文档结构：
 
    - 顶层和嵌套字段按已批准 schema 检查，未知字段、重复 mapping key、未知
      chunk type、缺失/重复 ID 和 discriminator 不一致均失败；
    - 多文档、anchor/alias、tag 和 merge key 不属于支持的 bundle 表达；
-   - canonical 下载仍固定为 UTF-8、无 BOM、LF；导入接受有效 UTF-8 的 BOM 或
+   - canonical 下载中的每个 YAML 文件均固定为 UTF-8、无 BOM、LF；导入接受有效 UTF-8 的 BOM 或
      CRLF，并在内存中规范化后按 canonical 规则导出；无效 UTF-8 导入失败；
+   - ZIP 必须包含 `manifest.yaml`、`populations.yaml` 和 `headers.yaml`；manifest
+     只包含 `schema_version: 1`。`tables/` 和 `templates/` 下只允许直接的 `.yaml`
+     文件，文件名 stem 必须与内部对象 `id` 一致；未知 entry、重复 entry、非法
+     路径、嵌套目录和符号链接均失败；对象文件按 ID 字典序形成顶层 sequence；
    - 跨对象引用是否存在不在结构导入阶段强制解析，继续沿用“结构严格、引用可
      延迟”的决定。
 
@@ -311,8 +323,9 @@ Rscript、study roots 或报表执行模型。
    的确定性顺序返回；生成器不因数据内容、SAS expression 或 custom code 的语法、
    安全性和执行结果产生错误。成功时第 7 组的对外结果仍只有 SAS source text。
 
-6. 不生成 provenance comment、metadata hash、binding profile、sidecar、manifest、
-   日志或结果文件。生成 source 只包含第 7 组规定的系统代码、关键操作注释和用户
+6. 不生成 provenance comment、metadata hash、binding profile 或 sidecar；bundle 的
+   `manifest.yaml` 仅用于声明 `schema_version`，不进入生成的 SAS source。
+   生成 source 只包含第 7 组规定的系统代码、关键操作注释和用户
    提供的 custom code；`parse_diagnostic` 只保留最近的导入错误，不持久化生成错误
    或运行结果。
 
@@ -323,7 +336,7 @@ Rscript、study roots 或报表执行模型。
 - 导入成功后再异步修复引用，或在失败时部分替换 workspace：未采用，避免产生
   半份 metadata 状态；引用缺失留到生成前置阶段。
 - 生成失败时返回已组装的部分 source：未采用，避免用户下载不可完整执行的程序。
-- 将 provenance 或 binding profile 写入 SAS source、YAML、manifest 或 sidecar：未
+- 将 provenance 或 binding profile 写入 SAS source、YAML 或 sidecar：未
   采用，当前产品只需要简洁的 SAS source text 和关键操作注释。
 - 为 source_data 增加 SAS 语法解析、宏展开、libref 映射或数据集存在性检查：未采用，
   这些责任属于调用方执行环境。
@@ -344,13 +357,13 @@ Rscript、study roots 或报表执行模型。
    Save/Discard/Cancel 操作、源码预览状态属于 UI-owned `ViewState`，不进入 YAML。
 3. UI/core 之间只传递显式值对象：
 
-   - `ImportRequest` 只包含 bundle bytes；
+   - `ImportRequest` 只包含 ZIP bundle bytes；
    - `BundleImportResult` 由 core 返回候选 workspace 或第 8 组错误项；
    - `GenerationRequest` 只包含已保存 snapshot、目标 `table_id` 和 registry；
    - 成功生成返回 SAS source text；UI 再构造 `DownloadPayload`（文件名、MIME 和
      内存内容）。
 
-   core 不创建、读取、替换或删除用户文件；UI 适配器负责把上传文件立即读成 bytes，
+   core 不创建、读取、替换或删除用户文件；UI 适配器负责把上传 ZIP 立即读成 bytes，
    并负责源码预览和 `{table_id}.sas` 下载。上传路径和下载路径不得进入 workspace
    或 generator。
 4. dirty draft 的拦截由 UI 统一处理：
@@ -377,7 +390,9 @@ Rscript、study roots 或报表执行模型。
    不读取数据；失败时原 draft 保持不变。
 7. UI 只展示 core 返回的英文事实型错误项，不建立第二套验证、翻译或建议模型。core
    测试不启动 Shiny、不读取真实上传路径，也不依赖 session state；UI 测试使用内存
-   bytes 和 mock core 结果。
+   ZIP bytes 和 mock core 结果。P7/P8 还必须使用 `shinytest2` 验证按钮交互，包括
+   Import、Save、Discard、Cancel、dirty guard、Delete/Confirm Delete、选择、
+   Generate 以及 metadata/SAS 下载。
 
 ### 被拒绝的替代方案
 

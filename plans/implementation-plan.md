@@ -12,8 +12,9 @@
 
 - 产品只生成 SAS source text，不读取或上传 SAS 分析数据，不执行 SAS，不生成
   R/RTF/PDF/HTML/ODS/PROC REPORT 或运行结果。
-- metadata 采用单文件 canonical YAML；core 只处理内存值和显式 bytes，不依赖
-  固定 metadata 路径。
+- metadata bundle 采用 ZIP canonical archive；archive 内含最小 `manifest.yaml`、
+  `populations.yaml`、`headers.yaml` 以及独立的 `tables/`、`templates/` YAML 文件。
+  core 只处理内存值和显式 archive bytes，不依赖固定 metadata 路径。
 - 每个 Shiny session 独占一个 `MetadataWorkspace`；core 不接收 Shiny session、
   input/output、上传临时路径或下载路径。
 - ref 只提供字段和业务语义参考；R data frame、R expression、R runtime、study
@@ -71,7 +72,7 @@ service；P7 不向任何 core 阶段提供输入，因此不会形成环。
 | 阶段 | 名称 | 依赖 | 主要交付物 |
 | --- | --- | --- | --- |
 | P0 | 实施基线与剩余实现级契约锁定 | 设计文档 | 依赖锁定、emitter 微契约、测试基线 |
-| P1 | Metadata 对象、canonical YAML 与结构错误 | P0 | value model、YAML codec、结构错误和 round-trip tests |
+| P1 | Metadata 对象、canonical YAML/ZIP 与结构错误 | P0 | value model、multi-file YAML/ZIP codec、结构错误和 round-trip tests |
 | P2 | Workspace、draft 与 revision | P1 | session-owned state service、CRUD、draft tests |
 | P3 | Chunk registry 与类型契约 | P0 | `ChunkTypeDefinition`、字段规则、registry tests |
 | P4 | SAS source generator 核心 | P0、P1、P3 | source sections、reference resolution、operation comments、generation errors |
@@ -122,7 +123,7 @@ P0-6 的专用规范化输入方案、P0-7 的公共 long-form statistic/render 
 的 SAS emitter 微契约与 source regression 边界均已确认。P0 gate 完成；后续阶段
 只实现已批准的契约，不再新增隐含的 emitter 规则。
 
-### P1：Metadata 对象、canonical YAML 与结构错误
+### P1：Metadata 对象、canonical YAML/ZIP 与结构错误
 
 **依赖**：P0 的 parser/toolchain 和错误微契约。
 
@@ -132,8 +133,12 @@ P0-6 的专用规范化输入方案、P0-7 的公共 long-form statistic/render 
 
 - 普通 R list value model，覆盖 bundle、population、header、table、template、
   chunk、row、level、analysis block 和 statistic；
-- strict single-document YAML decoder/encoder；导入允许有效 UTF-8 的 BOM/CRLF，
+- strict ZIP archive decoder/encoder；archive 必须包含最小 `manifest.yaml`、
+  `populations.yaml` 和 `headers.yaml`，并按 `tables/<id>.yaml`、
+  `templates/<id>.yaml` 读取独立对象文件；导入允许有效 UTF-8 的 BOM/CRLF，
   导出固定 UTF-8、无 BOM、LF、两空格和字段顺序；
+- ZIP entry path/duplicate/unknown-file/symlink checks，table/template filename
+  stem 与内部 ID 一致，目录文件按 ID 字典序形成 workspace sequence；
 - unknown field、duplicate key、unsupported YAML feature、schema/version、ID、
   discriminator 和 required-field 的结构错误；registry-dependent type checks use the
   P0 discriminator/interface contract；跨对象引用继续允许延迟；
@@ -143,7 +148,7 @@ P0-6 的专用规范化输入方案、P0-7 的公共 long-form statistic/render 
 **不做**：不读取 SAS 数据，不执行表达式，不解析 custom code，不实现 workspace
 替换，不检查跨对象引用是否存在。
 
-**测试**：valid bundle round trip、canonical byte stability、BOM/CRLF normalization、
+**测试**：valid ZIP bundle round trip、canonical archive stability、BOM/CRLF normalization、
 invalid UTF-8/YAML、multi-document、duplicate key、anchor/tag/merge key、unknown
 field、missing/duplicate ID、discriminator/type-shape errors、stable multi-error ordering。
 
@@ -288,7 +293,7 @@ assembly source tests。
 
 **依赖**：P2 的 workspace/draft service，P4 的 generator，P5 的 emitters。
 
-**输入**：raw bundle bytes、workspace state、saved snapshot 和 table ID。
+**输入**：raw ZIP bundle bytes、workspace state、saved snapshot 和 table ID。
 
 **必须产出**：
 
@@ -323,7 +328,9 @@ payload contract。
 - Import/Save/Discard/Cancel dirty guard；
 - saved-snapshot metadata download、SAS preview 和 cleaned `{table_id}.sas` download；
 - English user-facing labels and error presentation；
-- UI tests using in-memory bytes and mock core results。
+- UI tests using in-memory ZIP bytes and mock core results；
+- `shinytest2` browser tests for Import, Save, Discard, Cancel, dirty guards,
+  Delete/Confirm Delete, selection, Generate, and metadata/SAS downloads。
 
 **不做**：不在 UI 重新解析 YAML/SAS expression，不实现第二套 validator/error model，
 不直接访问 SAS 数据，不把 ViewState/revision 写入 bundle。
@@ -338,7 +345,9 @@ payload contract。
 **必须产出**：
 
 - pure core 的全套 focused tests 与跨模块 integration tests；
-- synthetic YAML bundle 到确定性 SAS source 的完整闭环测试；
+- synthetic ZIP bundle 到确定性 SAS source 的完整闭环测试；
+- `shinytest2` browser regression covering button interactions, dirty guards,
+  reload-after-save, and download actions；
 - import failure、save failure、reference failure、emitter failure 和 dirty guard
   的 UI/core boundary tests；
 - source section order、operation comments、relative precision、compatible mixed chunks

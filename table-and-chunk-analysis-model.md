@@ -92,10 +92,34 @@ table 级 custom code 不属于 template。
 使用以 ID 为键的 mapping；两种形式必须保持相同的对象字段和业务顺序。实现
 应选择一种 canonical serialization 并固定下来。
 
-## 3. 单一 Metadata Bundle 文件
+## 3. Metadata Bundle 压缩包
 
-建议使用一个文件承载整个可编辑工作区。下面的 YAML 是逻辑示例，不绑定具体
-文件扩展名，也不包含数据集内容：
+Metadata bundle 使用一个 ZIP 压缩包承载整个可编辑工作区。压缩包保留最小的
+`manifest.yaml`，用于声明 bundle 格式版本；population、header、table 和
+template 使用独立 YAML 文件，便于 template 在不同研究之间复制和移动。压缩包
+不包含数据集内容。
+
+固定布局如下：
+
+~~~text
+manifest.yaml
+populations.yaml
+headers.yaml
+tables/<table_id>.yaml
+templates/<template_id>.yaml
+~~~
+
+`manifest.yaml` 只包含：
+
+~~~yaml
+schema_version: 1
+~~~
+
+`populations.yaml` 的根字段为 `populations`，`headers.yaml` 的根字段为
+`headers`；每个 `tables/<table_id>.yaml` 和 `templates/<template_id>.yaml`
+的根节点分别是一个 TableSpec 或 TemplateSpec 对象本身。
+
+下面的 YAML 片段展示各文件中的逻辑内容，不表示单一文件布局：
 
 ~~~yaml
 schema_version: 1
@@ -159,37 +183,44 @@ templates:
               cell_format: '{mean} ({sd})'
 ~~~
 
-### 3.1 Bundle 顶层字段
+### 3.1 Bundle 文件与对象字段
 
 | 字段 | 类型 | 语义 |
 | --- | --- | --- |
-| schema_version | integer | bundle 格式版本；实现应固定并在导入时识别。 |
-| populations | sequence 或 mapping | 可复用 population 定义。 |
-| headers | sequence 或 mapping | 可复用 header 定义。 |
-| tables | sequence 或 mapping | table 定义；table 是生成入口。 |
-| templates | sequence 或 mapping | 可复用 template 定义。 |
+| `manifest.yaml.schema_version` | integer | bundle 格式版本；当前固定为 1。 |
+| `populations.yaml.populations` | sequence | 可复用 population 定义。 |
+| `headers.yaml.headers` | sequence | 可复用 header 定义。 |
+| `tables/<table_id>.yaml` | mapping | 单个 table 定义；table 是生成入口。 |
+| `templates/<template_id>.yaml` | mapping | 单个可复用 template 定义。 |
 
 bundle 不包含 datasets、数据文件、数据路径、study 根目录、生成目录、运行
 结果、日志或 AI 状态。
 
 ### 3.2 导入与下载
 
-- **导入**：UI 接收一个 bundle 文件，读取其内容并构造候选
-  MetadataWorkspace。当前项目采用原子整体替换：只有整个 YAML bundle 成功
-  解析并通过结构解码后才替换当前工作区；失败时保留旧 metadata、active draft
-  和 revision；合并导入不在当前契约内。
+- **导入**：UI 接收一个 ZIP bundle，读取压缩包 entries 并构造候选
+  MetadataWorkspace。当前项目采用原子整体替换：只有 manifest、两个 catalog、
+  所有 table/template 文件均成功读取、解析并通过结构解码后才替换当前工作区；
+  失败时保留旧 metadata、active draft 和 revision；合并导入不在当前契约内。
 - **导入错误**：导入结果使用 `passed`、候选 workspace 和有序 `errors`。YAML
   解析失败或无法继续遍历时只返回根路径 `$` 的错误；可继续遍历的结构错误按
   canonical 字段和 sequence 顺序返回。失败时只允许更新 workspace 的
   `parse_diagnostic`，成功时清除旧导入诊断并清空旧 draft/选择状态。
-- **YAML 导入 profile**：canonical 下载为 UTF-8、无 BOM、LF；导入接受有效 UTF-8
-  的 BOM 或 CRLF 并在内存中规范化。导入是严格单文档；未知字段、重复 key、
-  anchor/alias、tag、merge key、未知 chunk type、缺失/重复 ID 和 discriminator
-  不一致均为结构错误。跨对象引用存在性留到生成前置阶段。
+- **YAML 导入 profile**：每个 entry 都是严格单文档 YAML；canonical 文件内容为
+  UTF-8、无 BOM、LF，导入接受有效 UTF-8 的 BOM 或 CRLF 并在内存中规范化。未知
+  字段、重复 key、anchor/alias、tag、merge key、未知 chunk type、缺失/重复 ID
+  和 discriminator 不一致均为结构错误。跨对象引用存在性留到生成前置阶段。
+- **ZIP 导入 profile**：只接受固定根级文件、`tables/` 和 `templates/` 下的直接
+  `.yaml` 文件；拒绝未知 entry、重复 entry、绝对路径、路径分隔符逃逸、嵌套目录
+  和符号链接。table/template 文件名 stem 必须与文件内部 `id` 一致。catalog 和
+  文件集合按文件名 ID 的字典序形成工作区 sequence；每个文件内部 sequence 保留
+  业务顺序。
 - **编辑**：所有修改先进入当前 session 的 draft，再写回内存工作区；不写入
   物理 metadata 文档。
 - **下载 metadata**：将当前内存工作区按 canonical YAML serialization 编码为
-  一个 `.yaml` bundle 文件。下载内容不包含临时上传路径、session ID 或 UI 状态。
+  一个 `.zip` bundle 文件。导出 ZIP 使用上述固定布局和确定性 entry 顺序；内容不
+  包含临时上传路径、session ID 或 UI 状态。独立 template 文件可直接复制到其他
+  bundle 的 `templates/` 目录复用。
 - **下载 SAS**：选择一个 table 后，生成器返回 SAS source text，UI 将其作为
   .sas 文件下载或显示预览。
 - **会话边界**：浏览器/session 结束后，未下载的内存修改可以丢失；是否增加
@@ -1088,8 +1119,8 @@ expected-cell skeleton 负责补回零计数；分母为零时 `n=0`、`pct` 为
 
 生成器不计算或输出 `GenerationProvenance`、metadata hash 或 binding profile。成功
 source 只包含系统生成的 SAS code、关键数据操作的简短 English operation comments
-和用户提供的 custom code；不生成 provenance comment、sidecar、manifest、持久化日志
-或结果文件。相同的 canonical snapshot、registry 和 generator contract 应生成相同的
+和用户提供的 custom code；SAS source 不包含 provenance comment、sidecar 或 manifest，
+也不生成持久化日志或结果文件。相同的 canonical snapshot、registry 和 generator contract 应生成相同的
 source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARNING: [USER] ...` 只
 写入调用方的 SAS log。
 

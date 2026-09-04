@@ -44,15 +44,36 @@
 
 ## 明确不能沿用的 ref 边界
 
-- `study.yaml` 作为多文件 study 入口、`metadata/` 固定目录、roots、datasets
-  清单和绝对/相对物理路径：当前项目使用单文件 bundle、session 内存 workspace，
-  不保存 study root、dataset 文件路径或 artifact path。
+- ref 的 `study.yaml`、`metadata/` 固定目录、roots、datasets 清单和绝对/相对物理
+  路径不进入本项目；当前项目改用 ZIP bundle，保留 `manifest.yaml`、
+  `populations.yaml`、`headers.yaml` 以及独立的 `tables/`、`templates/` 文件，
+  但仍使用 session 内存 workspace，不保存 study root、dataset 文件路径或 artifact
+  path。
 - `orientation`、`titles`、`footnotes`、page header/footer、RTF reporter profile：
   当前 TableSpec 不包含这些字段，也不生成报表文件。
 - R program/manifest、Rscript 执行、runtime snapshot、stdout/stderr、run history
   和 artifact replace policy：当前唯一必需产物是 SAS source text。
 - ref 的数据文件存在性、R expression parse、变量类型、USUBJID 实际唯一性等
   运行/数据校验：当前平台不读取或验证 SAS 数据。
+
+## Bundle transport 对齐决定
+
+本项目沿用 ref 的独立 catalog、table 和 template 文件语义，但不迁移 ref 的
+`study.yaml`、study roots 或物理目录职责。当前 bundle 是 ZIP 压缩包，固定布局为：
+
+~~~text
+manifest.yaml
+populations.yaml
+headers.yaml
+tables/<table_id>.yaml
+templates/<template_id>.yaml
+~~~
+
+`manifest.yaml` 只包含 `schema_version: 1`；catalog 使用各自的根字段，table/template
+文件根节点分别是对象本身。对象文件按 ID 字典序装载，文件名 stem 必须与内部 ID 一致。
+独立 template 文件可复制到其他 bundle 复用；ZIP entry 的未知文件、非法路径、重复
+entry、嵌套目录和符号链接均拒绝。每个 YAML entry 仍使用本项目的 strict single-document
+和 canonical encoding 规则。
 
 ## Ref 对齐后已由本项目确认的事项
 
