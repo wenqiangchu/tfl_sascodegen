@@ -35,16 +35,18 @@ population、header、table、template、chunk 以及内存态编辑工作区，
 
 ### 1.2 本文刻意不替实现决定的内容
 
-以下内容仍需在实现中单独确认，本文只提供待确认的边界；本项目已批准的
-bundle YAML、sequence 和导入替换语义记录在 `docs/design-decisions.md`：
+以下内容属于实现边界，不是用户 YAML 字段；当前项目的具体 SAS emitter 微契约已
+记录在 `docs/design-decisions.md` 的 P0-8，bundle YAML、sequence 和导入替换语义
+也记录在那里：
 
 - source_data 仅要求为非空字符串；其 SAS 语法和宏变量含义由调用方保证；
 - 四类 chunk 的具体 SAS emitter 步骤、中间 raw 输出字段和最终输出字段；兼容 batch
-  的专用规范化输入字段和 `_TFL_` 命名边界已在 P0-6 确认；
-- 分位数方法、四舍五入、格式化和不可估计值的具体 SAS 实现；
-- cell_format 是生成字符型 cell 数据集、PROC REPORT 代码，还是两者都生成；
+  的专用规范化输入字段和 `_TFL_` 命名边界由 P0-6/P0-8 冻结；
+- 分位数方法、四舍五入、格式化和不可估计值的具体 SAS 实现由 P0-4/P0-8 冻结；
+- `cell_format` 由 render DATA step 使用 `TRANWRD`、`ROUND` 和 `PUTN` 生成字符型
+  logical cell；本项目不生成 PROC REPORT；
 - ODS/报表代码明确不属于当前范围；本文只返回 SAS 源码，不生成报告文件；
-- 是否需要在 UI 中保留单 stub/层级布局限制。它不是 SAS 代码生成的必然限制。
+- UI 的具体控件布局属于实施阶段，不改变已确认的单 stub/层级 row 语义。
 
 ### 1.3 明确不属于系统职责
 
@@ -345,9 +347,9 @@ header.source_data
 USUBJID | header_column_id
 ~~~
 
-这里的字段名和中间数据集名属于待确认的 SAS emitter contract。平台不读取
-source_data，也不检查其 SAS 语法、宏变量、libref、member、数据集或变量是否存在，
-不检查 USUBJID 是否存在、唯一或非缺失。
+这里的字段名和中间数据集名属于已确认的 SAS emitter contract（具体物理字段见
+P0-8）。平台不读取 source_data，也不检查其 SAS 语法、宏变量、libref、member、
+数据集或变量是否存在，不检查 USUBJID 是否存在、唯一或非缺失。
 
 ## 6. Table 模型（精简版）
 
@@ -527,9 +529,8 @@ metadata position ID。所有 statistic/render 对象均只存在于 SAS `WORK` 
 
 ## 9. 四类 Chunk 模型
 
-四类 chunk 的分析意图、数据粒度、merge 顺序以及 analysis/render 边界已确认；
-每类的具体 SAS 实现、输出 schema 和精确过程仍需在 emitter contract 中确认。
-以下字段是声明式输入。
+四类 chunk 的分析意图、数据粒度、merge 顺序、analysis/render 边界和 SAS emitter
+微契约均已确认；以下字段是声明式输入。
 
 ### 9.1 continuous_summary
 
@@ -560,14 +561,13 @@ rows:
 - n 表示当前 header column 中 analysis variable 非缺失的唯一 subject
   数。
 - mean、sd、分位数、min、max 通常排除 SAS numeric missing values。
-- sd 通常表示 sample standard deviation；分母 n-1 的实现必须由 SAS emitter
-  明确。
+- sd 表示 sample standard deviation；分母为 n-1。
 - 同一个 subject 出现多条记录时，平台不自动取第一条、最大值或平均值。调用方
   必须在外部准备符合预期粒度的数据，或在 custom before 中明确整理。
 
 emitter 固定使用 `PROC MEANS` 生成上述统计量；不显式设置 `PCTLDEF`，直接采用
 SAS 默认的 percentile definition。missing、n=0、n=1、rounding、digits 和最终字符
-cell 的字段类型按已确认的 emitter contract 处理。
+cell 的字段类型按 P0-8 的 emitter contract 处理。
 
 ### 9.2 categorical_summary_nonexclusive
 
@@ -601,11 +601,10 @@ rows:
 - header_population 使用当前 header column 的 population subjects；non_missing
   和 custom 在 filtered source 上构造分母。
 - denominator 为零时，已确认 `n=0`、`pct` 为 not estimable，最终显示为 `NE`；具体
-  SAS 字段和 DATA/PROC 实现仍由 emitter contract 确认。
+  SAS 字段和 DATA/PROC 实现按 P0-8 的 emitter contract 生成。
 
-SAS emitter 必须确认 denominator 的 DATA step/SQL 实现、subject 去重方式、
-百分比精度和字符格式。平台不读取数据，也不检查 numerator 是否超过
-denominator。
+SAS emitter 按 P0-8 的 DATA step/PROC 实现 denominator、subject counting unit、
+百分比精度和字符格式。平台不读取数据，也不检查 numerator 是否超过 denominator。
 
 ### 9.3 categorical_summary_exclusive
 
@@ -757,8 +756,8 @@ denominator:
 ~~~
 
 scope 表示生成代码应使用的业务范围，不由 generator 隐式推断。层级排序、
-动态节点发现、record-to-subject 广播和最终单 stub/报表布局的具体 SAS 实现，
-均属于待确认的 emitter contract。
+动态节点发现、record-to-subject 广播和最终单 stub row 的 SAS 实现按 P0-8 的
+hierarchical emitter contract 执行。
 
 ## 10. SAS 表达式与缺失值语义
 
@@ -1096,14 +1095,14 @@ source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARN
 
 ## 14. 四类 SAS Emitter 实施契约矩阵
 
-以下清单用于实现和回归测试；第 7 组已确认其职责边界，具体 SAS 语句和内部物理
-对象不成为用户 YAML 契约：
+以下清单用于实现和回归测试；具体 SAS 语句和内部物理对象已在 P0-8 冻结为
+code-owned 实现，不成为用户 YAML 契约：
 
-| Chunk | 需要确认的 SAS 实现 | 需要确认的输出 |
+| Chunk | 已确认的 SAS 实现 | 已确认的 logical output |
 | --- | --- | --- |
 | continuous_summary | `PROC MEANS` 默认 percentile、兼容 batch 的规范化输入（`chunk_order`/`column_order`/`analysis_value`）、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段；batch identity 不改变 logical-cell identity |
 | categorical_summary_nonexclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段；batch identity 不改变 logical-cell identity |
-| categorical_summary_exclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、按 counting unit 生成 overlap guard 和 `WARNING: [USER] ...`；具体继续执行细节 | 同上，以及 counting unit 语义 |
+| categorical_summary_exclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、按 typed counting unit 生成非阻断 overlap guard 和固定字段顺序的 `WARNING: [USER] ...` | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |
 
 实现不得根据 YAML 注入 handler，也不得把 PROC、percentile definition 或物理临时
@@ -1112,11 +1111,6 @@ source。生成前置失败时不返回部分 source；SAS 执行期间的 `WARN
 
 ## 15. 启动前的确认清单
 
-以下项目仍需确认，文档才可作为完整的 SAS 生成实施契约：
-
-1. emitter 具体实现的依赖锁定、具体 DATA/PROC 语句、raw output schema 和 source
-   regression fixtures；P0-6 已锁定专用 normalization fields/key 的高层边界，YAML
-   parser/toolchain 已由 P0-1 锁定。
-
-在上述确认完成前，本文可以作为模型和 UI 设计底稿，但不能被当作已经冻结的
-SAS 代码生成实现规范。
+P0-1 至 P0-8 已完成启动前设计确认。emitter 实现使用 P0-1 已锁定的 R/YAML 工具
+链和无新增运行时依赖的 SAS 基础 DATA step/PROC；后续按 `plans/implementation-plan.md`
+的 DAG 实施，并以 P0-8 的 source regression fixture 作为 gate。

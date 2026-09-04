@@ -492,7 +492,7 @@ binding profile 或 provenance 输出。
 
 ## P0-4：SAS emitter 过程、内部长表与数值格式
 
-状态：部分确认（2026-09-03）。连续统计采用 `PROC MEANS`，分类计数采用
+状态：已确认（2026-09-03；具体实现微契约见 P0-8）。连续统计采用 `PROC MEANS`，分类计数采用
 `PROC FREQ`；内部结果使用 long-form SAS 数据集；运行期数据契约异常采用 SAS log
 warning。应用可以提示自身的生成错误，但当前不执行 SAS，不能自动捕获 SAS compiler
 error。
@@ -526,16 +526,13 @@ error。
 7. 对生成代码能够检查的运行期重复性或其他数据契约异常，使用 SAS `PUTLOG` 输出
    `WARNING: [USER] ...`，不执行 `ABORT CANCEL`。warning 只提供诊断，不隐式去重、
    聚合、跳过或改写输入；在没有其他 SAS 错误时，代码继续沿既定路径运行，结果是否
-   可接受由调用方根据 log 判断。例如生成代码可输出
-   `putlog "WARNING: [USER] Duplicate subject key in chunk=c001.";`。
+   可接受由调用方根据 log 判断。具体 warning 字段顺序由 P0-8 固定。
 8. host-side 的 table/reference/emitter 错误继续使用 `ErrorItem` 并可由 UI 立即提示。
    SAS compiler 或运行期 log 不由本应用执行、捕获或持久化；如需集成 SAS 编译/执行，
    必须另行扩大产品边界并确认新的 subsystem。
 
-### 待确认
-
-1. warning 文本的具体字段顺序和每类 emitter 的 source regression fixture；不改变
-   `WARNING: [USER]` 前缀、非阻断和不自动修复的边界。
+P0-8 已补充 warning 字段顺序、物理列类型、DATA/PROC 组合、render 转换和 source
+regression fixture 边界；这些细节不进入用户 YAML。
 
 ## P0-5：Table 内兼容 Chunk 的批处理
 
@@ -672,6 +669,184 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
 - 把 denominator、batch ID、SAS 物理 dataset 名或 runtime node value 暴露到 YAML：未
   采用，这些属于 emitter 或生成期内部状态。
 - 将整个 cell 统一替换为 `NE`：未采用，字段级 `NE` 允许例如 `5.0 (NE)` 的结果。
+
+## P0-8：SAS emitter 微契约与 source regression
+
+状态：已确认（2026-09-04）。本组冻结生成期的 SAS 实现边界，但不把实现细节
+暴露为 YAML 字段。emitter 仍只生成 source text；平台不执行 SAS、不读取数据、
+不捕获 SAS log。
+
+### 已批准
+
+1. 所有运行期对象都位于 `WORK`，使用 `_TFL_` 加固定类型和三位 batch/sequence
+   编号命名；用户提供的 table、chunk、row、column 或 dataset ID 不进入物理名称。
+   首期使用以下对象类别：population、membership、chunk-filtered source、
+   continuous input/precision/raw、categorical input/raw、hierarchical nodes、
+   statistic、render 和 assembly。对象由生成器按确定顺序创建，直到
+   `custom_code.after` 结束前不主动删除，由 `WORK` 生命周期回收。
+
+2. 物理 long-form 结果字段固定如下；字段顺序也是 canonical DATA step 和 source
+   regression 的顺序。emitter-owned 字符型 identity 字段使用显式 `LENGTH`，长度至少能容纳
+   对应 metadata/runtime value；emitter 不截断 opaque ID 或 label，也不把长度
+   约束新增到 YAML：
+
+   | 对象 | 字段与 SAS 类型 |
+   | --- | --- |
+   | `ChunkStatisticValue` | `chunk_id` character、`row_id` character、`header_column_id` character、`statistic_id` character、`value` numeric 8-byte、`estimable` numeric 8-byte、`resolved_digits` numeric 8-byte |
+   | `HierarchicalStatisticValue` | 在公共 statistic 字段之后追加 `analysis_id` character、`group_path` character、`node_key` character |
+   | `ChunkRenderResult` | `chunk_id` character、`row_id` character、`label` character、`indent_level` numeric 8-byte、`header_column_id` character、`cell_text` character |
+   | `HierarchicalRenderRow` | 在公共 render 字段之后追加 `runtime_row_id` character、`row_role` character |
+
+   `value` 是 SAS numeric 8-byte double；不可估计时为 numeric missing，且
+   `estimable=0`。`n` 的 `estimable` 始终为 1，`resolved_digits` 为 missing。
+   字符字段使用显式 `LENGTH`，不得依赖 SAS 对首次赋值的隐式长度推断。外部数据键
+   `USUBJID` 是例外：membership 和 chunk source 继承各自 source dataset 的类型与
+   长度，emitter 不为它设置固定长度、不重编码或截断；不同 source 之间的 key 兼容性
+   仍属于调用方的数据契约，平台不读取或检查。
+
+3. population/header 阶段按以下固定顺序生成：
+
+   ```text
+   header.source_data -> population expression -> one DATA step per header column
+   -> _TFL_MEM_<seq>
+   ```
+
+   `_TFL_MEM_<seq>` 至少包含继承自 `source_data` 的 `USUBJID`、显式长度的
+   `header_column_id` character 和 `column_order` numeric，按 `display_order` 输出；
+   `header_column_id` 使用确定性的 SAS character literal 编码。每个 column
+   condition 独立求值，重叠 membership 保留；不命中任何 column 的 subject 不输出。
+   生成前加入一个简短的 English operation comment。该步骤不对 `source_data` 或
+   表达式做改写。
+
+4. 每个 primitive chunk 先独立生成 source/filter/guard/merge，再写入专用 batch
+   input。source/filter 使用 DATA step `SET <source_data>;` 和 `IF`/`DELETE`，其中
+   `<source_data>` 是原样 source text；filter 缺省时不生成额外条件。subject-grain
+   chunk 在 filter 后按 `USUBJID` 排序并生成非阻断重复 key warning，不使用
+   `NODUPKEY`、first-record 选择或聚合。随后以 membership 为左侧输入执行显式
+   `USUBJID` merge；缺失 source record 保留 scaffold 行，categorical row condition
+   不在该缺失行上执行。每个关键操作前有一个确定性的 English comment。
+
+5. continuous batch 固定使用以下步骤：
+
+   ```text
+   per-chunk filtered/merged source
+     -> _TFL_CIN_<batch> (chunk_order, column_order, analysis_value, source_row)
+     -> _TFL_CPREC_<batch> (chunk_order, source_row, analysis_value)
+     -> _TFL_CKEY_<batch> (all chunk/column keys)
+     -> one PROC MEANS
+     -> _TFL_CRAW_<batch>
+     -> _TFL_STAT_<batch>
+     -> _TFL_REND_<batch>
+   ```
+
+   `_TFL_CIN_<batch>` 的前三个字段固定为 `chunk_order` numeric 8-byte、
+   `column_order` numeric 8-byte、
+   `analysis_value` numeric 8-byte，并保留内部 `source_row` numeric 8-byte 以区分违反 subject grain 的
+   source records。`PROC MEANS` 使用 `CLASS chunk_order column_order`、
+   `VAR analysis_value` 和 `OUTPUT OUT=`，使用显式别名
+   `N=_n MEAN=_mean STD=_sd MEDIAN=_median Q1=_q1 Q3=_q3 MIN=_min MAX=_max`；
+   不设置 `PCTLDEF`，也不使用 FREQ 默认百分比。`STD` 是 sample SD。`_TFL_CKEY_`
+   先提供每个 chunk/column 组合，raw wide output 由一个 DATA step 按统计量固定
+   顺序展开为 long-form；缺失分析组补为 `n=0` 且其他 statistic 不可估计。
+   row/statistic map 只生成声明的 analysis rows，label rows 生成空 cell。
+
+   precision input 从 filtered source 与至少一个 membership column 的交集生成；
+   同一个 source row 因多个 columns 重复时只保留一次，违反 subject grain 的不同
+   source rows 不被静默合并。`base_digits` 使用已确认的 15 位有效数字、非科学
+   计数法和去除小数尾零规则；所有 columns 共用该值，relative digits 按
+   `base_digits + offset` 解析，负结果作为 generation contract failure。
+
+6. categorical batch 固定使用以下步骤：
+
+   ```text
+   per-chunk filtered/merged source
+     -> _TFL_KIN_<batch> (chunk_order, row_order, column_order, counting event)
+     -> optional exclusive overlap guard
+     -> one PROC FREQ
+     -> expected-cell skeleton + _TFL_KRAW_<batch>
+     -> _TFL_STAT_<batch>
+     -> _TFL_REND_<batch>
+   ```
+
+   `_TFL_KIN_<batch>` 的 `row_order=0` 是 denominator event，正数是 numerator
+   event；其固定分析键为 numeric 8-byte 的 `chunk_order`、`row_order` 和
+   `column_order`。
+   counting-unit identity、必要的 source row/record key 和仅供诊断的 key text 可
+   作为额外字段保留，但不通过字符串拼接替代 typed key 的排序或去重。每个
+   denominator unit 每个 column 只产生一个 denominator event；nonexclusive 的
+   一个 unit 可以产生多个 row events。`PROC FREQ` 使用
+   `TABLES chunk_order*row_order*column_order / OUT=`，raw `COUNT` 是唯一采用的
+   计数来源，FREQ 的 `PERCENT` 列被忽略。
+
+   expected-cell skeleton 显式覆盖每个 batch chunk、每个 header column、denominator
+   行和声明的 analysis rows；与 FREQ raw count 合并后，缺失 count 补为 0。分母
+   大于 0 时 `pct=100*n/denominator`，分母为 0 时 `n=0`、`pct` 的
+   `estimable=0`，render 为 `NE`。该补全不改变 nonexclusive overlap，也不隐藏
+   exclusive warning。
+
+7. `categorical_summary_exclusive` 在 FREQ 前对已 materialize 的 counting-unit
+   events 做 guard。按 typed counting-unit key、`chunk_order` 和 `column_order`
+   排序；一个 unit 命中多个正 `row_order` 时只写一条非阻断 warning，继续将原始
+   events 送入 FREQ。warning 的稳定字段顺序为：
+
+   ```text
+   WARNING: [USER] exclusive_overlap chunk_order=<n> column_order=<n> unit=<text> row_orders=<list>.
+   ```
+
+   `unit` 是仅用于日志的确定性文本，`row_orders` 按数值升序并以逗号连接；未命中
+   任何 row 不产生 warning。重复 subject/record key 的稳定文本为：
+
+   ```text
+   WARNING: [USER] duplicate_key chunk_order=<n> unit=<text> count=<n>.
+   ```
+
+   duplicate key warning 和 overlap warning 都不改变输入记录。
+
+8. render 只消费 long-form statistic，不重新计算统计量。对每个 row/header cell，
+   以 `cell_format` literal 初始化字符变量，再按 metadata statistic sequence 使用
+   `TRANWRD` 替换 `{statistic_id}`：`estimable=0` 替换为 `NE`；`n` 使用无小数位
+   `PUTN`；其他 numeric value 先用 `ROUND(value, 10 ** (-resolved_digits))`，
+   将 rounded zero 归一化为正零，再用动态 `F<w>.<d>` 格式和 `PUTN` 输出固定小数
+   位与尾随零。`w` 由 emitter 以 `resolved_digits` 确定性计算，literal `%` 不做
+   特殊处理。每个 placeholder 独立替换，因此同一 cell 可以包含例如 `5.0 (NE)`。
+   render 完成后保证 `cell_text` 为非 missing character；label row 对每个 column
+   输出空字符串。
+
+9. hierarchical emitter 不跨 container 合批，固定执行：source/filter/key guard、
+   在所有展示 columns 的联合 eligible source 上发现 levels、按每个 level 的
+   `order_variable`/`order_direction` 或 `result_sort` 排序、按
+   `node_role`/`placement` 递归展开，再在节点 scope 内调用已注册 primitive emitter。
+   动态节点以 length-prefixed component 方式生成 `group_path`/`node_key`，不使用
+   可能碰撞的裸分隔符拼接；动态 label、runtime row ID 和 row role 只进入运行期
+   hierarchical result。输出顺序固定为当前节点行、该 level 的 below static rows、
+   下一级 dynamic children。primitive raw statistic 仍映射到公共字段，hierarchical
+   扩展字段按第 2 项追加。
+
+10. source regression fixture 只包含 synthetic metadata YAML、目标 table ID 和
+    expected SAS source assertions/golden text，不包含 SAS 数据、数据路径、用户文件、
+    运行日志或 report artifact。最低覆盖：单个 continuous、compatible continuous
+    batch、nonexclusive categorical 的 zero/denominator-zero、exclusive overlap
+    warning、hierarchical static-before-dynamic、macro `source_data` passthrough、
+    relative digits/cell formatting，以及 host-side prerequisite failure 不返回
+    partial source。测试只比较 source text、section order、关键语句出现次数和
+    deterministic bytes；不执行 SAS。
+
+11. P0-8 不增加 R 或 SAS 运行时依赖；emitter 只使用 P0-1 已锁定的 R/YAML 工具链
+    生成标准 DATA step、`PROC MEANS` 和 `PROC FREQ` source。具体 SAS 版本、宏库和
+    外部数据绑定仍由调用方执行环境负责。
+
+### 被拒绝的替代方案
+
+- 为每个 chunk 生成独立的 `PROC MEANS/FREQ`：未采用，兼容 chunk 共用一次过程。
+- 直接无条件 `SET` 多个原始 source，或用隐式类型转换、`NODUPKEY`、first-record
+  选择和聚合掩盖粒度错误：未采用；chunk 先独立规范化，重复只 warning。
+- 依赖 `PROC FREQ` 默认百分比或 `SPARSE` 代替 expected-cell skeleton：未采用，
+  百分比必须使用显式分母，零 cell 必须由 skeleton 补回。
+- 在 render 阶段直接拼接 wide cell 或让 analysis 计算字符文本：未采用，analysis
+  与 render 继续通过公共 long-form 对象分离。
+- 将 SAS 过程名、物理 dataset 名、warning 文本或 fixture 内容写入 YAML：未采用，
+  这些属于 code-owned emitter 和测试实现。
+
 
 ## 第 2 组补充：参考文档对齐与相对精度
 

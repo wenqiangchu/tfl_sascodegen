@@ -5,5 +5,5 @@ This repository is being initialized from the portable metadata contract in
 Shiny application that edits an in-memory metadata workspace and emits SAS
 source text; it does not execute SAS or manage analysis datasets.
 
-The implementation and design decisions will be added only after the open
-contract questions are confirmed.
+The design contract is recorded in `docs/design-decisions.md`; implementation
+follows the acyclic stages in `plans/implementation-plan.md`.

@@ -54,17 +54,17 @@
 - ref 的数据文件存在性、R expression parse、变量类型、USUBJID 实际唯一性等
   运行/数据校验：当前平台不读取或验证 SAS 数据。
 
-## Ref 中仍需本项目确认的事项
+## Ref 对齐后已由本项目确认的事项
 
-以下不是“自动继承”的决定，因为它们依赖 SAS 实现或当前产品边界：
+以下内容不能从 ref 自动继承，但已经由本项目的独立设计决策完成确认：
 
 1. 四类 chunk 的具体 PROC/DATA step、显式中间 dataset schema、最终 logical cell
-   schema 和 hierarchical record-to-subject 广播实现。
-2. 传输/解析错误和生成前置引用错误的最小稳定错误包络。
-
-source_data 的非空字符串和关键操作注释策略已由本项目独立确认；它们不再依赖 ref
-中的 R binding 或执行约定。
-
-continuous 的分位数过程已独立确认：使用 `PROC MEANS` 的 SAS 默认定义，不在生成
-source 中显式设置 `PCTLDEF`。这属于实现选择，不改变字段名称、统计量列表或其他
-已确认的业务边界。
+   schema 和 hierarchical record-to-subject 广播实现已在 `docs/design-decisions.md`
+   的 P0-8 冻结；这些是 code-owned emitter 细节，不进入用户 YAML。
+2. 传输/解析错误和生成前置引用错误的最小稳定错误包络已在第 8 组冻结；应用不执行
+   SAS，因此不能自动捕获 compiler 或运行期 log。
+3. `source_data` 的非空字符串、宏变量原样保留和关键操作注释策略已在 P0-3 确认；
+   它们不依赖 ref 的 R binding 或执行约定。
+4. continuous 的分位数过程已在 P0-4/P0-8 确认：使用 `PROC MEANS` 的 SAS 默认
+   定义，不在生成 source 中显式设置 `PCTLDEF`。这属于实现选择，不改变字段名称、
+   统计量列表或其他已确认的业务边界。

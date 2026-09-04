@@ -1,7 +1,7 @@
 # SAS Code Generation 实施计划
 
 状态：阶段划分已确认；详细计划 v1（2026-09-02）。P0-1 工具链与 YAML 解析
-边界已于 2026-09-03 确认，P0 仍在进行中。
+边界已于 2026-09-03 确认，P0-1 至 P0-8 的 P0 gate 已于 2026-09-04 完成。
 
 本计划基于 `table-and-chunk-analysis-model.md`、`docs/design-decisions.md` 和
 `docs/ref-alignment.md`。它只描述实现阶段、输入、产物、验收和依赖关系；在
@@ -117,8 +117,9 @@ business code；`git diff --check` 通过。
 **当前进度**：P0-1（R/YAML 工具链与严格解析边界）、P0-2（canonical YAML
 数值序列化）、P0-3（source_data 与关键操作注释）、P0-4 的 PROC、内部长表、
 数值格式化和非阻断 warning 选择、P0-5 的 table 内兼容 chunk 批处理策略，以及
-P0-6 的专用规范化输入方案、P0-7 的公共 long-form statistic/render 方案已确认；
-warning 文本顺序、物理列类型、raw/render 转换语句和具体 SAS 步骤仍需锁定。
+P0-6 的专用规范化输入方案、P0-7 的公共 long-form statistic/render 方案和 P0-8
+的 SAS emitter 微契约与 source regression 边界均已确认。P0 gate 完成；后续阶段
+只实现已批准的契约，不再新增隐含的 emitter 规则。
 
 ### P1：Metadata 对象、canonical YAML 与结构错误
 
