@@ -38,12 +38,12 @@
   metadata。
 - 生成报告文件或执行 SAS：明确超出当前产品边界。
 
-### 留待后续子系统确认
+### 实施阶段边界（不再是设计未决项）
 
 - dirty draft 时导入、切换和生成的拦截规则已在第 9 组冻结；具体控件布局留到实现阶段。
 - YAML parser/toolchain 已在 P0-1 锁定；后续只需在依赖恢复后重跑对应 gate。
-- 四类 emitter 的完整输出 schema 和运行期失败处理（后续子系统）；错误包络已在第 8 组
-  冻结。
+- 四类 emitter 的完整输出 schema 和运行期失败处理已在 P0-8 冻结；后续子系统只实现
+  已批准契约，不重新选择过程、字段或 warning 语义。
 
 ## 第 3 组：Session-owned Workspace 与 Draft 生命周期
 

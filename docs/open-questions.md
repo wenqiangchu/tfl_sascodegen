@@ -4,5 +4,5 @@
 long-form result、四类 emitter 的 SAS 微契约、warning 顺序和 source regression
 边界，详见 `docs/design-decisions.md`。
 
-后续仍有实现任务，但它们不是开放设计选择：按 P0-1 的 R/YAML 依赖基线恢复依赖、
-实现 P1-P8 阶段、编写 synthetic tests，并在不执行 SAS 的前提下比较生成 source。
+后续仍有实现任务，但它们不是开放设计选择：按 P0-1 的 R/YAML 依赖基线实现 P1-P8
+阶段、编写 synthetic tests，并在不执行 SAS 的前提下比较生成 source。

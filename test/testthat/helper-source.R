@@ -1,0 +1,6 @@
+project_root <- normalizePath(file.path(testthat::test_path(), "..", ".."),
+                              mustWork = FALSE)
+source(file.path(project_root, "src", "core", "errors.R"), local = FALSE)
+source(file.path(project_root, "src", "chunks", "registry.R"), local = FALSE)
+source(file.path(project_root, "src", "metadata", "model.R"), local = FALSE)
+source(file.path(project_root, "src", "metadata", "yaml_codec.R"), local = FALSE)
