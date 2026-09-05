@@ -31,6 +31,8 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "runtime_row_id", fixed = TRUE)
   testthat::expect_match(result$source, "static rows before dynamic children", fixed = TRUE)
   testthat::expect_match(result$source, "Nested primitive type", fixed = TRUE)
+  testthat::expect_match(result$source, "Execute nested primitive analysis for node scope", fixed = TRUE)
+  testthat::expect_match(result$source, "proc means", fixed = TRUE)
   testthat::expect_match(result$source, "Map nested primitive results to hierarchical identities", fixed = TRUE)
   testthat::expect_match(result$source, "level_component = cats(lengthn", fixed = TRUE)
   testthat::expect_match(result$source, "WARNING: [USER] duplicate_key", fixed = TRUE)
@@ -39,6 +41,7 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "data _TFL_HSTAT_001;", fixed = TRUE)
   testthat::expect_match(result$source, "out=_TFL_HFLAT_001", fixed = TRUE)
   testthat::expect_match(result$source, "by group_path row_role block_order row_order sort_key;", fixed = TRUE)
+  testthat::expect_true(length(grep("parent_node_key", result$source, fixed = TRUE)) >= 0L)
   testthat::expect_length(regmatches(result$source,
                                      gregexpr("proc sort data=adam.adae", result$source, fixed = TRUE))[[1L]], 1L)
 })

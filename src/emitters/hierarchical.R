@@ -4,6 +4,34 @@ hierarchical_source_dataset <- function(batch_order) {
   paste0("_TFL_HNODE_", sprintf("%03d", batch_order))
 }
 
+hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
+  definition <- chunk_registry_lookup(resolved$registry, block$type)
+  if (is.null(definition) || is.null(definition$emitter)) {
+    stop("Nested hierarchical primitive emitter is unavailable.", call. = FALSE)
+  }
+  chunk <- block
+  chunk$id <- paste0(plan$chunks[[1L]]$id, "_", block$id)
+  chunk$source_data <- plan$chunks[[1L]]$source_data
+  chunk$filter <- plan$chunks[[1L]]$filter %||% NULL
+  structure(list(
+    batch_order = as.integer(plan$batch_order * 100L + block_order),
+    chunk_type = definition$type_id,
+    chunk_orders = 1L,
+    chunks = list(chunk),
+    logical_maps = list(chunk_logical_map(chunk, 1L, resolved$header$columns)),
+    result_map = build_logical_result_map(chunk, 1L, resolved$header$columns,
+                                          analysis_id = block$id),
+    header_columns = resolved$header$columns,
+    membership_dataset = paste0("_TFL_HMEM_", sprintf("%03d", plan$batch_order)),
+    definition = definition,
+    input_dataset = paste0("_TFL_HIN_", sprintf("%03d", block_order)),
+    raw_dataset = paste0("_TFL_HRAW_", sprintf("%03d", block_order)),
+    precision_dataset = paste0("_TFL_HPREC_", sprintf("%03d", block_order)),
+    statistic_dataset = paste0("_TFL_HNSTAT_", sprintf("%03d", block_order)),
+    render_dataset = paste0("_TFL_HNREND_", sprintf("%03d", block_order))
+  ), class = c("PrimitiveBatchPlan", "list"))
+}
+
 hierarchical_summary_emitter <- function(plan, resolved) {
   if (!inherits(plan, "PrimitiveBatchPlan") ||
       !identical(plan$chunk_type, "hierarchical_summary") || length(plan$chunks) != 1L) {
@@ -35,8 +63,10 @@ hierarchical_summary_emitter <- function(plan, resolved) {
       paste0("  set _TFL_HLEVEL_", sprintf("%03d", index), ";"),
       paste0("  level_component = cats(lengthn(strip(", level$variable, ")), ':', strip(", level$variable, "));"),
       if (index == 1L) "  group_path = level_component;" else
-        "  group_path = cats(group_path, '|', level_component);",
+        c("  parent_node_key = node_key;",
+          "  group_path = cats(parent_node_key, '|', level_component);"),
       "  node_key = group_path;",
+      if (index > 1L) "  parent_node_key = substr(group_path, 1, lengthn(parent_node_key));" else character(),
       switch(level$missing_policy,
              exclude = paste0("  if missing(", level$variable, ");"),
              label = paste0("  if missing(", level$variable, ") then ",
@@ -60,6 +90,21 @@ hierarchical_summary_emitter <- function(plan, resolved) {
       "row_role = 'static';"
     )
   }), use.names = FALSE)
+  nested_sections <- list()
+  nested_datasets <- character()
+  for (index in seq_along(chunk$analysis_blocks)) {
+    nested_plan <- hierarchical_nested_plan(plan, chunk$analysis_blocks[[index]], index, resolved)
+    nested_output <- nested_plan$definition$emitter(nested_plan, resolved)
+    nested_sections <- c(nested_sections, list(new_source_section(
+      paste0("hierarchical_nested_", index), "nested", chunk$analysis_blocks[[index]]$id,
+      50L + index, paste(c(
+        paste0("/* Execute nested primitive analysis for node scope ", chunk$analysis_blocks[[index]]$id, ". */"),
+        vapply(nested_output$sections, `[[`, "", "text")
+      ), collapse = "\n")
+    )))
+    nested_datasets <- c(nested_datasets, nested_output$render_dataset)
+  }
+  nested_set <- if (length(nested_datasets) > 0L) paste(nested_datasets, collapse = " ") else node_dataset
   text <- c(
     "/* Filter and guard hierarchical source before level discovery. */",
     paste0("data ", node_dataset, ";"),
@@ -70,11 +115,15 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     level_lines,
     "/* Order static rows before dynamic children and preserve result sort metadata. */",
     block_lines,
+    vapply(nested_sections, `[[`, "", "text"),
     "/* Map nested primitive results to hierarchical identities. */",
     paste0("data _TFL_HSTAT_", sprintf("%03d", plan$batch_order), ";"),
     "  length analysis_id group_path node_key runtime_row_id row_role $128;",
     paste0("  set ", node_dataset, ";"),
     "  /* Nested result_map contributes chunk/row/header/statistic identity. */",
+    "  analysis_id = coalescec(analysis_id, '');",
+    "  runtime_row_id = cats(node_key, ':', analysis_id, ':', row_id);",
+    "  group_path = coalescec(group_path, '');",
     "  /* Static rows sort before dynamic children at the same node. */",
     "  sort_key = cats(group_path, '|', putn(0, 'Z6.'), '|', runtime_row_id);",
     "run;",
