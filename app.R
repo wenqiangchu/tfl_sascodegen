@@ -29,6 +29,9 @@ ui <- fluidPage(
       actionButton("save", "Save"),
       actionButton("cancel", "Cancel"),
       selectInput("table", "Table", choices = character()),
+      textInput("table_population_id", "Table population ID"),
+      textInput("table_header_id", "Table header ID"),
+      textInput("table_template_id", "Table template ID"),
       selectInput("header", "Header", choices = character()),
       textInput("header_source_data", "Header source data"),
       selectInput("template", "Template", choices = character()),
@@ -53,6 +56,7 @@ server <- function(input, output, session) {
   status <- reactiveVal("Ready.")
   source_text <- reactiveVal("")
   draft_target <- reactiveVal(NULL)
+  selected_target <- reactiveVal(NULL)
 
   refresh_tables <- function(value) {
     ids <- vapply(value$tables, `[[`, "", "id")
@@ -89,6 +93,38 @@ server <- function(input, output, session) {
       updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
     }
   }, ignoreInit = FALSE)
+
+  observeEvent(input$table, {
+    if (!is.null(draft_target()) && !identical(selected_target(), input$table)) {
+      status("Save or cancel the active draft before switching tables.")
+      showNotification(status(), type = "warning")
+      return()
+    }
+    selected_target(input$table)
+    item <- Filter(function(value) identical(value$id, input$table), workspace()$tables)
+    if (length(item) == 1L && is.null(draft_target())) {
+      updateTextInput(session, "table_population_id", value = item[[1L]]$population_id)
+      updateTextInput(session, "table_header_id", value = item[[1L]]$header_id)
+      updateTextInput(session, "table_template_id", value = item[[1L]]$template_id)
+    }
+  }, ignoreInit = FALSE)
+  observeEvent(input$table_population_id, {
+    begin_edit("table", input$table)
+    if (!is.null(draft_target())) {
+      draft <- workspace_draft_value(workspace()); draft$population_id <- input$table_population_id
+      workspace(workspace_set_draft(workspace(), draft)$workspace)
+    }
+  }, ignoreInit = TRUE)
+  observeEvent(input$table_header_id, {
+    if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$header_id <- input$table_header_id
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
+  observeEvent(input$table_template_id, {
+    if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$template_id <- input$table_template_id
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
   observeEvent(input$header_source_data, {
     begin_edit("header", input$header)
     if (!is.null(draft_target())) {
@@ -176,6 +212,8 @@ server <- function(input, output, session) {
     }
     workspace(result$workspace)
     draft_target(NULL)
+    selected_target(input$table)
+    refresh_tables(result$workspace)
     status("Draft saved.")
   })
 
@@ -183,6 +221,7 @@ server <- function(input, output, session) {
     result <- application_discard_draft(workspace())
     workspace(result$workspace)
     draft_target(NULL)
+    refresh_tables(result$workspace)
     status("Draft cancelled.")
   })
 
