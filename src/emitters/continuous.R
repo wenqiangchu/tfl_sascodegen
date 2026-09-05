@@ -85,7 +85,14 @@ continuous_batch_analysis_source <- function(plan) {
     paste0("data ", plan$render_dataset, ";"),
     "  length chunk_id row_id label header_column_id cell_text $256;",
     "  set ", plan$statistic_dataset, ";",
-    "  /* Cell formatting uses ROUND and PUTN in the registered renderer. */",
+    "  if estimable = 0 then token = 'NE';",
+    "  else if statistic_id = 'n' then token = putn(value, 'BEST32.');",
+    "  else do;",
+    "    rounded_value = ROUND(value, 10 ** (-resolved_digits));",
+    "    if rounded_value = 0 then rounded_value = 0;",
+    "    token = PUTN(rounded_value, cats('F', 32, '.', resolved_digits));",
+    "  end;",
+    "  cell_text = TRANWRD(cell_format, cats('{', statistic_id, '}'), token);",
     "run;"
   )
 }

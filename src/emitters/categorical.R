@@ -95,6 +95,10 @@ categorical_batch_analysis_source <- function(plan) {
     paste0("data ", plan$render_dataset, ";"),
     "  length chunk_id row_id label header_column_id cell_text $256;",
     paste0("  set ", plan$statistic_dataset, ";"),
+    "  if statistic_id = 'pct' and estimable = 0 then token = 'NE';",
+    "  else if statistic_id = 'n' then token = putn(value, 'BEST32.');",
+    "  else token = putn(value, 'F32.1');",
+    "  cell_text = tranwrd(cell_format, cats('{', statistic_id, '}'), token);",
     "  /* Non-estimable percentages render as NE; n remains independently estimable. */",
     "run;"
   )

@@ -25,6 +25,7 @@ testthat::test_that("default categorical emitter generates event input and one F
   testthat::expect_match(result$source, "pct = 100 * numerator / denominator", fixed = TRUE)
   testthat::expect_match(result$source, "estimable = 0", fixed = TRUE)
   testthat::expect_match(result$source, "data _TFL_KIN_001_001;", fixed = TRUE)
+  testthat::expect_match(result$source, "tranwrd", ignore.case = TRUE)
 })
 
 testthat::test_that("exclusive categorical emitter adds a nonblocking overlap guard", {
