@@ -352,6 +352,9 @@ English status/error feedback。`test/testthat/test-shinytest2.R` 覆盖初始�
 `shinytest2` 安装，但 Chromote 无法启动 Chromium，因此实际浏览器回归需在可用浏览器
 运行环境重新执行。
 
+本次补充了 population label/expression 的最小编辑闭环，以及 Save/Cancel 按钮；编辑
+通过 P6 workspace draft API 进行，保存后提升 revision，取消后恢复 saved snapshot。
+
 ### P8：集成验证、交付与维护文档
 
 **依赖**：P1-P7 的已通过 gate 产物。

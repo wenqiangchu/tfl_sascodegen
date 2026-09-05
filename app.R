@@ -23,6 +23,11 @@ ui <- fluidPage(
     sidebarPanel(
       fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
       actionButton("import", "Import"),
+      selectInput("population", "Population", choices = character()),
+      textInput("population_label", "Population label"),
+      textInput("population_expression", "Population expression"),
+      actionButton("save", "Save"),
+      actionButton("cancel", "Cancel"),
       selectInput("table", "Table", choices = character()),
       actionButton("generate", "Generate SAS"),
       downloadButton("download_bundle", "Download metadata"),
@@ -40,12 +45,66 @@ server <- function(input, output, session) {
   workspace <- reactiveVal(new_empty_workspace())
   status <- reactiveVal("Ready.")
   source_text <- reactiveVal("")
+  draft_target <- reactiveVal(NULL)
 
   refresh_tables <- function(value) {
     ids <- vapply(value$tables, `[[`, "", "id")
     updateSelectInput(session, "table", choices = ids,
                       selected = if (length(ids) > 0L) ids[[1L]] else character())
+    population_ids <- vapply(value$populations, `[[`, "", "id")
+    updateSelectInput(session, "population", choices = population_ids,
+                      selected = if (length(population_ids) > 0L) population_ids[[1L]] else character())
   }
+
+  observeEvent(list(input$population, workspace()), {
+    id <- input$population
+    if (is.null(id) || !nzchar(id)) return()
+    item <- Filter(function(value) identical(value$id, id), workspace()$populations)
+    if (length(item) == 1L && is.null(draft_target())) {
+      updateTextInput(session, "population_label", value = item[[1L]]$label)
+      updateTextInput(session, "population_expression", value = item[[1L]]$expression)
+    }
+  }, ignoreInit = FALSE)
+
+  observeEvent(input$population_label, {
+    if (is.null(input$population) || !nzchar(input$population)) return()
+    current <- workspace()
+    if (is.null(draft_target())) {
+      begun <- workspace_begin_draft(current, "population", input$population)
+      if (!begun$passed) return()
+      workspace(begun$workspace)
+      draft_target(TRUE)
+    }
+    draft <- workspace_draft_value(workspace())
+    draft$label <- input$population_label
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$population_expression, {
+    if (is.null(input$population) || !nzchar(input$population) || is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace())
+    draft$expression <- input$population_expression
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$save, {
+    result <- application_save_draft(workspace())
+    if (!result$passed) {
+      status(paste("Save failed:", error_text(result$errors)))
+      showNotification(status(), type = "error")
+      return()
+    }
+    workspace(result$workspace)
+    draft_target(NULL)
+    status("Draft saved.")
+  })
+
+  observeEvent(input$cancel, {
+    result <- application_discard_draft(workspace())
+    workspace(result$workspace)
+    draft_target(NULL)
+    status("Draft cancelled.")
+  })
 
   observeEvent(input$import, {
     req(input$bundle$datapath)
