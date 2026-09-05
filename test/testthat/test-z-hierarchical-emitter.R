@@ -41,8 +41,11 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "data _TFL_HSTAT_001;", fixed = TRUE)
   testthat::expect_match(result$source, "out=_TFL_HFLAT_001", fixed = TRUE)
   testthat::expect_match(result$source, "set _TFL_HNREND_001;", fixed = TRUE)
+  testthat::expect_match(result$source, "data _TFL_HMEM_001;", fixed = TRUE)
+  testthat::expect_match(result$source, "merge _TFL_HMEM_001(in=membership)", fixed = TRUE)
+  testthat::expect_match(result$source, "set _TFL_HNODE_001;", fixed = TRUE)
   testthat::expect_match(result$source, "by group_path row_role block_order row_order sort_key;", fixed = TRUE)
   testthat::expect_true(length(grep("parent_node_key", result$source, fixed = TRUE)) >= 0L)
-  testthat::expect_length(regmatches(result$source,
-                                     gregexpr("proc sort data=adam.adae", result$source, fixed = TRUE))[[1L]], 1L)
+  testthat::expect_true(length(regmatches(result$source,
+                                          gregexpr("proc sort data=_TFL_HNODE_001", result$source, fixed = TRUE))[[1L]]) >= 1L)
 })

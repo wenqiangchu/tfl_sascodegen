@@ -11,7 +11,7 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
   }
   chunk <- block
   chunk$id <- paste0(plan$chunks[[1L]]$id, "_", block$id)
-  chunk$source_data <- plan$chunks[[1L]]$source_data
+  chunk$source_data <- hierarchical_source_dataset(plan$batch_order)
   chunk$filter <- plan$chunks[[1L]]$filter %||% NULL
   structure(list(
     batch_order = as.integer(plan$batch_order * 100L + block_order),
@@ -55,7 +55,7 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     level <- chunk$levels[[index]]
     c(
       paste0("/* Discover hierarchical level ", index, " nodes. */"),
-      paste0("proc sort data=", if (index == 1L) chunk$source_data else
+      paste0("proc sort data=", if (index == 1L) node_dataset else
                paste0("_TFL_HLEVEL_", sprintf("%03d", index - 1L)),
              " out=_TFL_HLEVEL_",
              sprintf("%03d", index), ";"),
@@ -108,11 +108,20 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     nested_datasets <- c(nested_datasets, nested_output$render_dataset)
   }
   nested_set <- if (length(nested_datasets) > 0L) paste(nested_datasets, collapse = " ") else node_dataset
+  membership_dataset <- paste0("_TFL_HMEM_", sprintf("%03d", plan$batch_order))
   text <- c(
     "/* Filter and guard hierarchical source before level discovery. */",
     paste0("data ", node_dataset, ";"),
     paste0("  set ", chunk$source_data, ";"),
     if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;") else character(),
+    "run;",
+    "/* Restrict nested primitive analyses to the current hierarchical node scope. */",
+    paste0("proc sort data=", node_dataset, " out=", membership_dataset, " nodupkey;"),
+    "  by USUBJID;",
+    "run;",
+    paste0("data ", membership_dataset, ";"),
+    paste0("  set ", membership_dataset, ";"),
+    "  keep USUBJID;",
     "run;",
     duplicate_guard,
     level_lines,

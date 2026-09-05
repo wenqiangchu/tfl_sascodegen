@@ -49,7 +49,7 @@ categorical_chunk_source <- function(plan, entry) {
     "run;",
     "/* Merge categorical chunk source with header membership. */",
     paste0("data ", merged_dataset, ";"),
-    "  merge _TFL_MEM_001(in=membership) ", source_dataset, "(in=source);",
+    paste0("  merge ", plan$membership_dataset, "(in=membership) ", source_dataset, "(in=source);"),
     "  by USUBJID;",
     "  if membership;",
     "run;",
