@@ -50,7 +50,12 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     block <- chunk$analysis_blocks[[index]]
     c(
       paste0("/* Dispatch hierarchical analysis block ", block$id, " within node scope. */"),
-      paste0("/* Nested primitive type: ", block$type, "; anchor level: ", block$anchor_level, ". */")
+      paste0("/* Nested primitive type: ", block$type, "; anchor level: ", block$anchor_level, ". */"),
+      paste0("analysis_id = ", sas_character_literal(block$id), ";"),
+      paste0("anchor_level = ", sas_character_literal(block$anchor_level), ";"),
+      paste0("placement = ", sas_character_literal(block$placement), ";"),
+      paste0("runtime_row_id = cats(node_key, ':', analysis_id);"),
+      "row_role = 'static';"
     )
   }), use.names = FALSE)
   text <- c(
@@ -64,14 +69,16 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "/* Order static rows before dynamic children and preserve result sort metadata. */",
     block_lines,
     "/* Map nested primitive results to hierarchical identities. */",
-    "data _TFL_HSTAT_001;",
+    paste0("data _TFL_HSTAT_", sprintf("%03d", plan$batch_order), ";"),
     "  length analysis_id group_path node_key runtime_row_id row_role $128;",
-    "  set _TFL_HNODE_001;",
+    paste0("  set ", node_dataset, ";"),
     "  /* Nested result_map contributes chunk/row/header/statistic identity. */",
+    "  /* Static rows sort before dynamic children at the same node. */",
+    "  sort_key = cats(group_path, '|', putn(0, 'Z6.'), '|', runtime_row_id);",
     "run;",
     paste0("data ", plan$render_dataset, ";"),
     "  length chunk_id row_id label indent_level header_column_id cell_text $256;",
-    paste0("  set ", node_dataset, ";"),
+    paste0("  set _TFL_HSTAT_", sprintf("%03d", plan$batch_order), ";"),
     "  /* Hierarchical render rows carry runtime_row_id, row_role, group_path, and node_key. */",
     "run;"
   )

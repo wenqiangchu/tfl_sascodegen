@@ -34,6 +34,9 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "Map nested primitive results to hierarchical identities", fixed = TRUE)
   testthat::expect_match(result$source, "level_component = cats(lengthn", fixed = TRUE)
   testthat::expect_match(result$source, "WARNING: [USER] duplicate_key", fixed = TRUE)
+  testthat::expect_match(result$source, "analysis_id = 'a1';", fixed = TRUE)
+  testthat::expect_match(result$source, "runtime_row_id = cats(node_key", fixed = TRUE)
+  testthat::expect_match(result$source, "data _TFL_HSTAT_001;", fixed = TRUE)
   testthat::expect_length(regmatches(result$source,
                                      gregexpr("proc sort data=adam.adae", result$source, fixed = TRUE))[[1L]], 1L)
 })
