@@ -167,7 +167,7 @@ build_logical_result_map <- function(chunk, chunk_order, header_columns,
         result[[length(result) + 1L]] <- list(
           chunk_order = as.integer(chunk_order), chunk_id = chunk$id,
           analysis_id = analysis_id, row_order = as.integer(row_order),
-          row_id = row$id, row_type = row$type,
+          row_id = row$id, row_type = row$type, label = row$label %||% "",
           header_column_id = column$id, column_order = as.integer(column_order),
           statistic_id = statistic_id, cell_format = row$cell_format %||% ""
         )

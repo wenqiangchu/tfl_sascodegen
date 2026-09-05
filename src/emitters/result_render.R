@@ -5,6 +5,7 @@ long_form_statistic_source <- function(plan, raw_value = "value") {
     "/* Map analysis output to the common long-form statistic identity. */",
     paste0("data ", plan$statistic_dataset, ";"),
     "  length chunk_id row_id header_column_id statistic_id $128;",
+    "  /* chunk_order is the numeric join key for primitive raw output. */",
     paste0("  set ", plan$raw_dataset, ";"),
     "  /* chunk_id, row_id, header_column_id and statistic_id come from the plan map. */",
     paste0("  value = ", raw_value, ";"),
@@ -19,10 +20,13 @@ expected_cell_skeleton_source <- function(plan) {
   map_rows <- if (length(result_map) > 0L) {
     vapply(result_map, function(entry) {
       paste(c(
+        as.integer(entry$chunk_order %||% 0L),
         sas_character_literal(entry$chunk_id %||% ""),
         sas_character_literal(entry$row_id %||% ""),
         sas_character_literal(entry$header_column_id %||% ""),
         sas_character_literal(entry$statistic_id %||% ""),
+        sas_character_literal(entry$label %||% ""),
+        sas_character_literal(entry$cell_format %||% ""),
         as.integer(entry$row_order %||% 0L),
         as.integer(entry$column_order %||% 0L)
       ), collapse = "|")
@@ -31,10 +35,11 @@ expected_cell_skeleton_source <- function(plan) {
   c(
     "/* Expand the complete chunk/row/header/statistic expected-cell skeleton. */",
     paste0("data _TFL_KEY_", sprintf("%03d", plan$batch_order), ";"),
-    "  length chunk_id row_id header_column_id statistic_id $128;",
+    "  length chunk_id row_id header_column_id statistic_id $128 label cell_format $256;",
     "  infile datalines dlm='|' dsd truncover;",
-    "  input chunk_id :$128. row_id :$128. header_column_id :$128.",
-    "        statistic_id :$128. row_order column_order;",
+    "  input chunk_order chunk_id :$128. row_id :$128.",
+    "        header_column_id :$128. statistic_id :$128.",
+    "        label :$256. cell_format :$256. row_order column_order;",
     if (length(map_rows) > 0L) c("  datalines;", map_rows, ";") else
       "  /* Empty result maps are valid for chunks without analysis rows. */",
     "  /* Missing raw cells remain represented by this complete key skeleton. */",
