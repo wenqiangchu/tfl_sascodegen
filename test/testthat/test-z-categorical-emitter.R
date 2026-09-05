@@ -26,8 +26,9 @@ testthat::test_that("default categorical emitter generates event input and one F
   testthat::expect_match(result$source, "estimable = 0", fixed = TRUE)
   testthat::expect_match(result$source, "data _TFL_KIN_001_001;", fixed = TRUE)
   testthat::expect_match(result$source, "tranwrd", ignore.case = TRUE)
-  testthat::expect_match(result$source, "statistic_id = 'pct' and estimable = 0", fixed = TRUE)
-  testthat::expect_match(result$source, "cell_text = tranwrd(cell_format", fixed = TRUE)
+  testthat::expect_match(result$source, "if estimable = 0 then token = 'NE'", fixed = TRUE)
+  testthat::expect_match(result$source, "cell_text = TRANWRD(cell_format", fixed = TRUE)
+  testthat::expect_match(result$source, "complete chunk/row/header/statistic expected-cell skeleton", fixed = TRUE)
   testthat::expect_match(result$source, "Literal percent characters remain unchanged", fixed = TRUE)
 })
 

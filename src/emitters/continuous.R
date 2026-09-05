@@ -75,6 +75,7 @@ continuous_batch_analysis_source <- function(plan) {
            "(drop=_TYPE_ _FREQ_) N=_n MEAN=_mean STD=_sd MEDIAN=_median",
            " Q1=_q1 Q3=_q3 MIN=_min MAX=_max;"),
     "run;",
+    expected_cell_skeleton_source(plan),
     long_form_statistic_source(plan, "_mean"),
     render_long_form_source(plan)
   )

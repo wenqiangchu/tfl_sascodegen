@@ -151,6 +151,32 @@ chunk_logical_map <- function(chunk, chunk_order, header_columns) {
   )
 }
 
+build_logical_result_map <- function(chunk, chunk_order, header_columns,
+                                     analysis_id = NULL) {
+  rows <- chunk$rows %||% list()
+  result <- list()
+  for (row_order in seq_along(rows)) {
+    row <- rows[[row_order]]
+    statistic_ids <- if (identical(row$type, "analysis")) {
+      vapply(row$statistics %||% list(), `[[`, "", "id")
+    } else character()
+    for (column_order in seq_along(header_columns)) {
+      column <- header_columns[[column_order]]
+      ids <- if (length(statistic_ids) > 0L) statistic_ids else ""
+      for (statistic_id in ids) {
+        result[[length(result) + 1L]] <- list(
+          chunk_order = as.integer(chunk_order), chunk_id = chunk$id,
+          analysis_id = analysis_id, row_order = as.integer(row_order),
+          row_id = row$id, row_type = row$type,
+          header_column_id = column$id, column_order = as.integer(column_order),
+          statistic_id = statistic_id, cell_format = row$cell_format %||% ""
+        )
+      }
+    }
+  }
+  result
+}
+
 plan_primitive_batches <- function(resolved) {
   groups <- list()
   errors <- list()
@@ -197,6 +223,9 @@ plan_primitive_batches <- function(resolved) {
       logical_maps = lapply(group$entries, function(entry) {
         chunk_logical_map(entry$chunk, entry$chunk_order, resolved$header$columns)
       }),
+      result_map = unlist(lapply(group$entries, function(entry) {
+        build_logical_result_map(entry$chunk, entry$chunk_order, resolved$header$columns)
+      }), recursive = FALSE),
       header_columns = resolved$header$columns,
       membership_dataset = "_TFL_MEM_001",
       definition = group$definition

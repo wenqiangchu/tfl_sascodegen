@@ -67,6 +67,8 @@ testthat::test_that("generator resolves references and batches compatible chunks
     log$plans[[1L]]$logical_maps[[1L]]$rows[[1L]]$statistic_ids,
     "mean"
   )
+  testthat::expect_true(length(log$plans[[1L]]$result_map) >= 2L)
+  testthat::expect_identical(log$plans[[1L]]$result_map[[1L]]$header_column_id, "a")
   testthat::expect_identical(lengths(regmatches(result$source,
     gregexpr("proc means", result$source, fixed = TRUE))), 1L)
 })

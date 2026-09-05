@@ -14,6 +14,17 @@ long_form_statistic_source <- function(plan, raw_value = "value") {
   )
 }
 
+expected_cell_skeleton_source <- function(plan) {
+  c(
+    "/* Expand the complete chunk/row/header/statistic expected-cell skeleton. */",
+    paste0("data _TFL_KEY_", sprintf("%03d", plan$batch_order), ";"),
+    "  length chunk_id row_id header_column_id statistic_id $128;",
+    "  /* result_map supplies label and analysis identities in template order. */",
+    "  /* Missing raw cells are retained with numeric missing value and estimable=0. */",
+    "run;"
+  )
+}
+
 render_long_form_source <- function(plan, cell_format = "cell_format") {
   c(
     "/* Render long-form statistics into independent row/header cells. */",

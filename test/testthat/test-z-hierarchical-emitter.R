@@ -31,6 +31,7 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "runtime_row_id", fixed = TRUE)
   testthat::expect_match(result$source, "static rows before dynamic children", fixed = TRUE)
   testthat::expect_match(result$source, "Nested primitive type", fixed = TRUE)
+  testthat::expect_match(result$source, "Map nested primitive results to hierarchical identities", fixed = TRUE)
   testthat::expect_length(regmatches(result$source,
                                      gregexpr("proc sort data=adam.adae", result$source, fixed = TRUE))[[1L]], 1L)
 })

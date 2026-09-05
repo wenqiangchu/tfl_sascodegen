@@ -83,6 +83,7 @@ categorical_batch_analysis_source <- function(plan) {
     paste0("  tables chunk_order*row_order*column_order / out=", plan$raw_dataset, ";"),
     "run;",
     "/* Complete expected cells and use explicit denominator percentages. */",
+    expected_cell_skeleton_source(plan),
     "  /* Expected-cell skeleton supplies zero counts; FREQ PERCENT is ignored. */",
     paste0("data ", plan$statistic_dataset, ";"),
     "  length chunk_id row_id header_column_id statistic_id $128;",
@@ -92,16 +93,8 @@ categorical_batch_analysis_source <- function(plan) {
     "  else do; pct = .; estimable = 0; end;",
     "run;",
     "/* Render categorical n and pct long-form cells. */",
-    paste0("data ", plan$render_dataset, ";"),
-    "  length chunk_id row_id label header_column_id cell_text $256;",
-    paste0("  set ", plan$statistic_dataset, ";"),
-    "  if statistic_id = 'pct' and estimable = 0 then token = 'NE';",
-    "  else if statistic_id = 'n' then token = putn(value, 'BEST32.');",
-    "  else token = putn(value, 'F32.1');",
-    "  cell_text = tranwrd(cell_format, cats('{', statistic_id, '}'), token);",
-    "  /* Literal percent characters remain unchanged during placeholder replacement. */",
-    "  /* Non-estimable percentages render as NE; n remains independently estimable. */",
-    "run;"
+    render_long_form_source(plan),
+    "/* Literal percent characters remain unchanged during placeholder replacement. */"
   )
 }
 
