@@ -345,6 +345,13 @@ payload contract。
 **完成 gate**：每个 session 的 workspace 隔离；dirty guard 和 saved-snapshot policy
 可通过 UI 测试验证；UI 只通过 P6 application boundary 操作 core。
 
+**当前状态（2026-09-06）**：已创建薄 `app.R` 和 session-owned workspace adapter，支持
+ZIP import、table selection、SAS generation、metadata/SAS download、discard draft 及
+English status/error feedback。`test/testthat/test-shinytest2.R` 覆盖初始状态、Generate
+失败反馈和截图断言；标准 runner 会在 CRAN 模式跳过浏览器测试。当前环境已确认
+`shinytest2` 安装，但 Chromote 无法启动 Chromium，因此实际浏览器回归需在可用浏览器
+运行环境重新执行。
+
 ### P8：集成验证、交付与维护文档
 
 **依赖**：P1-P7 的已通过 gate 产物。
