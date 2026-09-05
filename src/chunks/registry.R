@@ -201,6 +201,7 @@ default_chunk_registry <- local({
       ),
       batch_type = "categorical_nonexclusive"
     )
+    categorical$emitter <- categorical_summary_nonexclusive_emitter
     exclusive <- make_primitive_definition(
       type_id = "categorical_summary_exclusive",
       statistic_ids = c("n", "pct"),

@@ -7,3 +7,4 @@ source(file.path(project_root, "src", "metadata", "yaml_codec.R"), local = FALSE
 source(file.path(project_root, "src", "metadata", "workspace.R"), local = FALSE)
 source(file.path(project_root, "src", "generator", "source_generator.R"), local = FALSE)
 source(file.path(project_root, "src", "emitters", "continuous.R"), local = FALSE)
+source(file.path(project_root, "src", "emitters", "categorical.R"), local = FALSE)

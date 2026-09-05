@@ -1,0 +1,122 @@
+# Source emitter for nonexclusive categorical primitive batches.
+
+categorical_source_dataset <- function(batch_order, chunk_order) {
+  paste0("_TFL_KSRC_", sprintf("%03d", batch_order), "_", sprintf("%03d", chunk_order))
+}
+
+categorical_merged_dataset <- function(batch_order, chunk_order) {
+  paste0("_TFL_KMERGE_", sprintf("%03d", batch_order), "_", sprintf("%03d", chunk_order))
+}
+
+categorical_chunk_input_dataset <- function(batch_order, chunk_order) {
+  paste0("_TFL_KIN_", sprintf("%03d", batch_order), "_", sprintf("%03d", chunk_order))
+}
+
+categorical_chunk_source <- function(plan, entry) {
+  batch <- plan$batch_order
+  chunk_order <- entry$chunk_order
+  chunk <- entry$chunk
+  source_dataset <- categorical_source_dataset(batch, chunk_order)
+  merged_dataset <- categorical_merged_dataset(batch, chunk_order)
+  input_dataset <- categorical_chunk_input_dataset(batch, chunk_order)
+  filter_lines <- if (!is.null(chunk$filter)) {
+    paste0("  if not (", chunk$filter, ") then delete;")
+  } else NULL
+  denominator <- chunk$denominator$type
+  denominator_lines <- switch(
+    denominator,
+    header_population = "  denominator_eligible = 1;",
+    non_missing = paste0("  denominator_eligible = not missing(", chunk$denominator$variable, ");"),
+    custom = paste0("  denominator_eligible = (", chunk$denominator$expression, ");"),
+    "  denominator_eligible = 1;"
+  )
+  row_lines <- unlist(lapply(seq_along(chunk$rows), function(row_order) {
+    row <- chunk$rows[[row_order]]
+    if (!identical(row$type, "analysis")) return(character())
+    c(
+      paste0("  if (", row$condition, ") then do;"),
+      paste0("    row_order = ", row_order, ";"),
+      "    output;",
+      "  end;"
+    )
+  }), use.names = FALSE)
+  input_lines <- c(
+    "/* Filter categorical chunk source before merge. */",
+    paste0("data ", source_dataset, ";"),
+    paste0("  set ", chunk$source_data, ";"),
+    filter_lines,
+    "  source_row + 1;",
+    "run;",
+    "/* Merge categorical chunk source with header membership. */",
+    paste0("data ", merged_dataset, ";"),
+    "  merge _TFL_MEM_001(in=membership) ", source_dataset, "(in=source);",
+    "  by USUBJID;",
+    "  if membership;",
+    "run;",
+    "/* Normalize denominator and numerator counting events. */",
+    paste0("data ", input_dataset, ";"),
+    paste0("  set ", merged_dataset, ";"),
+    paste0("  chunk_order = ", chunk_order, ";"),
+    denominator_lines,
+    "  if denominator_eligible then do;",
+    "    row_order = 0; output;",
+    "  end;",
+    "  if missing(USUBJID) then delete;",
+    row_lines,
+    "  keep chunk_order row_order column_order source_row;",
+    "run;"
+  )
+  paste(input_lines, collapse = "\n")
+}
+
+categorical_batch_analysis_source <- function(plan) {
+  chunk_inputs <- vapply(plan$chunk_orders, function(chunk_order) {
+    categorical_chunk_input_dataset(plan$batch_order, chunk_order)
+  }, character(1L))
+  c(
+    "/* Combine normalized categorical counting events in template order. */",
+    paste0("data ", plan$input_dataset, ";"),
+    paste0("  set ", paste(chunk_inputs, collapse = " "), ";"),
+    "run;",
+    "/* Analyze compatible categorical events once. */",
+    paste0("proc freq data=", plan$input_dataset, ";"),
+    paste0("  tables chunk_order*row_order*column_order / out=", plan$raw_dataset, ";"),
+    "run;",
+    "/* Complete expected cells and use explicit denominator percentages. */",
+    paste0("data ", plan$statistic_dataset, ";"),
+    "  length chunk_id row_id header_column_id statistic_id $128;",
+    "  /* Expected-cell skeleton supplies zero counts; FREQ PERCENT is ignored. */",
+    paste0("  set ", plan$raw_dataset, ";"),
+    "  denominator = 0; numerator = count;",
+    "  if denominator > 0 then pct = 100 * numerator / denominator;",
+    "  else do; pct = .; estimable = 0; end;",
+    "run;",
+    "/* Render categorical n and pct long-form cells. */",
+    paste0("data ", plan$render_dataset, ";"),
+    "  length chunk_id row_id label header_column_id cell_text $256;",
+    paste0("  set ", plan$statistic_dataset, ";"),
+    "  /* Non-estimable percentages render as NE; n remains independently estimable. */",
+    "run;"
+  )
+}
+
+categorical_summary_nonexclusive_emitter <- function(plan, resolved) {
+  if (!inherits(plan, "PrimitiveBatchPlan") ||
+      !identical(plan$chunk_type, "categorical_summary_nonexclusive")) {
+    stop("Categorical emitter received an incompatible batch plan.", call. = FALSE)
+  }
+  chunk_sections <- lapply(plan$chunks, function(chunk) {
+    entry <- plan$logical_maps[[which(vapply(plan$logical_maps, `[[`, "", "chunk_id") == chunk$id)[[1L]]]]
+    new_source_section(
+      paste0("categorical_chunk_", entry$chunk_order), "chunk", chunk$id,
+      entry$chunk_order, categorical_chunk_source(plan, list(
+        chunk_order = entry$chunk_order, chunk = chunk
+      ))
+    )
+  })
+  sections <- c(chunk_sections, list(new_source_section(
+    paste0("categorical_batch_", plan$batch_order), "analysis", "categorical_nonexclusive",
+    100L, paste(categorical_batch_analysis_source(plan), collapse = "\n")
+  )))
+  new_emitter_output(sections, plan$statistic_dataset, plan$render_dataset)
+}
