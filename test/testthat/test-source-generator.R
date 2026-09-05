@@ -119,3 +119,17 @@ testthat::test_that("invalid emitter output is a generation contract failure", {
   testthat::expect_null(result$source)
   testthat::expect_identical(result$errors[[1L]]$code, "generation_contract_invalid")
 })
+
+testthat::test_that("duplicate emitter sections are rejected before assembly", {
+  definitions <- default_chunk_registry()$definitions
+  definitions$continuous_summary$emitter <- function(plan, resolved) {
+    section <- new_source_section("duplicate", "chunk", "age", 1L, "data partial; run;")
+    new_emitter_output(
+      list(section, section), plan$statistic_dataset, plan$render_dataset
+    )
+  }
+  result <- generate_table_source(generator_fixture(), "t1", new_chunk_registry(definitions))
+  testthat::expect_false(result$passed)
+  testthat::expect_null(result$source)
+  testthat::expect_identical(result$errors[[1L]]$code, "generation_contract_invalid")
+})

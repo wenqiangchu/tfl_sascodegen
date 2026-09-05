@@ -250,8 +250,19 @@ population_header_sections <- function(resolved) {
 validate_emitter_output <- function(output, owner_id) {
   valid_string <- function(value) is.character(value) && length(value) == 1L &&
     !is.na(value) && nzchar(value)
+  validate_sections <- function(sections) {
+    if (length(sections) == 0L) return(TRUE)
+    section_ids <- vapply(sections, `[[`, "", "section_id")
+    all(vapply(sections, function(section) {
+      inherits(section, "SourceSection") &&
+        valid_string(section$section_id) && valid_string(section$kind) &&
+        valid_string(section$owner_id) && valid_string(section$text) &&
+        is.numeric(section$order) && length(section$order) == 1L &&
+        !is.na(section$order) && is.finite(section$order)
+    }, logical(1L))) && !anyDuplicated(section_ids)
+  }
   if (!inherits(output, "EmitterOutput") || !is.list(output$sections) ||
-      !all(vapply(output$sections, inherits, logical(1L), "SourceSection")) ||
+      !validate_sections(output$sections) ||
       !valid_string(output$statistic_dataset) || !valid_string(output$render_dataset)) {
     return(generation_error(
       "generation_contract_invalid",
