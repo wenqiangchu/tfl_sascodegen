@@ -256,7 +256,8 @@ default_chunk_registry <- local({
         batchable = FALSE,
         batch_type = "hierarchical",
         compatibility_fields = character()
-      )
+      ),
+      emitter = hierarchical_summary_emitter
     )
     registry <<- new_chunk_registry(list(
       continuous_summary = continuous,
