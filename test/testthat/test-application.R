@@ -12,3 +12,57 @@ testthat::test_that("application orchestration delegates workspace boundaries", 
   discarded <- application_discard_draft(workspace)
   testthat::expect_true(discarded$passed)
 })
+
+testthat::test_that("application orchestration preserves boundary failures", {
+  bundle <- new_metadata_bundle(
+    populations = list(list(id = "p1", label = "Population", expression = "1")),
+    headers = list(list(id = "h1", source_data = "adam.adsl", columns = list(
+      list(id = "all", label = "All", condition = "1", display_order = 1L,
+           width = 1, alignment = "center")
+    ))),
+    tables = list(list(id = "t1", population_id = "p1", header_id = "h1",
+                       template_id = "t1")),
+    templates = list(list(id = "t1", body = list(chunks = list(list(
+      id = "c1", type = "continuous_summary", source_data = "adam.adsl",
+      analysis_variable = "AGE", rows = list(list(
+        id = "r1", type = "analysis", label = "Mean",
+        statistics = list(list(id = "mean", digits = 1L)), cell_format = "{mean}"
+      ))
+    ))))))
+  workspace <- new_metadata_workspace(bundle)
+
+  imported <- application_import_bundle(workspace, charToRaw("not a zip archive"))
+  testthat::expect_false(imported$passed)
+  testthat::expect_identical(imported$errors[[1L]]$stage, "import")
+  testthat::expect_identical(workspace_revision(imported$workspace), 0L)
+
+  draft <- workspace_begin_draft(workspace, "population", "p1")$workspace
+  draft_value <- workspace_draft_value(draft)
+  draft_value$label <- "Unsaved"
+  dirty <- workspace_set_draft(draft, draft_value)$workspace
+  blocked <- application_import_bundle(dirty, charToRaw("not a zip archive"))
+  testthat::expect_false(blocked$passed)
+  testthat::expect_identical(blocked$errors[[1L]]$code, "workspace_draft_dirty")
+
+  invalid_save <- workspace_set_draft(
+    workspace_begin_draft(workspace, "population", "p1")$workspace,
+    list(id = "p1", expression = "1")
+  )$workspace
+  saved <- application_save_draft(invalid_save)
+  testthat::expect_false(saved$passed)
+  testthat::expect_true(any(vapply(saved$errors, function(error) {
+    identical(error$code, "workspace_draft_invalid") ||
+      identical(error$stage, "workspace")
+  }, logical(1L))))
+
+  reference <- application_generate_source(workspace, "missing_table")
+  testthat::expect_false(reference$passed)
+  testthat::expect_true(any(grepl("table", vapply(reference$errors, `[[`, "", "code"))))
+
+  definitions <- default_chunk_registry()$definitions
+  definitions$continuous_summary$emitter <- NULL
+  unavailable_registry <- new_chunk_registry(definitions)
+  emitter <- application_generate_source(workspace, "t1", unavailable_registry)
+  testthat::expect_false(emitter$passed)
+  testthat::expect_identical(emitter$errors[[1L]]$code, "generation_emitter_unavailable")
+})

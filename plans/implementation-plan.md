@@ -313,6 +313,13 @@ deterministic output。
 **完成 gate**：P6 可以在命令行或纯 R test process 中完成核心流程；所有 I/O 都被
 显式 bytes/value boundary 包住。
 
+**当前状态（2026-09-06）**：已完成 UI-neutral orchestration。`src/application/orchestration.R`
+提供 import/export/save/discard/generate 入口，复用 workspace 的 atomic apply、saved
+snapshot 和 dirty guard。`test-application.R` 已覆盖 import failure、save failure、
+reference failure、emitter unavailable、dirty guard、bundle export 和 invalid table ID；
+`Rscript test/run_tests.R` 全部通过。Shiny adapter、download handlers 和 shinytest2
+浏览器回归保留在 P7。
+
 ### P7：Shiny UI 与 `app.R`
 
 **依赖**：P2 的 workspace state 和 P6 的 application services。
