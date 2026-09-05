@@ -119,7 +119,7 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "/* Map nested primitive results to hierarchical identities. */",
     paste0("data _TFL_HSTAT_", sprintf("%03d", plan$batch_order), ";"),
     "  length analysis_id group_path node_key runtime_row_id row_role $128;",
-    paste0("  set ", node_dataset, ";"),
+    paste0("  set ", nested_set, ";"),
     "  /* Nested result_map contributes chunk/row/header/statistic identity. */",
     "  analysis_id = coalescec(analysis_id, '');",
     "  runtime_row_id = cats(node_key, ':', analysis_id, ':', row_id);",
