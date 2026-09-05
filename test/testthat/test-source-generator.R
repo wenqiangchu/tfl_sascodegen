@@ -86,6 +86,12 @@ testthat::test_that("source sections preserve custom code and opaque SAS referen
                               ignore.case = TRUE))
   repeated <- generate_table_source(generator_fixture(), "t1", mock_generator_registry())
   testthat::expect_identical(result$source, repeated$source)
+  positions <- vapply(c("%let before=1;", "Select the table population.",
+                        "Assemble header membership.", "Filter and merge compatible chunks.",
+                        "Assemble table rows and cells", "%put after;"),
+                      function(marker) regexpr(marker, result$source, fixed = TRUE)[[1L]],
+                      integer(1L))
+  testthat::expect_true(all(diff(positions) > 0L))
 })
 
 testthat::test_that("prerequisite failures are ordered and return no partial source", {
@@ -107,8 +113,11 @@ testthat::test_that("prerequisite failures are ordered and return no partial sou
   missing_emitter <- generate_table_source(generator_fixture(), "t1")
   testthat::expect_false(missing_emitter$passed)
   testthat::expect_null(missing_emitter$source)
+  testthat::expect_length(missing_emitter$errors, 2L)
   testthat::expect_identical(missing_emitter$errors[[1L]]$code,
                             "generation_emitter_unavailable")
+  testthat::expect_match(missing_emitter$errors[[1L]]$path, "chunks\\[0\\]" )
+  testthat::expect_match(missing_emitter$errors[[2L]]$path, "chunks\\[1\\]" )
 })
 
 testthat::test_that("invalid emitter output is a generation contract failure", {
