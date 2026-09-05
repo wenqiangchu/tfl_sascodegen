@@ -122,6 +122,19 @@ server <- function(input, output, session) {
       updateTextInput(session, "chunk_filter", value = item[[1L]]$filter %||% "")
     }
   }, ignoreInit = FALSE)
+  observeEvent(input$chunk_source_data, {
+    begin_edit("chunk", input$chunk)
+    if (!is.null(draft_target())) {
+      draft <- workspace_draft_value(workspace()); draft$source_data <- input$chunk_source_data
+      workspace(workspace_set_draft(workspace(), draft)$workspace)
+    }
+  }, ignoreInit = TRUE)
+  observeEvent(input$chunk_filter, {
+    if (is.null(input$chunk) || !nzchar(input$chunk) || is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace())
+    draft$filter <- if (nzchar(input$chunk_filter)) input$chunk_filter else NULL
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
 
   observeEvent(list(input$population, workspace()), {
     id <- input$population
