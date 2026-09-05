@@ -99,14 +99,25 @@ hierarchical_summary_emitter <- function(plan, resolved) {
   for (index in seq_along(chunk$analysis_blocks)) {
     nested_plan <- hierarchical_nested_plan(plan, chunk$analysis_blocks[[index]], index, resolved)
     nested_output <- nested_plan$definition$emitter(nested_plan, resolved)
+    mapped_dataset <- paste0("_TFL_HMAP_", sprintf("%03d", plan$batch_order), "_", sprintf("%03d", index))
     nested_sections <- c(nested_sections, list(new_source_section(
       paste0("hierarchical_nested_", index), "nested", chunk$analysis_blocks[[index]]$id,
       50L + index, paste(c(
         paste0("/* Execute nested primitive analysis for node scope ", chunk$analysis_blocks[[index]]$id, ". */"),
-        vapply(nested_output$sections, `[[`, "", "text")
+        vapply(nested_output$sections, `[[`, "", "text"),
+        "/* Overlay hierarchical identity fields on nested long-form rows. */",
+        paste0("data ", mapped_dataset, ";"),
+        "  length analysis_id group_path node_key runtime_row_id row_role $128;",
+        paste0("  set ", nested_output$render_dataset, ";"),
+        paste0("  analysis_id = ", sas_character_literal(chunk$analysis_blocks[[index]]$id), ";"),
+        paste0("  block_order = ", index, ";"),
+        "  row_role = 'dynamic';",
+        "  group_path = coalescec(node_key, '');",
+        "  runtime_row_id = cats(node_key, ':', analysis_id, ':', row_id);",
+        "run;"
       ), collapse = "\n")
     )))
-    nested_datasets <- c(nested_datasets, nested_output$render_dataset)
+    nested_datasets <- c(nested_datasets, mapped_dataset)
   }
   nested_set <- if (length(nested_datasets) > 0L) paste(nested_datasets, collapse = " ") else node_dataset
   membership_dataset <- paste0("_TFL_HMEM_", sprintf("%03d", plan$batch_order))
