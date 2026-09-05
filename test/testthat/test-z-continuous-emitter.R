@@ -37,6 +37,9 @@ testthat::test_that("default continuous emitter generates one MEANS batch and lo
   testthat::expect_match(result$source, "if missing(cell_text) then cell_text = '';", fixed = TRUE)
   testthat::expect_match(result$source, "resolved_digits", fixed = TRUE)
   testthat::expect_match(result$source, "estimable = 0 then token = 'NE'", fixed = TRUE)
+  testthat::expect_match(result$source, "merge _TFL_CKEY_SORT_001(in=expected)", fixed = TRUE)
+  testthat::expect_match(result$source, "when ('mean') value = _mean;", fixed = TRUE)
+  testthat::expect_match(result$source, "if rounded_value = 0 then rounded_value = 0;", fixed = TRUE)
 })
 
 testthat::test_that("relative digits resolve from base digits and reject negative results", {

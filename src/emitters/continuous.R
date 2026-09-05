@@ -78,8 +78,44 @@ continuous_batch_analysis_source <- function(plan) {
            " Q1=_q1 Q3=_q3 MIN=_min MAX=_max;"),
     "run;",
     expected_cell_skeleton_source(plan),
-    long_form_statistic_source(plan, "_mean"),
+    continuous_key_statistic_source(plan),
     render_long_form_source(plan)
+  )
+}
+
+continuous_key_statistic_source <- function(plan) {
+  by_vars <- paste(c("chunk_order", "column_order", plan$grouping_variables %||% character()),
+                   collapse = " ")
+  c(
+    "/* Map analysis output to the common long-form statistic identity. */",
+    "/* Complete continuous statistics from the expected-cell key map. */",
+    paste0("proc sort data=_TFL_KEY_", sprintf("%03d", plan$batch_order),
+           " out=_TFL_CKEY_SORT_", sprintf("%03d", plan$batch_order), ";"),
+    paste0("  by ", by_vars, ";"),
+    "run;",
+    paste0("proc sort data=", plan$raw_dataset, " out=_TFL_CRAW_SORT_",
+           sprintf("%03d", plan$batch_order), ";"),
+    paste0("  by ", by_vars, ";"),
+    "run;",
+    paste0("data ", plan$statistic_dataset, ";"),
+    "  length chunk_id row_id header_column_id statistic_id label cell_format $256;",
+    paste0("  merge _TFL_CKEY_SORT_", sprintf("%03d", plan$batch_order),
+           "(in=expected) _TFL_CRAW_SORT_", sprintf("%03d", plan$batch_order), "(in=observed);"),
+    paste0("  by ", by_vars, ";"),
+    "  if not expected then delete;",
+    "  select (statistic_id);",
+    "    when ('n') value = _n;",
+    "    when ('mean') value = _mean;",
+    "    when ('sd') value = _sd;",
+    "    when ('median') value = _median;",
+    "    when ('q1') value = _q1;",
+    "    when ('q3') value = _q3;",
+    "    when ('min') value = _min;",
+    "    when ('max') value = _max;",
+    "    otherwise value = .;",
+    "  end;",
+    "  estimable = observed and not missing(value);",
+    "run;"
   )
 }
 

@@ -20,6 +20,9 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
                              record_key = c("USUBJID", "AESEQ"), duplicate_policy = "error"),
       levels = list(list(id = "l1", variable = "SOC", order_variable = "SOCN",
                          order_direction = "asc", node_role = "label",
+                         missing_policy = "exclude"),
+                    list(id = "l2", variable = "PT", order_variable = "PTN",
+                         order_direction = "asc", node_role = "label",
                          missing_policy = "exclude")),
       analysis_blocks = list(block)
     )))))
@@ -45,6 +48,9 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "merge _TFL_HMEM_001(in=membership)", fixed = TRUE)
   testthat::expect_match(result$source, "set _TFL_HNODE_001;", fixed = TRUE)
   testthat::expect_match(result$source, "Materialize the deepest parent-child node paths", fixed = TRUE)
+  testthat::expect_match(result$source, "proc sort data=_TFL_HLEVEL_001", fixed = TRUE)
+  testthat::expect_match(result$source, "data _TFL_HLEVEL_002;", fixed = TRUE)
+  testthat::expect_match(result$source, "group_path = cats(parent_node_key, '|', level_component);", fixed = TRUE)
   testthat::expect_match(result$source, "class chunk_order column_order node_key;", fixed = TRUE)
   testthat::expect_match(result$source, "Overlay hierarchical identity fields on nested long-form rows", fixed = TRUE)
   testthat::expect_match(result$source, "analysis_id = 'a1';", fixed = TRUE)
