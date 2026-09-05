@@ -11,6 +11,18 @@ hierarchical_summary_emitter <- function(plan, resolved) {
   }
   chunk <- plan$chunks[[1L]]
   node_dataset <- hierarchical_source_dataset(plan$batch_order)
+  record_key <- chunk$source_contract$record_key %||% character()
+  duplicate_guard <- if (length(record_key) > 0L) c(
+    "/* Guard hierarchical record keys without changing source records. */",
+    paste0("proc sort data=", node_dataset, " out=_TFL_HGUARD_", sprintf("%03d", plan$batch_order), ";"),
+    paste0("  by ", paste(record_key, collapse = " "), ";"),
+    "run;",
+    "data _null_;",
+    paste0("  set _TFL_HGUARD_", sprintf("%03d", plan$batch_order), ";"),
+    paste0("  by ", paste(record_key, collapse = " "), ";"),
+    "  if not first.", record_key[[1L]], " then put 'WARNING: [USER] duplicate_key';",
+    "run;"
+  ) else character()
   level_lines <- unlist(lapply(seq_along(chunk$levels), function(index) {
     level <- chunk$levels[[index]]
     c(
@@ -21,8 +33,16 @@ hierarchical_summary_emitter <- function(plan, resolved) {
       "run;",
       paste0("data _TFL_HLEVEL_", sprintf("%03d", index), ";"),
       paste0("  set _TFL_HLEVEL_", sprintf("%03d", index), ";"),
-      paste0("  group_path = cats('L', ", index, ", ':', ", level$variable, ");"),
-      paste0("  node_key = cats('L', ", index, ", ':', ", level$variable, ");"),
+      paste0("  level_component = cats(lengthn(strip(", level$variable, ")), ':', strip(", level$variable, "));"),
+      if (index == 1L) "  group_path = level_component;" else
+        "  group_path = cats(group_path, '|', level_component);",
+      "  node_key = group_path;",
+      switch(level$missing_policy,
+             exclude = paste0("  if missing(", level$variable, ");"),
+             label = paste0("  if missing(", level$variable, ") then ",
+                            "group_label = ", sas_character_literal(level$missing_label %||% "Missing"), ";"),
+             error = paste0("  if missing(", level$variable, ") then do; put 'WARNING: [USER] missing_level'; delete; end;"),
+             character()),
       "run;"
     )
   }), use.names = FALSE)
@@ -39,6 +59,7 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     paste0("  set ", chunk$source_data, ";"),
     if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;") else character(),
     "run;",
+    duplicate_guard,
     level_lines,
     "/* Order static rows before dynamic children and preserve result sort metadata. */",
     block_lines,
