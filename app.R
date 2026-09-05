@@ -29,6 +29,13 @@ ui <- fluidPage(
       actionButton("save", "Save"),
       actionButton("cancel", "Cancel"),
       selectInput("table", "Table", choices = character()),
+      selectInput("header", "Header", choices = character()),
+      textInput("header_source_data", "Header source data"),
+      selectInput("template", "Template", choices = character()),
+      textInput("template_stub_header", "Template stub header"),
+      selectInput("chunk", "Chunk", choices = character()),
+      textInput("chunk_source_data", "Chunk source data"),
+      textInput("chunk_filter", "Chunk filter"),
       actionButton("generate", "Generate SAS"),
       downloadButton("download_bundle", "Download metadata"),
       downloadButton("download_sas", "Download SAS"),
@@ -54,7 +61,67 @@ server <- function(input, output, session) {
     population_ids <- vapply(value$populations, `[[`, "", "id")
     updateSelectInput(session, "population", choices = population_ids,
                       selected = if (length(population_ids) > 0L) population_ids[[1L]] else character())
+    header_ids <- vapply(value$headers, `[[`, "", "id")
+    updateSelectInput(session, "header", choices = header_ids,
+                      selected = if (length(header_ids) > 0L) header_ids[[1L]] else character())
+    template_ids <- vapply(value$templates, `[[`, "", "id")
+    updateSelectInput(session, "template", choices = template_ids,
+                      selected = if (length(template_ids) > 0L) template_ids[[1L]] else character())
+    chunks <- unlist(lapply(value$templates, function(template) template$body$chunks %||% list()), recursive = FALSE)
+    chunk_ids <- if (length(chunks) > 0L) vapply(chunks, `[[`, "", "id") else character()
+    updateSelectInput(session, "chunk", choices = chunk_ids,
+                      selected = if (length(chunk_ids) > 0L) chunk_ids[[1L]] else character())
   }
+
+  begin_edit <- function(type, id) {
+    if (is.null(draft_target()) && nzchar(id %||% "")) {
+      begun <- workspace_begin_draft(workspace(), type, id)
+      if (begun$passed) {
+        workspace(begun$workspace)
+        draft_target(TRUE)
+      }
+    }
+  }
+
+  observeEvent(input$header, {
+    item <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
+    if (length(item) == 1L && is.null(draft_target())) {
+      updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
+    }
+  }, ignoreInit = FALSE)
+  observeEvent(input$header_source_data, {
+    begin_edit("header", input$header)
+    if (!is.null(draft_target())) {
+      draft <- workspace_draft_value(workspace()); draft$source_data <- input$header_source_data
+      workspace(workspace_set_draft(workspace(), draft)$workspace)
+    }
+  }, ignoreInit = TRUE)
+
+  observeEvent(input$template, {
+    item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
+    if (length(item) == 1L && is.null(draft_target())) {
+      updateTextInput(session, "template_stub_header", value = item[[1L]]$body$stub_header %||% "")
+    }
+  }, ignoreInit = FALSE)
+  observeEvent(input$template_stub_header, {
+    begin_edit("template", input$template)
+    if (!is.null(draft_target())) {
+      draft <- workspace_draft_value(workspace()); draft$body$stub_header <- input$template_stub_header
+      workspace(workspace_set_draft(workspace(), draft)$workspace)
+    }
+  }, ignoreInit = TRUE)
+
+  find_chunk <- function(values, id) {
+    chunks <- unlist(lapply(values$templates, function(template) template$body$chunks %||% list()), recursive = FALSE)
+    Filter(function(value) identical(value$id, id), chunks)
+  }
+  observeEvent(input$chunk, {
+    item <- find_chunk(workspace(), input$chunk)
+    if (length(item) == 1L && is.null(draft_target())) {
+      updateTextInput(session, "chunk_source_data", value = item[[1L]]$source_data)
+      updateTextInput(session, "chunk_filter", value = item[[1L]]$filter %||% "")
+    }
+  }, ignoreInit = FALSE)
 
   observeEvent(list(input$population, workspace()), {
     id <- input$population
