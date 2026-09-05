@@ -1,8 +1,8 @@
 # SAS Code Generation 实施计划
 
 状态：阶段划分已确认；详细计划 v1（2026-09-02）。P0-1 工具链与 YAML 解析
-边界已于 2026-09-03 确认，P0-1 至 P0-8 的 P0 gate 已于 2026-09-04 完成；P1/P3
-首批实现已开始。
+边界已于 2026-09-03 确认，P0-1 至 P0-8 的 P0 gate 已于 2026-09-04 完成；P1
+已完成，P4 首个 mock-emitter 垂直切片已实现并通过 focused tests。
 
 本计划基于 `table-and-chunk-analysis-model.md`、`docs/design-decisions.md` 和
 `docs/ref-alignment.md`。它只描述实现阶段、输入、产物、验收和依赖关系；在
