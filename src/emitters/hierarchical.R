@@ -55,6 +55,8 @@ hierarchical_summary_emitter <- function(plan, resolved) {
       paste0("anchor_level = ", sas_character_literal(block$anchor_level), ";"),
       paste0("placement = ", sas_character_literal(block$placement), ";"),
       paste0("runtime_row_id = cats(node_key, ':', analysis_id);"),
+      paste0("block_order = ", index, ";"),
+      "row_order = 0;",
       "row_role = 'static';"
     )
   }), use.names = FALSE)
@@ -76,9 +78,14 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "  /* Static rows sort before dynamic children at the same node. */",
     "  sort_key = cats(group_path, '|', putn(0, 'Z6.'), '|', runtime_row_id);",
     "run;",
+    "/* Flatten current node, below static rows, then dynamic children. */",
+    paste0("proc sort data=_TFL_HSTAT_", sprintf("%03d", plan$batch_order),
+           " out=_TFL_HFLAT_", sprintf("%03d", plan$batch_order), ";"),
+    "  by group_path row_role block_order row_order sort_key;",
+    "run;",
     paste0("data ", plan$render_dataset, ";"),
     "  length chunk_id row_id label indent_level header_column_id cell_text $256;",
-    paste0("  set _TFL_HSTAT_", sprintf("%03d", plan$batch_order), ";"),
+    paste0("  set _TFL_HFLAT_", sprintf("%03d", plan$batch_order), ";"),
     "  /* Hierarchical render rows carry runtime_row_id, row_role, group_path, and node_key. */",
     "run;"
   )

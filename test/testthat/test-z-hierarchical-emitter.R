@@ -37,6 +37,8 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "analysis_id = 'a1';", fixed = TRUE)
   testthat::expect_match(result$source, "runtime_row_id = cats(node_key", fixed = TRUE)
   testthat::expect_match(result$source, "data _TFL_HSTAT_001;", fixed = TRUE)
+  testthat::expect_match(result$source, "out=_TFL_HFLAT_001", fixed = TRUE)
+  testthat::expect_match(result$source, "by group_path row_role block_order row_order sort_key;", fixed = TRUE)
   testthat::expect_length(regmatches(result$source,
                                      gregexpr("proc sort data=adam.adae", result$source, fixed = TRUE))[[1L]], 1L)
 })
