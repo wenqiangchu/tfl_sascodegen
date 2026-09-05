@@ -16,4 +16,6 @@ testthat::test_that("Shiny shell exposes core actions and failure feedback", {
   app$click("generate")
   app$wait_for_idle(1000)
   app$expect_screenshot()
+  app$click("cancel")
+  app$click("download_bundle")
 })

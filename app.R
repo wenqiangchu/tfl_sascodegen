@@ -34,11 +34,20 @@ ui <- fluidPage(
       textInput("table_template_id", "Table template ID"),
       selectInput("header", "Header", choices = character()),
       textInput("header_source_data", "Header source data"),
+      textInput("header_column_label", "First header column label"),
+      textInput("header_column_condition", "First header column condition"),
       selectInput("template", "Template", choices = character()),
       textInput("template_stub_header", "Template stub header"),
       selectInput("chunk", "Chunk", choices = character()),
       textInput("chunk_source_data", "Chunk source data"),
       textInput("chunk_filter", "Chunk filter"),
+      textInput("chunk_row_label", "First chunk row label"),
+      textInput("chunk_statistic_id", "First statistic ID"),
+      numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
+      actionButton("chunk_add", "Add chunk"),
+      actionButton("chunk_delete", "Delete chunk"),
+      actionButton("chunk_up", "Move chunk up"),
+      actionButton("chunk_down", "Move chunk down"),
       actionButton("generate", "Generate SAS"),
       downloadButton("download_bundle", "Download metadata"),
       downloadButton("download_sas", "Download SAS"),
@@ -91,6 +100,9 @@ server <- function(input, output, session) {
     item <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
+      column <- item[[1L]]$columns[[1L]]
+      updateTextInput(session, "header_column_label", value = column$label)
+      updateTextInput(session, "header_column_condition", value = column$condition)
     }
   }, ignoreInit = FALSE)
 
@@ -132,6 +144,14 @@ server <- function(input, output, session) {
       workspace(workspace_set_draft(workspace(), draft)$workspace)
     }
   }, ignoreInit = TRUE)
+  observeEvent(input$header_column_label, {
+    begin_edit("header", input$header)
+    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); draft$columns[[1L]]$label <- input$header_column_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
+  }, ignoreInit = TRUE)
+  observeEvent(input$header_column_condition, {
+    if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$columns[[1L]]$condition <- input$header_column_condition; workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
 
   observeEvent(input$template, {
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
@@ -156,6 +176,11 @@ server <- function(input, output, session) {
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "chunk_source_data", value = item[[1L]]$source_data)
       updateTextInput(session, "chunk_filter", value = item[[1L]]$filter %||% "")
+      row <- item[[1L]]$rows[[1L]]
+      updateTextInput(session, "chunk_row_label", value = row$label %||% "")
+      statistic <- (row$statistics %||% list())[[1L]]
+      updateTextInput(session, "chunk_statistic_id", value = statistic$id %||% "")
+      updateNumericInput(session, "chunk_statistic_digits", value = statistic$digits %||% NA)
     }
   }, ignoreInit = FALSE)
   observeEvent(input$chunk_source_data, {
@@ -165,6 +190,33 @@ server <- function(input, output, session) {
       workspace(workspace_set_draft(workspace(), draft)$workspace)
     }
   }, ignoreInit = TRUE)
+  observeEvent(input$chunk_row_label, {
+    begin_edit("chunk", input$chunk)
+    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); draft$rows[[1L]]$label <- input$chunk_row_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
+  }, ignoreInit = TRUE)
+  observeEvent(input$chunk_statistic_id, {
+    if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$rows[[1L]]$statistics[[1L]]$id <- input$chunk_statistic_id; workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
+  observeEvent(input$chunk_statistic_digits, {
+    if (is.null(draft_target()) || is.na(input$chunk_statistic_digits)) return()
+    draft <- workspace_draft_value(workspace()); draft$rows[[1L]]$statistics[[1L]]$digits <- as.integer(input$chunk_statistic_digits); workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
+  chunk_operation <- function(operation) {
+    item <- find_chunk(workspace(), input$chunk)
+    if (length(item) != 1L) return()
+    template <- Filter(function(value) any(vapply(value$body$chunks %||% list(), function(chunk) identical(chunk$id, input$chunk), logical(1L))), workspace()$templates)[[1L]]
+    result <- switch(operation,
+      add = workspace_create(workspace(), "chunk", { value <- clone_metadata_value(item[[1L]]); value$id <- paste0(input$chunk, "_new"); value }, template_id = template$id),
+      delete = workspace_delete(workspace(), workspace_target("chunk", input$chunk, template_id = template$id), confirm = TRUE),
+      up = workspace_move(workspace(), workspace_target("chunk", input$chunk, template_id = template$id), "up"),
+      down = workspace_move(workspace(), workspace_target("chunk", input$chunk, template_id = template$id), "down"))
+    if (isTRUE(result$passed)) { workspace(result$workspace); refresh_tables(result$workspace); status(paste("Chunk", operation, "completed.")) } else status(error_text(result$errors))
+  }
+  observeEvent(input$chunk_add, chunk_operation("add"))
+  observeEvent(input$chunk_delete, chunk_operation("delete"))
+  observeEvent(input$chunk_up, chunk_operation("up"))
+  observeEvent(input$chunk_down, chunk_operation("down"))
   observeEvent(input$chunk_filter, {
     if (is.null(input$chunk) || !nzchar(input$chunk) || is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace())
