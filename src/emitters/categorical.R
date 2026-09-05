@@ -99,6 +99,7 @@ categorical_batch_analysis_source <- function(plan) {
     "  else if statistic_id = 'n' then token = putn(value, 'BEST32.');",
     "  else token = putn(value, 'F32.1');",
     "  cell_text = tranwrd(cell_format, cats('{', statistic_id, '}'), token);",
+    "  /* Literal percent characters remain unchanged during placeholder replacement. */",
     "  /* Non-estimable percentages render as NE; n remains independently estimable. */",
     "run;"
   )

@@ -29,6 +29,8 @@ testthat::test_that("default continuous emitter generates one MEANS batch and lo
   testthat::expect_match(result$source, "ROUND", fixed = TRUE)
   testthat::expect_match(result$source, "PUTN", fixed = TRUE)
   testthat::expect_match(result$source, "tranwrd", ignore.case = TRUE)
+  testthat::expect_match(result$source, "resolved_digits", fixed = TRUE)
+  testthat::expect_match(result$source, "estimable = 0 then token = 'NE'", fixed = TRUE)
 })
 
 testthat::test_that("relative digits resolve from base digits and reject negative results", {
