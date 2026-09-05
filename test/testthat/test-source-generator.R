@@ -110,7 +110,11 @@ testthat::test_that("prerequisite failures are ordered and return no partial sou
   testthat::expect_identical(missing_table$errors[[1L]]$code, "generation_table_missing")
   testthat::expect_null(missing_table$source)
 
-  missing_emitter <- generate_table_source(generator_fixture(), "t1")
+  unavailable_definitions <- default_chunk_registry()$definitions
+  unavailable_definitions$continuous_summary$emitter <- NULL
+  missing_emitter <- generate_table_source(
+    generator_fixture(), "t1", new_chunk_registry(unavailable_definitions)
+  )
   testthat::expect_false(missing_emitter$passed)
   testthat::expect_null(missing_emitter$source)
   testthat::expect_length(missing_emitter$errors, 2L)

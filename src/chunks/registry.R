@@ -186,6 +186,7 @@ default_chunk_registry <- local({
       ),
       batch_type = "continuous"
     )
+    continuous$emitter <- continuous_summary_emitter
     categorical <- make_primitive_definition(
       type_id = "categorical_summary_nonexclusive",
       statistic_ids = c("n", "pct"),
