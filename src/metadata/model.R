@@ -601,6 +601,9 @@ parse_primitive_denominator <- function(value, path, collector) {
   result
 }
 
+# Primitive chunks use the explicit value-parser name at their dispatch site.
+parse_primitive_denominator_value <- parse_primitive_denominator
+
 parse_source_contract_value <- function(value, path, collector) {
   allowed <- c("grain", "subject_key", "record_key", "duplicate_policy")
   required <- c("grain", "subject_key", "duplicate_policy")

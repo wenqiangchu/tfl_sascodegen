@@ -133,3 +133,41 @@ testthat::test_that("duplicate emitter sections are rejected before assembly", {
   testthat::expect_null(result$source)
   testthat::expect_identical(result$errors[[1L]]$code, "generation_contract_invalid")
 })
+
+testthat::test_that("interleaved batch types retain template order in logical maps", {
+  bundle <- generator_fixture()
+  chunks <- bundle$templates[[1L]]$body$chunks
+  categorical <- list(
+    id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl",
+    denominator = list(type = "header_population"),
+    rows = list(list(
+      id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
+      statistics = list(list(id = "n")), cell_format = "{n}"
+    ))
+  )
+  bundle$templates[[1L]]$body$chunks <- list(chunks[[1L]], categorical, chunks[[2L]])
+  log <- new.env(parent = emptyenv())
+  log$plans <- list()
+  registry <- mock_generator_registry(log)
+  definitions <- registry$definitions
+  definitions$categorical_summary_nonexclusive$emitter <- function(plan, resolved) {
+    log$plans[[length(log$plans) + 1L]] <- plan
+    new_emitter_output(
+      list(new_source_section("categorical_batch", "chunk", "categorical", 1L,
+                              "/* categorical batch */")),
+      plan$statistic_dataset, plan$render_dataset
+    )
+  }
+  registry <- new_chunk_registry(definitions)
+  result <- generate_table_source(bundle, "t1", registry)
+  testthat::expect_true(result$passed)
+  testthat::expect_identical(length(log$plans), 2L)
+  testthat::expect_identical(log$plans[[1L]]$chunk_orders, c(1L, 3L))
+  testthat::expect_identical(log$plans[[2L]]$chunk_orders, 2L)
+  testthat::expect_identical(
+    vapply(log$plans[[1L]]$logical_maps, `[[`, "", "chunk_id"),
+    c("age", "weight")
+  )
+  testthat::expect_identical(log$plans[[2L]]$logical_maps[[1L]]$chunk_id, "sex")
+  testthat::expect_true(grepl("categorical batch", result$source, fixed = TRUE))
+})
