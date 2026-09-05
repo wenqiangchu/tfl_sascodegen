@@ -8,12 +8,17 @@ continuous_merged_dataset <- function(batch_order, chunk_order) {
   paste0("_TFL_CMERGE_", sprintf("%03d", batch_order), "_", sprintf("%03d", chunk_order))
 }
 
+continuous_chunk_input_dataset <- function(batch_order, chunk_order) {
+  paste0("_TFL_CIN_", sprintf("%03d", batch_order), "_", sprintf("%03d", chunk_order))
+}
+
 continuous_chunk_source <- function(plan, entry) {
   batch <- plan$batch_order
   chunk_order <- entry$chunk_order
   chunk <- entry$chunk
   source_dataset <- continuous_source_dataset(batch, chunk_order)
   merged_dataset <- continuous_merged_dataset(batch, chunk_order)
+  input_dataset <- continuous_chunk_input_dataset(batch, chunk_order)
   filter_lines <- if (!is.null(chunk$filter)) {
     c(paste0("  if not (", chunk$filter, ") then delete;"))
   } else character()
@@ -33,7 +38,7 @@ continuous_chunk_source <- function(plan, entry) {
   )
   input_lines <- c(
     "/* Normalize continuous analysis values into the batch input. */",
-    paste0("data ", plan$input_dataset, ";"),
+    paste0("data ", input_dataset, ";"),
     paste0("  set ", merged_dataset, ";"),
     paste0("  chunk_order = ", chunk_order, ";"),
     "  analysis_value = ", chunk$analysis_variable, ";",
@@ -44,7 +49,14 @@ continuous_chunk_source <- function(plan, entry) {
 }
 
 continuous_batch_analysis_source <- function(plan) {
+  chunk_inputs <- vapply(plan$chunk_orders, function(chunk_order) {
+    continuous_chunk_input_dataset(plan$batch_order, chunk_order)
+  }, character(1L))
   c(
+    "/* Combine normalized continuous chunk inputs in template order. */",
+    paste0("data ", plan$input_dataset, ";"),
+    paste0("  set ", paste(chunk_inputs, collapse = " "), ";"),
+    "run;",
     "/* Resolve continuous precision digits from eligible subjects. */",
     paste0("data ", plan$precision_dataset, ";"),
     paste0("  set ", plan$input_dataset, ";"),

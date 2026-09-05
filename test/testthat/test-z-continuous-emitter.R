@@ -24,6 +24,8 @@ testthat::test_that("default continuous emitter generates one MEANS batch and lo
   testthat::expect_match(result$source, "data _TFL_STAT_001;", fixed = TRUE)
   testthat::expect_match(result$source, "data _TFL_REND_001;", fixed = TRUE)
   testthat::expect_match(result$source, "set adam.adsl;", fixed = TRUE)
+  testthat::expect_match(result$source, "data _TFL_CIN_001_001;", fixed = TRUE)
+  testthat::expect_match(result$source, "data _TFL_CIN_001;\n  set _TFL_CIN_001_001;", fixed = TRUE)
   testthat::expect_match(result$source, "ROUND", fixed = TRUE)
   testthat::expect_match(result$source, "PUTN", fixed = TRUE)
 })
