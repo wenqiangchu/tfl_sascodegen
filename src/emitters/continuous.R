@@ -75,25 +75,8 @@ continuous_batch_analysis_source <- function(plan) {
            "(drop=_TYPE_ _FREQ_) N=_n MEAN=_mean STD=_sd MEDIAN=_median",
            " Q1=_q1 Q3=_q3 MIN=_min MAX=_max;"),
     "run;",
-    "/* Expand continuous statistics to long form. */",
-    paste0("data ", plan$statistic_dataset, ";"),
-    "  length chunk_id row_id header_column_id statistic_id $128;",
-    "  set ", plan$raw_dataset, ";",
-    "  /* Logical row/statistic mapping is supplied by the generator plan. */",
-    "run;",
-    "/* Render continuous long-form cells without recomputing statistics. */",
-    paste0("data ", plan$render_dataset, ";"),
-    "  length chunk_id row_id label header_column_id cell_text $256;",
-    "  set ", plan$statistic_dataset, ";",
-    "  if estimable = 0 then token = 'NE';",
-    "  else if statistic_id = 'n' then token = putn(value, 'BEST32.');",
-    "  else do;",
-    "    rounded_value = ROUND(value, 10 ** (-resolved_digits));",
-    "    if rounded_value = 0 then rounded_value = 0;",
-    "    token = PUTN(rounded_value, cats('F', 32, '.', resolved_digits));",
-    "  end;",
-    "  cell_text = TRANWRD(cell_format, cats('{', statistic_id, '}'), token);",
-    "run;"
+    long_form_statistic_source(plan, "_mean"),
+    render_long_form_source(plan)
   )
 }
 

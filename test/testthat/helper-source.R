@@ -10,3 +10,4 @@ source(file.path(project_root, "src", "emitters", "continuous.R"), local = FALSE
 source(file.path(project_root, "src", "emitters", "categorical.R"), local = FALSE)
 source(file.path(project_root, "src", "emitters", "hierarchical.R"), local = FALSE)
 source(file.path(project_root, "src", "emitters", "precision.R"), local = FALSE)
+source(file.path(project_root, "src", "emitters", "result_render.R"), local = FALSE)
