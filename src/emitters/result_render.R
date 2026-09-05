@@ -15,12 +15,29 @@ long_form_statistic_source <- function(plan, raw_value = "value") {
 }
 
 expected_cell_skeleton_source <- function(plan) {
+  result_map <- plan$result_map %||% list()
+  map_rows <- if (length(result_map) > 0L) {
+    vapply(result_map, function(entry) {
+      paste(c(
+        sas_character_literal(entry$chunk_id %||% ""),
+        sas_character_literal(entry$row_id %||% ""),
+        sas_character_literal(entry$header_column_id %||% ""),
+        sas_character_literal(entry$statistic_id %||% ""),
+        as.integer(entry$row_order %||% 0L),
+        as.integer(entry$column_order %||% 0L)
+      ), collapse = "|")
+    }, character(1L))
+  } else character()
   c(
     "/* Expand the complete chunk/row/header/statistic expected-cell skeleton. */",
     paste0("data _TFL_KEY_", sprintf("%03d", plan$batch_order), ";"),
     "  length chunk_id row_id header_column_id statistic_id $128;",
-    "  /* result_map supplies label and analysis identities in template order. */",
-    "  /* Missing raw cells are retained with numeric missing value and estimable=0. */",
+    "  infile datalines dlm='|' dsd truncover;",
+    "  input chunk_id :$128. row_id :$128. header_column_id :$128.",
+    "        statistic_id :$128. row_order column_order;",
+    if (length(map_rows) > 0L) c("  datalines;", map_rows, ";") else
+      "  /* Empty result maps are valid for chunks without analysis rows. */",
+    "  /* Missing raw cells remain represented by this complete key skeleton. */",
     "run;"
   )
 }
