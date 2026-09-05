@@ -131,6 +131,26 @@ batch_dataset_names <- function(definition, batch_order) {
   result
 }
 
+chunk_logical_map <- function(chunk, chunk_order, header_columns) {
+  rows <- chunk$rows %||% list()
+  row_maps <- lapply(seq_along(rows), function(row_order) {
+    row <- rows[[row_order]]
+    list(
+      row_order = as.integer(row_order), row_id = row$id,
+      row_type = row$type,
+      statistic_ids = if (identical(row$type, "analysis")) {
+        vapply(row$statistics %||% list(), `[[`, "", "id")
+      } else character()
+    )
+  })
+  list(
+    chunk_order = as.integer(chunk_order), chunk_id = chunk$id,
+    chunk_type = chunk$type,
+    header_column_ids = vapply(header_columns, `[[`, "", "id"),
+    rows = row_maps
+  )
+}
+
 plan_primitive_batches <- function(resolved) {
   groups <- list()
   errors <- list()
@@ -174,6 +194,9 @@ plan_primitive_batches <- function(resolved) {
       chunk_type = group$definition$type_id,
       chunk_orders = vapply(group$entries, `[[`, integer(1L), "chunk_order"),
       chunks = lapply(group$entries, `[[`, "chunk"),
+      logical_maps = lapply(group$entries, function(entry) {
+        chunk_logical_map(entry$chunk, entry$chunk_order, resolved$header$columns)
+      }),
       header_columns = resolved$header$columns,
       membership_dataset = "_TFL_MEM_001",
       definition = group$definition
@@ -280,6 +303,7 @@ generate_sas_source <- function(request) {
   }
   assembly_text <- paste(
     "/* Assemble table rows and cells in template order. */",
+    "/* Batch outputs are mapped back through chunk/row/header identities. */",
     "data _TFL_ASM_001;",
     paste0("  set ", paste(vapply(outputs, `[[`, "", "render_dataset"), collapse = " "), ";"),
     "run;", sep = "\n"

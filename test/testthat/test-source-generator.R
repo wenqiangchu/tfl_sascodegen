@@ -59,6 +59,14 @@ testthat::test_that("generator resolves references and batches compatible chunks
   testthat::expect_identical(log$plans[[1L]]$chunk_orders, c(1L, 2L))
   testthat::expect_identical(log$plans[[1L]]$input_dataset, "_TFL_CIN_001")
   testthat::expect_identical(log$plans[[1L]]$precision_dataset, "_TFL_CPREC_001")
+  testthat::expect_identical(
+    vapply(log$plans[[1L]]$logical_maps, `[[`, "", "chunk_id"),
+    c("age", "weight")
+  )
+  testthat::expect_identical(
+    log$plans[[1L]]$logical_maps[[1L]]$rows[[1L]]$statistic_ids,
+    "mean"
+  )
   testthat::expect_identical(lengths(regmatches(result$source,
     gregexpr("proc means", result$source, fixed = TRUE))), 1L)
 })
@@ -72,6 +80,8 @@ testthat::test_that("source sections preserve custom code and opaque SAS referen
   testthat::expect_match(result$source, "SAFFL = 'Y'", fixed = TRUE)
   testthat::expect_match(result$source, "Derive header column membership", fixed = TRUE)
   testthat::expect_match(result$source, "Assemble table rows and cells", fixed = TRUE)
+  testthat::expect_match(result$source, "mapped back through chunk/row/header identities",
+                         fixed = TRUE)
   testthat::expect_false(grepl("provenance|binding_profile|manifest", result$source,
                               ignore.case = TRUE))
   repeated <- generate_table_source(generator_fixture(), "t1", mock_generator_registry())
