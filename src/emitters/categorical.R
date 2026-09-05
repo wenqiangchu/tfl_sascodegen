@@ -63,7 +63,8 @@ categorical_chunk_source <- function(plan, entry) {
     "  end;",
     "  if missing(USUBJID) then delete;",
     row_lines,
-    "  keep chunk_order row_order column_order source_row;",
+    paste0("  keep chunk_order row_order column_order source_row",
+           if (!is.null(plan$grouping_variables)) paste0(" ", plan$grouping_variables) else "", ";"),
     "run;"
   )
   paste(input_lines, collapse = "\n")
@@ -80,7 +81,10 @@ categorical_batch_analysis_source <- function(plan) {
     "run;",
     "/* Analyze compatible categorical events once. */",
     paste0("proc freq data=", plan$input_dataset, ";"),
-    paste0("  tables chunk_order*row_order*column_order / out=", plan$raw_dataset, ";"),
+    paste0("  tables ",
+           paste(c(if (!is.null(plan$grouping_variables)) plan$grouping_variables else character(),
+                   "chunk_order", "row_order", "column_order"), collapse = "*"),
+           " / out=", plan$raw_dataset, ";"),
     "run;",
     "/* Complete expected cells and use explicit denominator percentages. */",
     expected_cell_skeleton_source(plan),

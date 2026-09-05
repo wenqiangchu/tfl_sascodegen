@@ -23,6 +23,7 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
                                           analysis_id = block$id),
     header_columns = resolved$header$columns,
     membership_dataset = paste0("_TFL_HMEM_", sprintf("%03d", plan$batch_order)),
+    grouping_variables = "node_key",
     definition = definition,
     input_dataset = paste0("_TFL_HIN_", sprintf("%03d", block_order)),
     raw_dataset = paste0("_TFL_HRAW_", sprintf("%03d", block_order)),
@@ -125,6 +126,12 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "run;",
     duplicate_guard,
     level_lines,
+    if (length(chunk$levels) > 0L) c(
+      "/* Materialize the deepest parent-child node paths for nested analyses. */",
+      paste0("data ", node_dataset, ";"),
+      paste0("  set _TFL_HLEVEL_", sprintf("%03d", length(chunk$levels)), ";"),
+      "run;"
+    ) else character(),
     "/* Order static rows before dynamic children and preserve result sort metadata. */",
     block_lines,
     vapply(nested_sections, `[[`, "", "text"),

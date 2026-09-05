@@ -44,6 +44,8 @@ testthat::test_that("hierarchical emitter keeps container scope and static-befor
   testthat::expect_match(result$source, "data _TFL_HMEM_001;", fixed = TRUE)
   testthat::expect_match(result$source, "merge _TFL_HMEM_001(in=membership)", fixed = TRUE)
   testthat::expect_match(result$source, "set _TFL_HNODE_001;", fixed = TRUE)
+  testthat::expect_match(result$source, "Materialize the deepest parent-child node paths", fixed = TRUE)
+  testthat::expect_match(result$source, "class chunk_order column_order node_key;", fixed = TRUE)
   testthat::expect_match(result$source, "by group_path row_role block_order row_order sort_key;", fixed = TRUE)
   testthat::expect_true(length(grep("parent_node_key", result$source, fixed = TRUE)) >= 0L)
   testthat::expect_true(length(regmatches(result$source,

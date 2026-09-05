@@ -42,7 +42,8 @@ continuous_chunk_source <- function(plan, entry) {
     paste0("  set ", merged_dataset, ";"),
     paste0("  chunk_order = ", chunk_order, ";"),
     "  analysis_value = ", chunk$analysis_variable, ";",
-    "  keep chunk_order column_order analysis_value source_row;",
+    paste0("  keep chunk_order column_order analysis_value source_row",
+           if (!is.null(plan$grouping_variables)) paste0(" ", plan$grouping_variables) else "", ";"),
     "run;"
   )
   paste(c(source_lines, input_lines), collapse = "\n")
@@ -69,7 +70,8 @@ continuous_batch_analysis_source <- function(plan) {
     "run;",
     "/* Analyze compatible continuous chunks once. */",
     paste0("proc means data=", plan$input_dataset, " nway;"),
-    "  class chunk_order column_order;",
+    paste0("  class chunk_order column_order",
+           if (!is.null(plan$grouping_variables)) paste0(" ", plan$grouping_variables) else "", ";"),
     "  var analysis_value;",
     paste0("  output out=", plan$raw_dataset,
            "(drop=_TYPE_ _FREQ_) N=_n MEAN=_mean STD=_sd MEDIAN=_median",
