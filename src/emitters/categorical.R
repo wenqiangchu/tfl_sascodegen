@@ -100,6 +100,26 @@ categorical_batch_analysis_source <- function(plan) {
   )
 }
 
+categorical_exclusive_batch_analysis_source <- function(plan) {
+  lines <- categorical_batch_analysis_source(plan)
+  guard <- c(
+    "/* Guard exclusive categorical overlap without changing counting events. */",
+    paste0("proc sort data=", plan$input_dataset, " out=_TFL_KGUARD_", sprintf("%03d", plan$batch_order), ";"),
+    "  by chunk_order column_order;",
+    "run;",
+    "data _null_;",
+    paste0("  set _TFL_KGUARD_", sprintf("%03d", plan$batch_order), ";"),
+    "  by chunk_order column_order;",
+    "  if first.column_order then overlap_count = 0;",
+    "  if row_order > 0 then overlap_count + 1;",
+    "  if last.column_order and overlap_count > 1 then",
+    "    put 'WARNING: [USER] exclusive_overlap chunk_order=' chunk_order",
+    "      ' column_order=' column_order ' unit=' USUBJID ' row_orders=' row_order '.';",
+    "run;"
+  )
+  c(lines[1:3], guard, lines[4:length(lines)])
+}
+
 categorical_summary_nonexclusive_emitter <- function(plan, resolved) {
   if (!inherits(plan, "PrimitiveBatchPlan") ||
       !identical(plan$chunk_type, "categorical_summary_nonexclusive")) {
@@ -117,6 +137,27 @@ categorical_summary_nonexclusive_emitter <- function(plan, resolved) {
   sections <- c(chunk_sections, list(new_source_section(
     paste0("categorical_batch_", plan$batch_order), "analysis", "categorical_nonexclusive",
     100L, paste(categorical_batch_analysis_source(plan), collapse = "\n")
+  )))
+  new_emitter_output(sections, plan$statistic_dataset, plan$render_dataset)
+}
+
+categorical_summary_exclusive_emitter <- function(plan, resolved) {
+  if (!inherits(plan, "PrimitiveBatchPlan") ||
+      !identical(plan$chunk_type, "categorical_summary_exclusive")) {
+    stop("Exclusive categorical emitter received an incompatible batch plan.", call. = FALSE)
+  }
+  chunk_sections <- lapply(plan$chunks, function(chunk) {
+    entry <- plan$logical_maps[[which(vapply(plan$logical_maps, `[[`, "", "chunk_id") == chunk$id)[[1L]]]]
+    new_source_section(
+      paste0("categorical_exclusive_chunk_", entry$chunk_order), "chunk", chunk$id,
+      entry$chunk_order, categorical_chunk_source(plan, list(
+        chunk_order = entry$chunk_order, chunk = chunk
+      ))
+    )
+  })
+  sections <- c(chunk_sections, list(new_source_section(
+    paste0("categorical_exclusive_batch_", plan$batch_order), "analysis", "categorical_exclusive",
+    100L, paste(categorical_exclusive_batch_analysis_source(plan), collapse = "\n")
   )))
   new_emitter_output(sections, plan$statistic_dataset, plan$render_dataset)
 }

@@ -216,6 +216,7 @@ default_chunk_registry <- local({
       ),
       batch_type = "categorical_exclusive"
     )
+    exclusive$emitter <- categorical_summary_exclusive_emitter
     hierarchical <- new_chunk_type_definition(
       type_id = "hierarchical_summary",
       capability = "container",
