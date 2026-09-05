@@ -158,7 +158,7 @@ testthat::test_that("import is atomic and only failures update parse diagnostics
   blocked <- workspace_import_bundle(draft, "schema_version: [")
   testthat::expect_false(blocked$passed)
   testthat::expect_identical(blocked$errors[[1L]]$code, "workspace_draft_dirty")
-  failed <- workspace_import_bundle(draft, "schema_version: [", allow_dirty = TRUE)
+  failed <- workspace_import_bundle(draft, charToRaw("not a zip archive"), allow_dirty = TRUE)
   testthat::expect_false(failed$passed)
   testthat::expect_identical(workspace_saved_snapshot(failed$workspace), before)
   testthat::expect_identical(failed$workspace$active_draft, draft$active_draft)
@@ -168,7 +168,7 @@ testthat::test_that("import is atomic and only failures update parse diagnostics
   replacement <- workspace_fixture_bundle()
   replacement$populations[[1L]]$label <- "Imported snapshot"
   succeeded <- workspace_import_bundle(
-    failed$workspace, canonical_yaml_bytes(replacement), allow_dirty = TRUE
+    failed$workspace, canonical_archive_bytes(replacement), allow_dirty = TRUE
   )
   testthat::expect_true(succeeded$passed)
   testthat::expect_identical(workspace_revision(succeeded$workspace), 1L)
@@ -186,7 +186,7 @@ testthat::test_that("metadata export always uses the saved snapshot", {
   draft <- workspace_set_draft(draft, value)$workspace
   exported <- workspace_export_bundle(draft)
   testthat::expect_true(exported$passed)
-  decoded <- parse_bundle_yaml(exported$value)
+  decoded <- parse_bundle_archive(exported$value)
   testthat::expect_true(decoded$passed)
   testthat::expect_identical(decoded$workspace$populations[[1L]]$label, "Safety")
   testthat::expect_true(workspace_is_dirty(exported$workspace))

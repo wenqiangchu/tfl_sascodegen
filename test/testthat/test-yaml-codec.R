@@ -218,3 +218,46 @@ testthat::test_that("feature scanner ignores controls in quoted and literal text
     item$code == "bundle_yaml_invalid" && grepl("anchor|tag", item$message)
   }, logical(1L))))
 })
+
+testthat::test_that("ZIP metadata archive round-trips with independent object files", {
+  bundle <- parse_bundle_yaml(valid_bundle_yaml())$workspace
+  archive <- canonical_archive_bytes(bundle)
+  testthat::expect_s3_class(archive, "CanonicalArchiveBytes")
+  decoded <- parse_bundle_archive(archive)
+  testthat::expect_true(decoded$passed)
+  testthat::expect_identical(
+    vapply(decoded$workspace$templates, `[[`, "", "id"),
+    "demog"
+  )
+  testthat::expect_identical(
+    vapply(decoded$workspace$tables, `[[`, "", "id"),
+    "t1"
+  )
+
+  zip_path <- tempfile(fileext = ".zip")
+  on.exit(unlink(zip_path, force = TRUE), add = TRUE)
+  writeBin(archive$bytes, zip_path)
+  entries <- zip::zip_list(zip_path)$filename
+  testthat::expect_identical(
+    entries,
+    c("manifest.yaml", "populations.yaml", "headers.yaml",
+      "tables/t1.yaml", "templates/demog.yaml")
+  )
+  second <- canonical_archive_bytes(decoded$workspace)
+  testthat::expect_identical(archive$bytes, second$bytes)
+})
+
+testthat::test_that("ZIP metadata archive requires manifest and catalogs", {
+  staging <- tempfile("tfl_missing_archive_")
+  dir.create(staging)
+  on.exit(unlink(staging, recursive = TRUE, force = TRUE), add = TRUE)
+  writeLines("schema_version: 1", file.path(staging, "manifest.yaml"), useBytes = TRUE)
+  zip_path <- tempfile(fileext = ".zip")
+  on.exit(unlink(zip_path, force = TRUE), add = TRUE)
+  zip::zipr(zip_path, files = "manifest.yaml", recurse = FALSE,
+            include_directories = FALSE, root = staging, mode = "cherry-pick")
+  bytes <- readBin(zip_path, "raw", n = file.info(zip_path)$size)
+  result <- parse_bundle_archive(bytes)
+  testthat::expect_false(result$passed)
+  testthat::expect_identical(result$errors[[1L]]$code, "bundle_entry_missing")
+})

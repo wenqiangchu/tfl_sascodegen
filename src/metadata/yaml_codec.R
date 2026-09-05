@@ -545,12 +545,352 @@ canonical_yaml_bytes <- function(bundle, registry = default_chunk_registry()) {
   new_canonical_bytes(canonical_yaml_text(bundle, registry))
 }
 
-encode_metadata_bundle <- canonical_yaml_bytes
-serialize_metadata_bundle <- canonical_yaml_bytes
+encode_metadata_yaml <- canonical_yaml_bytes
+serialize_metadata_yaml <- canonical_yaml_bytes
+
+new_canonical_archive_bytes <- function(bytes) {
+  if (!is.raw(bytes)) stop("Canonical archive requires raw bytes.", call. = FALSE)
+  structure(list(bytes = bytes), class = c("CanonicalArchiveBytes", "list"))
+}
+
+as.character.CanonicalArchiveBytes <- function(x, ...) {
+  stop("A canonical archive cannot be represented as character text.", call. = FALSE)
+}
+
+coerce_archive_bytes <- function(input) {
+  if (inherits(input, "CanonicalArchiveBytes")) return(input$bytes)
+  if (is.raw(input)) return(input)
+  NULL
+}
+
+archive_error <- function(code, message, path = "$") {
+  new_bundle_import_result(
+    FALSE,
+    errors = list(new_error_item("import", code, message, path))
+  )
+}
+
+parse_yaml_document_text <- function(text, path = "$") {
+  if (!is.character(text) || length(text) != 1L || is.na(text)) {
+    return(list(value = NULL, errors = list(new_error_item(
+      "import", "bundle_encoding_invalid", "Bundle entry is not valid UTF-8.", path
+    ))))
+  }
+  text <- normalize_yaml_text(charToRaw(text))
+  if (is.null(text)) {
+    return(list(value = NULL, errors = list(new_error_item(
+      "import", "bundle_encoding_invalid", "Bundle entry is not valid UTF-8.", path
+    ))))
+  }
+  feature_scan <- scan_yaml_features(text)
+  if (!isTRUE(feature_scan$ok)) {
+    return(list(value = NULL, errors = list(new_error_item(
+      "import", "bundle_yaml_invalid", feature_scan$message, path
+    ))))
+  }
+  parsed <- tryCatch(
+    yaml::yaml.load(text, as.named.list = TRUE, eval.expr = FALSE),
+    error = function(error) error
+  )
+  if (inherits(parsed, "error")) {
+    parser_message <- conditionMessage(parsed)
+    code <- if (grepl("Duplicate map key", parser_message, fixed = TRUE)) {
+      "bundle_duplicate_key"
+    } else {
+      "bundle_yaml_invalid"
+    }
+    message <- if (identical(code, "bundle_duplicate_key")) {
+      "A YAML mapping contains a duplicate key."
+    } else {
+      "Bundle entry is not valid YAML."
+    }
+    return(list(value = NULL, errors = list(new_error_item(
+      "import", code, message, path
+    ))))
+  }
+  list(value = parsed, errors = list())
+}
+
+parse_manifest_yaml <- function(text) {
+  parsed <- parse_yaml_document_text(text, "$.manifest.yaml")
+  if (length(parsed$errors) > 0L) return(parsed)
+  collector <- new_error_collector()
+  if (!check_mapping(parsed$value, "$.manifest.yaml", collector,
+                     "schema_version", "schema_version")) {
+    return(list(value = NULL, errors = error_items(collector)))
+  }
+  schema_version <- parse_integer_value(
+    get_field(parsed$value, "schema_version"),
+    "$.manifest.yaml.schema_version", collector, "schema_version", min_value = 1
+  )
+  if (!is.null(schema_version) && !identical(as.integer(schema_version), 1L)) {
+    add_error(collector, "import", "bundle_schema_unsupported",
+              sprintf("Schema version '%s' is not supported.", schema_version),
+              "$.manifest.yaml.schema_version")
+    schema_version <- NULL
+  }
+  errors <- error_items(collector)
+  if (length(errors) > 0L || is.null(schema_version)) {
+    return(list(value = NULL, errors = errors))
+  }
+  list(value = list(schema_version = schema_version), errors = list())
+}
+
+parse_catalog_yaml <- function(text, collection_name, parser) {
+  path <- paste0("$.", collection_name, ".yaml")
+  parsed <- parse_yaml_document_text(text, path)
+  if (length(parsed$errors) > 0L) return(parsed)
+  collector <- new_error_collector()
+  if (!check_mapping(parsed$value, path, collector, collection_name, collection_name)) {
+    return(list(value = NULL, errors = error_items(collector)))
+  }
+  raw <- parse_collection_raw(
+    get_field(parsed$value, collection_name),
+    paste0(path, ".", collection_name), collector, collection_name,
+    required = TRUE, allow_empty = TRUE
+  )
+  objects <- list()
+  if (!is.null(raw)) {
+    for (i in seq_along(raw$items)) {
+      item_path <- error_path_index(paste0(path, ".", collection_name), i - 1L)
+      value <- parser(raw$items[[i]], item_path, collector)
+      if (!is.null(value)) objects[[length(objects) + 1L]] <- value
+    }
+    if (length(objects) == length(raw$items)) {
+      check_unique_ids(
+        objects,
+        lapply(seq_along(objects), function(i)
+          error_path_index(paste0(path, ".", collection_name), i - 1L)),
+        collector
+      )
+    }
+  }
+  errors <- error_items(collector)
+  if (length(errors) > 0L || is.null(raw) || length(objects) != length(raw$items)) {
+    return(list(value = NULL, errors = errors))
+  }
+  result <- list()
+  result[[collection_name]] <- objects
+  list(value = result, errors = list())
+}
+
+archive_entry_class <- function(name) {
+  if (identical(name, "manifest.yaml")) return("manifest")
+  if (identical(name, "populations.yaml")) return("populations")
+  if (identical(name, "headers.yaml")) return("headers")
+  if (grepl("^tables/[^/]+\\.yaml$", name, perl = TRUE)) return("table")
+  if (grepl("^templates/[^/]+\\.yaml$", name, perl = TRUE)) return("template")
+  NULL
+}
+
+validate_archive_entries <- function(entries) {
+  names <- entries$filename
+  if (length(names) == 0L) {
+    return(list(error = new_error_item(
+      "import", "bundle_entry_missing", "Metadata archive contains no entries.", "$"
+    )))
+  }
+  if (anyDuplicated(names)) {
+    duplicate <- names[[which(duplicated(names))[1L]]]
+    return(list(error = new_error_item(
+      "import", "bundle_entry_duplicate", "Metadata archive contains a duplicate entry.",
+      paste0("$.", duplicate)
+    )))
+  }
+  if (any(entries$type != "file")) {
+    return(list(error = new_error_item(
+      "import", "bundle_entry_invalid", "Metadata archive contains a non-file entry.", "$"
+    )))
+  }
+  for (name in names) {
+    invalid_path <- startsWith(name, "/") || grepl("\\\\", name, fixed = TRUE) ||
+      grepl("(^|/)\\.{1,2}(/|$)", name, perl = TRUE) ||
+      grepl("^[A-Za-z]:", name, perl = TRUE)
+    if (invalid_path || is.null(archive_entry_class(name))) {
+      return(list(error = new_error_item(
+        "import", "bundle_entry_invalid", "Metadata archive contains an unsupported entry.",
+        paste0("$.", name)
+      )))
+    }
+  }
+  list(error = NULL)
+}
+
+archive_file_id <- function(name) sub("\\.yaml$", "", basename(name))
+
+read_archive_entries <- function(bytes) {
+  if (is.null(bytes) || length(bytes) == 0L) {
+    return(list(error = new_error_item("import", "bundle_input_missing",
+                                       "Bundle input is missing.", "$")))
+  }
+  temp_root <- tempfile("tfl_archive_")
+  dir.create(temp_root)
+  on.exit(unlink(temp_root, recursive = TRUE, force = TRUE), add = TRUE)
+  zip_path <- file.path(temp_root, "bundle.zip")
+  writeBin(bytes, zip_path)
+  listing <- tryCatch(zip::zip_list(zip_path), error = function(error) error)
+  if (inherits(listing, "error")) {
+    return(list(error = new_error_item("import", "bundle_archive_invalid",
+                                       "Bundle input is not a valid ZIP archive.", "$")))
+  }
+  validation <- validate_archive_entries(listing)
+  if (!is.null(validation$error)) return(list(error = validation$error))
+  extracted <- tryCatch({
+    zip::unzip(zip_path, files = listing$filename, overwrite = TRUE,
+               junkpaths = FALSE, exdir = temp_root)
+    lapply(listing$filename, function(name) {
+      path <- file.path(temp_root, name)
+      info <- file.info(path)
+      if (is.na(info$size) || info$isdir) stop("archive entry extraction failed")
+      readBin(path, "raw", n = info$size)
+    })
+  }, error = function(error) error)
+  if (inherits(extracted, "error")) {
+    return(list(error = new_error_item("import", "bundle_archive_invalid",
+                                       "Bundle archive entries could not be read.", "$")))
+  }
+  names(extracted) <- listing$filename
+  list(entries = extracted, error = NULL)
+}
+
+parse_bundle_archive <- function(input, registry = default_chunk_registry()) {
+  bytes <- coerce_archive_bytes(input)
+  loaded <- read_archive_entries(bytes)
+  if (!is.null(loaded$error)) return(new_bundle_import_result(FALSE, errors = list(loaded$error)))
+  entries <- loaded$entries
+  required <- c("manifest.yaml", "populations.yaml", "headers.yaml")
+  missing <- setdiff(required, names(entries))
+  if (length(missing) > 0L) {
+    return(archive_error("bundle_entry_missing", "Metadata archive is missing a required entry.",
+                         paste0("$.", missing[[1L]])))
+  }
+  manifest <- parse_manifest_yaml(rawToChar(entries[["manifest.yaml"]]))
+  if (length(manifest$errors) > 0L) return(new_bundle_import_result(FALSE, errors = manifest$errors))
+  populations <- parse_catalog_yaml(
+    rawToChar(entries[["populations.yaml"]]), "populations", parse_population_value
+  )
+  headers <- parse_catalog_yaml(
+    rawToChar(entries[["headers.yaml"]]), "headers", parse_header_value
+  )
+  errors <- c(populations$errors, headers$errors)
+  tables <- list()
+  templates <- list()
+  table_names <- sort(names(entries)[grepl("^tables/[^/]+\\.yaml$", names(entries), perl = TRUE)])
+  template_names <- sort(names(entries)[grepl("^templates/[^/]+\\.yaml$", names(entries), perl = TRUE)])
+  for (name in table_names) {
+    parsed <- parse_yaml_document_text(rawToChar(entries[[name]]), paste0("$.", name))
+    if (length(parsed$errors) > 0L) {
+      errors <- c(errors, parsed$errors)
+      next
+    }
+    collector <- new_error_collector()
+    value <- parse_table_value(parsed$value, paste0("$.", name), collector)
+    errors <- c(errors, error_items(collector))
+    if (!is.null(value)) {
+      if (!identical(value$id, archive_file_id(name))) {
+        errors <- c(errors, list(new_error_item(
+          "import", "bundle_file_identity_invalid",
+          "Table file name does not match the object ID.", paste0("$.", name, ".id")
+        )))
+      } else tables[[length(tables) + 1L]] <- value
+    }
+  }
+  for (name in template_names) {
+    parsed <- parse_yaml_document_text(rawToChar(entries[[name]]), paste0("$.", name))
+    if (length(parsed$errors) > 0L) {
+      errors <- c(errors, parsed$errors)
+      next
+    }
+    collector <- new_error_collector()
+    value <- parse_template_value(parsed$value, paste0("$.", name), collector, registry)
+    errors <- c(errors, error_items(collector))
+    if (!is.null(value)) {
+      if (!identical(value$id, archive_file_id(name))) {
+        errors <- c(errors, list(new_error_item(
+          "import", "bundle_file_identity_invalid",
+          "Template file name does not match the object ID.", paste0("$.", name, ".id")
+        )))
+      } else templates[[length(templates) + 1L]] <- value
+    }
+  }
+  if (length(errors) > 0L) return(new_bundle_import_result(FALSE, errors = errors))
+  value <- list(
+    schema_version = manifest$value$schema_version,
+    populations = populations$value$populations,
+    headers = headers$value$headers,
+    tables = tables,
+    templates = templates
+  )
+  decoded <- parse_bundle_value(value, registry)
+  if (length(decoded$errors) > 0L) return(new_bundle_import_result(FALSE, errors = decoded$errors))
+  new_bundle_import_result(TRUE, workspace = decoded$value, errors = list())
+}
+
+encode_archive_texts <- function(bundle, registry = default_chunk_registry()) {
+  decoded <- parse_bundle_value(bundle, registry)
+  if (length(decoded$errors) > 0L) stop("Cannot encode an invalid metadata bundle.", call. = FALSE)
+  value <- decoded$value
+  result <- c(
+    `manifest.yaml` = paste0("schema_version: ", canonical_integer(value$schema_version), "\n"),
+    `populations.yaml` = paste0(
+      paste(yaml_render_catalog("populations", value$populations, render_population_yaml), collapse = "\n"), "\n"
+    ),
+    `headers.yaml` = paste0(
+      paste(yaml_render_catalog("headers", value$headers, render_header_yaml), collapse = "\n"), "\n"
+    )
+  )
+  for (item in value$tables[order(vapply(value$tables, `[[`, "", "id") )]) {
+    result[[paste0("tables/", item$id, ".yaml")]] <- paste0(
+      paste(render_table_yaml(item, 0L), collapse = "\n"), "\n"
+    )
+  }
+  for (item in value$templates[order(vapply(value$templates, `[[`, "", "id") )]) {
+    result[[paste0("templates/", item$id, ".yaml")]] <- paste0(
+      paste(render_template_yaml(item, 0L), collapse = "\n"), "\n"
+    )
+  }
+  result
+}
+
+yaml_render_catalog <- function(name, values, renderer) {
+  context <- new_yaml_lines()
+  yaml_emit_sequence(context, 0L, name, values, renderer)
+  context$lines
+}
+
+canonical_archive_bytes <- function(bundle, registry = default_chunk_registry()) {
+  texts <- encode_archive_texts(bundle, registry)
+  staging <- tempfile("tfl_archive_out_")
+  dir.create(staging)
+  on.exit(unlink(staging, recursive = TRUE, force = TRUE), add = TRUE)
+  for (name in names(texts)) {
+    path <- file.path(staging, name)
+    parent <- dirname(path)
+    if (!dir.exists(parent)) dir.create(parent, recursive = TRUE)
+    writeBin(charToRaw(enc2utf8(texts[[name]])), path)
+    Sys.setFileTime(path, as.POSIXct("1980-01-01", tz = "UTC"))
+  }
+  zip_path <- tempfile("tfl_bundle_", fileext = ".zip")
+  on.exit(unlink(zip_path, force = TRUE), add = TRUE)
+  working_directory <- getwd()
+  on.exit(setwd(working_directory), add = TRUE)
+  setwd(staging)
+  zip::zipr(zip_path, files = names(texts), recurse = FALSE,
+            include_directories = FALSE, root = ".", mode = "mirror")
+  new_canonical_archive_bytes(readBin(zip_path, "raw", n = file.info(zip_path)$size))
+}
+
+encode_metadata_archive <- canonical_archive_bytes
+serialize_metadata_archive <- canonical_archive_bytes
+
+# Public bundle aliases operate on the ZIP transport. The YAML helpers above
+# remain available for individual archive entries and logical value fixtures.
+encode_metadata_bundle <- canonical_archive_bytes
+serialize_metadata_bundle <- canonical_archive_bytes
 
 try_encode_metadata_bundle <- function(bundle, registry = default_chunk_registry()) {
   result <- tryCatch(
-    list(passed = TRUE, bytes = canonical_yaml_bytes(bundle, registry), errors = list()),
+    list(passed = TRUE, bytes = canonical_archive_bytes(bundle, registry), errors = list()),
     error = function(error) list(
       passed = FALSE,
       bytes = NULL,

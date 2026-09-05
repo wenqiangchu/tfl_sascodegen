@@ -883,7 +883,7 @@ workspace_import_bundle <- function(workspace, input,
       "$.active_draft"
     ))))
   }
-  imported <- parse_bundle_yaml(input, registry)
+  imported <- parse_bundle_archive(input, registry)
   if (!isTRUE(imported$passed)) {
     next_workspace <- workspace_with_metadata(
       workspace, workspace_metadata_value(workspace),
@@ -907,7 +907,7 @@ workspace_import <- workspace_import_bundle
 workspace_export_bundle <- function(workspace, registry = default_chunk_registry()) {
   if (!is_workspace(workspace)) stop("workspace must be a MetadataWorkspace.", call. = FALSE)
   encoded <- tryCatch(
-    canonical_yaml_bytes(workspace_saved_snapshot(workspace), registry),
+    canonical_archive_bytes(workspace_saved_snapshot(workspace), registry),
     error = function(error) error
   )
   if (inherits(encoded, "error")) {
