@@ -55,12 +55,15 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     level <- chunk$levels[[index]]
     c(
       paste0("/* Discover hierarchical level ", index, " nodes. */"),
-      paste0("proc sort data=", chunk$source_data, " out=_TFL_HLEVEL_",
+      paste0("proc sort data=", if (index == 1L) chunk$source_data else
+               paste0("_TFL_HLEVEL_", sprintf("%03d", index - 1L)),
+             " out=_TFL_HLEVEL_",
              sprintf("%03d", index), ";"),
       paste0("  by ", level$order_variable, ";"),
       "run;",
       paste0("data _TFL_HLEVEL_", sprintf("%03d", index), ";"),
       paste0("  set _TFL_HLEVEL_", sprintf("%03d", index), ";"),
+      if (index > 1L) "  parent_node_key = coalescec(parent_node_key, node_key);" else character(),
       paste0("  level_component = cats(lengthn(strip(", level$variable, ")), ':', strip(", level$variable, "));"),
       if (index == 1L) "  group_path = level_component;" else
         c("  parent_node_key = node_key;",
@@ -123,7 +126,8 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "  /* Nested result_map contributes chunk/row/header/statistic identity. */",
     "  analysis_id = coalescec(analysis_id, '');",
     "  runtime_row_id = cats(node_key, ':', analysis_id, ':', row_id);",
-    "  group_path = coalescec(group_path, '');",
+    "  group_path = coalescec(group_path, node_key, '');",
+    "  node_key = coalescec(node_key, group_path, '');",
     "  /* Static rows sort before dynamic children at the same node. */",
     "  sort_key = cats(group_path, '|', putn(0, 'Z6.'), '|', runtime_row_id);",
     "run;",
