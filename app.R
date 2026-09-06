@@ -28,59 +28,43 @@ ui <- dashboardPage(
       menuItem("Metadata", tabName = "metadata", icon = icon("database")),
       menuItem("Table Metadata", tabName = "table_metadata", icon = icon("table")),
       menuItem("Template Editor", tabName = "template_editor", icon = icon("file")),
-      menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))
-    ),
-    tags$hr(),
-    fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
-    actionButton("import", "Import metadata", icon = icon("upload")),
-    downloadButton("download_bundle", "Download metadata"),
-    actionButton("discard", "Discard draft")
-  ),
-  dashboardBody(
-    tabItems(
-      tabItem(tabName = "metadata",
-        fluidRow(
-          box(title = "Population", width = 6, status = "primary", solidHeader = TRUE,
-            selectInput("population", "Population", choices = character()),
-            textInput("population_label", "Label"),
-            textAreaInput("population_expression", "SAS expression", rows = 3),
-            actionButton("save", "Save"), actionButton("cancel", "Cancel"),
-            actionButton("population_delete", "Delete population")),
-          box(title = "Header", width = 6, status = "primary", solidHeader = TRUE,
-            selectInput("header", "Header", choices = character()),
-            textInput("header_source_data", "Source data"),
-            textInput("header_column_label", "First column label"),
-            textInput("header_column_condition", "First column condition"),
-            DTOutput("header_columns_table"), actionButton("header_delete", "Delete header"))
-        )),
-      tabItem(tabName = "table_metadata",
-        box(title = "Table editor", width = 8, status = "primary", solidHeader = TRUE,
-          selectInput("table", "Table", choices = character()),
-          textInput("table_population_id", "Population ID"),
-          textInput("table_header_id", "Header ID"),
-          textInput("table_template_id", "Template ID"))),
-      tabItem(tabName = "template_editor",
-        box(title = "Template and chunk editor", width = 8, status = "primary", solidHeader = TRUE,
-          selectInput("template", "Template", choices = character()),
-          textInput("template_stub_header", "Stub header"),
-          selectInput("chunk", "Chunk", choices = character()),
-          textInput("chunk_source_data", "Source data"),
-          textInput("chunk_filter", "Filter"),
-          textInput("chunk_row_label", "First row label"),
-          textInput("chunk_statistic_id", "First statistic ID"),
-          numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
-          actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
-          actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"),
-          DTOutput("chunk_rows_table"))),
-      tabItem(tabName = "generate_sas",
-        box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
-          selectInput("generate_table", "Table", choices = character()),
-          actionButton("generate", "Generate SAS", icon = icon("play")),
-          downloadButton("download_sas", "Download SAS"),
-          verbatimTextOutput("status"), verbatimTextOutput("source")))
-    )
-  )
-)
+      menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))),
+    tags$hr(), fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
+    downloadButton("download_bundle", "Download metadata"), actionButton("discard", "Discard draft")),
+  dashboardBody(tabItems(
+    tabItem(tabName = "metadata", tabsetPanel(
+      tabPanel("Population", fluidRow(
+        box(title = "Populations", width = 4, DTOutput("population_list")),
+        box(title = "Population metadata", width = 8, status = "primary", solidHeader = TRUE,
+          selectInput("population", "Selected population", choices = character()),
+          textInput("population_label", "Label"), textAreaInput("population_expression", "SAS expression", rows = 3),
+          actionButton("save", "Save"), actionButton("cancel", "Cancel"), actionButton("population_delete", "Delete")))),
+      tabPanel("Header", fluidRow(
+        box(title = "Headers", width = 4, DTOutput("header_list")),
+        box(title = "Header metadata", width = 8, status = "primary", solidHeader = TRUE,
+          selectInput("header", "Selected header", choices = character()),
+          textInput("header_source_data", "Source data"), DTOutput("header_columns_table"),
+          actionButton("header_delete", "Delete"))))),
+    tabItem(tabName = "table_metadata", fluidRow(
+      box(title = "Tables", width = 4, DTOutput("table_list")),
+      box(title = "Table metadata", width = 8, status = "primary", solidHeader = TRUE,
+        selectInput("table", "Selected table", choices = character()), textInput("table_population_id", "Population ID"),
+        textInput("table_header_id", "Header ID"), textInput("table_template_id", "Template ID"),
+        actionButton("table_save", "Save"), actionButton("table_cancel", "Cancel"))))),
+    tabItem(tabName = "template_editor", fluidRow(
+      box(title = "Templates", width = 4, DTOutput("template_list")),
+      box(title = "Template metadata", width = 8, status = "primary", solidHeader = TRUE,
+        selectInput("template", "Selected template", choices = character()), textInput("template_stub_header", "Stub header"),
+        selectInput("chunk", "Selected chunk", choices = character()),
+        textInput("chunk_source_data", "Source data"), textInput("chunk_filter", "Filter"),
+        textInput("chunk_row_label", "First row label"), textInput("chunk_statistic_id", "First statistic ID"),
+        numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
+        uiOutput("chunk_cards"), actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
+        actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"), DTOutput("chunk_rows_table"))))),
+    tabItem(tabName = "generate_sas", box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
+      selectInput("generate_table", "Table", choices = character()), actionButton("generate", "Generate SAS", icon = icon("play")),
+      downloadButton("download_sas", "Download SAS"), verbatimTextOutput("status"), verbatimTextOutput("source")))
+  ))
 
 server <- function(input, output, session) {
   session_state <- reactiveValues(
@@ -107,6 +91,7 @@ server <- function(input, output, session) {
   }
   draft_target <- reactiveVal(NULL)
   selected_target <- reactiveVal(NULL)
+  pending_bundle <- reactiveVal(NULL)
 
   observeEvent(input$main_nav, {
     session_state$navigation$active_panel <- input$main_nav
@@ -126,6 +111,8 @@ server <- function(input, output, session) {
     header_ids <- vapply(value$headers, `[[`, "", "id")
     updateSelectInput(session, "header", choices = header_ids,
                       selected = if (length(header_ids) > 0L) header_ids[[1L]] else character())
+    updateSelectInput(session, "header2", choices = header_ids,
+                      selected = if (length(header_ids) > 0L) header_ids[[1L]] else character())
     template_ids <- vapply(value$templates, `[[`, "", "id")
     updateSelectInput(session, "template", choices = template_ids,
                       selected = if (length(template_ids) > 0L) template_ids[[1L]] else character())
@@ -134,6 +121,32 @@ server <- function(input, output, session) {
     updateSelectInput(session, "chunk", choices = chunk_ids,
                       selected = if (length(chunk_ids) > 0L) chunk_ids[[1L]] else character())
   }
+
+  output$population_list <- DT::renderDT({
+    data.frame(id = vapply(workspace()$populations, `[[`, "", "id"),
+               label = vapply(workspace()$populations, `[[`, "", "label"), stringsAsFactors = FALSE)
+  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  output$header_list <- DT::renderDT({
+    data.frame(id = vapply(workspace()$headers, `[[`, "", "id"), stringsAsFactors = FALSE)
+  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  output$table_list <- DT::renderDT({
+    data.frame(id = vapply(workspace()$tables, `[[`, "", "id"), stringsAsFactors = FALSE)
+  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  output$template_list <- DT::renderDT({
+    data.frame(id = vapply(workspace()$templates, `[[`, "", "id"), stringsAsFactors = FALSE)
+  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  output$chunk_cards <- renderUI({
+    item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
+    if (length(item) != 1L) return(NULL)
+    chunks <- item[[1L]]$body$chunks %||% list()
+    tagList(lapply(seq_along(chunks), function(i) {
+      chunk <- chunks[[i]]
+      box(title = paste("Chunk", i, chunk$id), width = 12, status = "info", solidHeader = TRUE,
+          p(strong("Type: "), chunk$type %||% ""),
+          p(strong("Source data: "), chunk$source_data %||% ""),
+          p(strong("Filter: "), chunk$filter %||% ""))
+    }))
+  })
 
   begin_edit <- function(type, id) {
     if (is.null(draft_target()) && nzchar(id %||% "")) {
@@ -394,10 +407,17 @@ server <- function(input, output, session) {
     refresh_tables(result$workspace)
     status("Draft cancelled.")
   })
+  observeEvent(input$table_save, {
+    result <- application_save_draft(workspace())
+    if (result$passed) { workspace(result$workspace); draft_target(NULL); refresh_tables(result$workspace); status("Draft saved.") }
+    else { status(paste("Save failed:", error_text(result$errors))); showNotification(status(), type = "error") }
+  })
+  observeEvent(input$table_cancel, {
+    result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); refresh_tables(result$workspace); status("Draft cancelled.")
+  })
 
-  observeEvent(input$import, {
-    req(input$bundle$datapath)
-    result <- application_import_bundle(workspace(), readBin(input$bundle$datapath, "raw", n = file.info(input$bundle$datapath)$size))
+  import_bundle_now <- function(path) {
+    result <- application_import_bundle(workspace(), readBin(path, "raw", n = file.info(path)$size))
     if (!result$passed) {
       session_state$import_error <- result$errors
       session_state$workspace_status <- "import_failed"
@@ -409,7 +429,19 @@ server <- function(input, output, session) {
     session_state$import_error <- NULL
     refresh_tables(result$workspace)
     status("Metadata imported.")
+  }
+  observeEvent(input$bundle, {
+    req(input$bundle$datapath)
+    path <- input$bundle$datapath
+    has_metadata <- length(workspace()$tables) + length(workspace()$populations) + length(workspace()$headers) + length(workspace()$templates) > 0L
+    if (has_metadata) {
+      pending_bundle(path)
+      showModal(modalDialog(title = "Replace workspace?",
+        "Importing this bundle will replace the current workspace. Continue?",
+        footer = tagList(modalButton("Cancel"), actionButton("confirm_import", "Import", class = "btn-warning"))))
+    } else import_bundle_now(path)
   })
+  observeEvent(input$confirm_import, { removeModal(); path <- pending_bundle(); pending_bundle(NULL); if (!is.null(path)) import_bundle_now(path) })
 
   observeEvent(input$generate, {
     if (workspace_is_dirty(workspace())) {

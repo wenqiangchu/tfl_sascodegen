@@ -1,0 +1,15 @@
+root <- normalizePath(getwd(), mustWork = FALSE)
+source_order <- c("src/core/errors.R", "src/chunks/registry.R", "src/metadata/model.R", "src/metadata/yaml_codec.R", "src/metadata/workspace.R", "src/emitters/continuous.R", "src/emitters/categorical.R", "src/emitters/hierarchical.R")
+invisible(lapply(file.path(root, source_order), source, local = FALSE))
+baseline <- list(id="age", type="continuous_summary", source_data="adam.adsl", analysis_variable="AGE", rows=list(list(id="age_stats", type="analysis", label="Age (years)", statistics=list(list(id="n"), list(id="mean", digits=1L)), cell_format="{n} ({mean})")))
+sex <- list(id="sex", type="categorical_summary_nonexclusive", source_data="adam.adsl", denominator=list(type="header_population"), rows=list(list(id="female", type="analysis", label="Female", condition="SEX = 'F'", statistics=list(list(id="n")), cell_format="{n}"), list(id="male", type="analysis", label="Male", condition="SEX = 'M'", statistics=list(list(id="n")), cell_format="{n}")))
+ae <- list(id="ae", type="hierarchical_summary", source_data="adam.adae", source_contract=list(grain="record", subject_key="USUBJID", record_key=c("USUBJID", "AESEQ"), duplicate_policy="error"), levels=list(list(id="soc", variable="SOC", order_variable="SOCN", order_direction="asc", node_role="label", missing_policy="exclude"), list(id="pt", variable="PT", order_variable="PTN", order_direction="asc", node_role="label", missing_policy="exclude")), analysis_blocks=list(list(id="severity", anchor_level="pt", placement="below", type="categorical_summary_nonexclusive", counting_unit="distinct_subject", denominator=list(scope="current_group", unit="distinct_subject"), rows=list(list(id="mild", type="analysis", label="Mild", condition="AESEV = 'MILD'", statistics=list(list(id="n")), cell_format="{n}"), list(id="severe", type="analysis", label="Severe", condition="AESEV = 'SEVERE'", statistics=list(list(id="n")), cell_format="{n}")))))
+bundle <- new_metadata_bundle(
+  populations=list(list(id="fas", label="FAS", expression="FASFL = 'Y'"), list(id="safety", label="SAFETY", expression="SAFFL = 'Y'")),
+  headers=list(list(id="fas_header", source_data="adam.adsl", columns=list(list(id="overall", label="FAS", condition="1", display_order=1L, width=1, alignment="center"))), list(id="safety_header", source_data="adam.adsl", columns=list(list(id="overall", label="SAFETY", condition="1", display_order=1L, width=1, alignment="center")))),
+  tables=list(list(id="baseline_characteristics", population_id="fas", header_id="fas_header", template_id="baseline_template"), list(id="ae_by_soc_pt", population_id="safety", header_id="safety_header", template_id="ae_template")),
+  templates=list(list(id="baseline_template", body=list(stub_header="Characteristic", chunks=list(baseline, sex))), list(id="ae_template", body=list(stub_header="System Organ Class", chunks=list(ae)))))
+check <- parse_bundle_value(bundle)
+if (length(check$errors)) { print(check$errors); stop("invalid demo bundle") }
+bytes <- canonical_archive_bytes(bundle)
+writeBin(bytes$bytes, file.path(root, "test", "fixtures", "demo_metadata.zip"))
