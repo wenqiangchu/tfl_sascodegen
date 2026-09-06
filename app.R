@@ -30,7 +30,7 @@ ui <- dashboardPage(
       menuItem("Template Editor", tabName = "template_editor", icon = icon("file")),
       menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))),
     tags$hr(), fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
-    downloadButton("download_bundle", "Download metadata"), actionButton("discard", "Discard draft")),
+    downloadButton("download_bundle", "Download metadata"), actionButton("discard", "Discard active edit")),
   dashboardBody(tabItems(
     tabItem(tabName = "metadata", tabsetPanel(
       tabPanel("Population", fluidRow(
@@ -51,7 +51,8 @@ ui <- dashboardPage(
       box(title = "Table metadata", width = 8, status = "primary", solidHeader = TRUE,
         tags$div(style = "display:none", selectInput("table", "Selected table", choices = character())),
         textInput("table_population_id", "Population ID"), textInput("table_header_id", "Header ID"),
-        textInput("table_template_id", "Template ID"), actionButton("table_save", "Save"), actionButton("table_cancel", "Cancel"))
+        textInput("table_template_id", "Template ID"), textAreaInput("table_custom_before", "Custom code before", rows = 4),
+        textAreaInput("table_custom_after", "Custom code after", rows = 4), actionButton("table_save", "Save"), actionButton("table_cancel", "Discard changes"))
     )),
     tabItem(tabName = "template_editor", fluidRow(
       box(title = "Templates", width = 4, actionButton("template_new", "New template"), actionButton("template_delete", "Delete template"), DTOutput("template_list")),
@@ -101,7 +102,7 @@ server <- function(input, output, session) {
   request_switch <- function(type, id, input_id) {
     pending_switch(list(type=type, id=id, input_id=input_id))
     showModal(modalDialog(title="Unsaved changes", "Save or discard the active draft before switching?",
-      footer=tagList(actionButton("switch_save", "Save and switch"), actionButton("switch_discard", "Discard and switch"), modalButton("Cancel"))))
+      footer=tagList(actionButton("switch_discard", "Discard changes"), actionButton("switch_cancel", "Cancel"))))
   }
 
   observeEvent(input$main_nav, {
@@ -202,6 +203,9 @@ server <- function(input, output, session) {
       updateTextInput(session, "table_population_id", value = item[[1L]]$population_id)
       updateTextInput(session, "table_header_id", value = item[[1L]]$header_id)
       updateTextInput(session, "table_template_id", value = item[[1L]]$template_id)
+      custom_code <- item[[1L]]$custom_code %||% list()
+      updateTextAreaInput(session, "table_custom_before", value = custom_code$before %||% "")
+      updateTextAreaInput(session, "table_custom_after", value = custom_code$after %||% "")
     }
   }, ignoreInit = FALSE)
   observeEvent(input$table_population_id, {
@@ -222,6 +226,20 @@ server <- function(input, output, session) {
   observeEvent(input$table_template_id, {
     if (is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace()); draft$template_id <- input$table_template_id
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
+  observeEvent(input$table_custom_before, {
+    if (isTRUE(session_state$suppress_selection)) return()
+    begin_edit("table", input$table)
+    if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$custom_code <- draft$custom_code %||% list(); draft$custom_code$before <- if (nzchar(input$table_custom_before)) input$table_custom_before else NULL
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }, ignoreInit = TRUE)
+  observeEvent(input$table_custom_after, {
+    if (isTRUE(session_state$suppress_selection)) return()
+    begin_edit("table", input$table)
+    if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$custom_code <- draft$custom_code %||% list(); draft$custom_code$after <- if (nzchar(input$table_custom_after)) input$table_custom_after else NULL
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
   observeEvent(input$header_source_data, {
@@ -506,17 +524,17 @@ server <- function(input, output, session) {
   observeEvent(input$table_cancel, {
     result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Draft cancelled.")
   })
-  observeEvent(input$switch_save, {
-    target <- pending_switch(); removeModal(); pending_switch(NULL)
-    result <- application_save_draft(workspace())
-    if (!result$passed) { showNotification(error_text(result$errors), type="error"); return() }
-    workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace)
-    if (!is.null(target)) updateSelectInput(session, target$input_id, selected = target$id)
-  })
   observeEvent(input$switch_discard, {
     target <- pending_switch(); removeModal(); pending_switch(NULL)
     result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace)
     if (!is.null(target)) updateSelectInput(session, target$input_id, selected = target$id)
+  })
+  observeEvent(input$switch_cancel, {
+    target <- pending_switch(); removeModal(); pending_switch(NULL)
+    current <- draft_identity()
+    if (!is.null(target) && !is.null(current) && identical(target$type, current$type)) {
+      updateSelectInput(session, target$input_id, selected = current$id)
+    }
   })
 
   import_bundle_now <- function(path) {
