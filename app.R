@@ -405,10 +405,12 @@ server <- function(input, output, session) {
 
   observeEvent(input$template, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (is.null(input$template) || !nzchar(input$template)) return()
     if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "template", id = input$template))) { request_switch("template", input$template, "template"); return() }
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) == 1L && is.null(draft_target())) {
-      updateTextInput(session, "template_stub_header", value = item[[1L]]$body$stub_header %||% "")
+      body <- item[[1L]]$body %||% list()
+      updateTextInput(session, "template_stub_header", value = body$stub_header %||% "")
     }
   }, ignoreInit = FALSE)
   observeEvent(input$template_stub_header, {
@@ -427,6 +429,7 @@ server <- function(input, output, session) {
     Filter(function(value) identical(value$id, id), chunks)
   }
   observeEvent(input$chunk, {
+    if (is.null(input$chunk) || !nzchar(input$chunk)) return()
     item <- find_chunk(workspace(), input$chunk)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "chunk_source_data", value = item[[1L]]$source_data)
