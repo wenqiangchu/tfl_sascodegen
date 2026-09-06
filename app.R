@@ -60,10 +60,10 @@ ui <- dashboardPage(
         textInput("chunk_row_label", "First row label"), textInput("chunk_statistic_id", "First statistic ID"),
         numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
         uiOutput("chunk_cards"), actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
-        actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"), DTOutput("chunk_rows_table"))))),
+        actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"), DTOutput("chunk_rows_table"))),
     tabItem(tabName = "generate_sas", box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
       selectInput("generate_table", "Table", choices = character()), actionButton("generate", "Generate SAS", icon = icon("play")),
-      downloadButton("download_sas", "Download SAS"), verbatimTextOutput("status"), verbatimTextOutput("source")))
+      downloadButton("download_sas", "Download SAS"), verbatimTextOutput("status"), verbatimTextOutput("source"))))
   ))
 
 server <- function(input, output, session) {
