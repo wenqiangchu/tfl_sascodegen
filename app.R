@@ -169,6 +169,28 @@ server <- function(input, output, session) {
           DTOutput(paste0("chunk_rows_", i)))
     }))
   })
+  observe_chunk_card <- function(index, field) {
+    observeEvent(input[[paste0("chunk_", field, "_", index)]], {
+      if (isTRUE(session_state$suppress_selection)) return()
+      item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
+      if (length(item) != 1L) return()
+      chunks <- item[[1L]]$body$chunks %||% list()
+      if (index > length(chunks)) return()
+      begin_edit("template", input$template)
+      if (is.null(draft_target())) return()
+      draft <- workspace_draft_value(workspace()); draft$body$chunks[[index]][[field]] <- input[[paste0("chunk_", field, "_", index)]]
+      workspace(workspace_set_draft(workspace(), draft)$workspace)
+    }, ignoreInit = TRUE)
+  }
+  observeEvent(input$template, {
+    item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
+    if (length(item) != 1L) return()
+    chunks <- item[[1L]]$body$chunks %||% list()
+    for (index in seq_along(chunks)) {
+      observe_chunk_card(index, "source_data")
+      observe_chunk_card(index, "filter")
+    }
+  }, ignoreInit = TRUE)
 
   begin_edit <- function(type, id) {
     if (is.null(draft_target()) && nzchar(id %||% "")) {
@@ -285,6 +307,18 @@ server <- function(input, output, session) {
     if (!length(spans)) return(data.frame(id=character(), level=integer(), label=character()))
     data.frame(id=vapply(spans, `[[`, "", "id"), level=vapply(spans, `[[`, integer(1L), "level"), label=vapply(spans, `[[`, "", "label"), stringsAsFactors=FALSE)
   }, editable=TRUE, rownames=FALSE, selection="single")
+  observeEvent(input$header_spanning_table_cell_edit, {
+    info <- input$header_spanning_table_cell_edit
+    if (is.null(info)) return()
+    begin_edit("header", input$header)
+    if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); spans <- draft$spanning_headers %||% list()
+    if (!length(spans) || info$row > length(spans)) return()
+    if (info$col == 2L) spans[[info$row]]$level <- as.integer(info$value)
+    if (info$col == 3L) spans[[info$row]]$label <- as.character(info$value)
+    draft$spanning_headers <- spans
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  })
   observeEvent(input$header_columns_table_cell_edit, {
     info <- input$header_columns_table_cell_edit
     if (is.null(info)) return()
