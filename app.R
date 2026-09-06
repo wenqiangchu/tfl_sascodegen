@@ -36,35 +36,38 @@ ui <- dashboardPage(
       tabPanel("Population", fluidRow(
         box(title = "Populations", width = 4, DTOutput("population_list")),
         box(title = "Population metadata", width = 8, status = "primary", solidHeader = TRUE,
-          tags$div(style="display:none", selectInput("population", "Selected population", choices = character())),
+          tags$div(style = "display:none", selectInput("population", "Selected population", choices = character())),
           textInput("population_label", "Label"), textAreaInput("population_expression", "SAS expression", rows = 3),
           actionButton("save", "Save"), actionButton("cancel", "Cancel"), actionButton("population_delete", "Delete")))),
       tabPanel("Header", fluidRow(
         box(title = "Headers", width = 4, DTOutput("header_list")),
         box(title = "Header metadata", width = 8, status = "primary", solidHeader = TRUE,
-          tags$div(style="display:none", selectInput("header", "Selected header", choices = character())),
+          tags$div(style = "display:none", selectInput("header", "Selected header", choices = character())),
           textInput("header_source_data", "Source data"), DTOutput("header_columns_table"),
-          actionButton("header_delete", "Delete"))))),
+          actionButton("header_delete", "Delete"))))
+    )),
     tabItem(tabName = "table_metadata", fluidRow(
       box(title = "Tables", width = 4, DTOutput("table_list")),
       box(title = "Table metadata", width = 8, status = "primary", solidHeader = TRUE,
-        tags$div(style="display:none", selectInput("table", "Selected table", choices = character())), textInput("table_population_id", "Population ID"),
-        textInput("table_header_id", "Header ID"), textInput("table_template_id", "Template ID"),
-        actionButton("table_save", "Save"), actionButton("table_cancel", "Cancel"))))),
+        tags$div(style = "display:none", selectInput("table", "Selected table", choices = character())),
+        textInput("table_population_id", "Population ID"), textInput("table_header_id", "Header ID"),
+        textInput("table_template_id", "Template ID"), actionButton("table_save", "Save"), actionButton("table_cancel", "Cancel"))
+    )),
     tabItem(tabName = "template_editor", fluidRow(
       box(title = "Templates", width = 4, DTOutput("template_list")),
       box(title = "Template metadata", width = 8, status = "primary", solidHeader = TRUE,
-        tags$div(style="display:none", selectInput("template", "Selected template", choices = character())), textInput("template_stub_header", "Stub header"),
-        selectInput("chunk", "Selected chunk", choices = character()),
+        tags$div(style = "display:none", selectInput("template", "Selected template", choices = character())),
+        textInput("template_stub_header", "Stub header"), selectInput("chunk", "Selected chunk", choices = character()),
         textInput("chunk_source_data", "Source data"), textInput("chunk_filter", "Filter"),
         textInput("chunk_row_label", "First row label"), textInput("chunk_statistic_id", "First statistic ID"),
-        numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
-        uiOutput("chunk_cards"), actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
-        actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"), DTOutput("chunk_rows_table"))),
+        numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0), uiOutput("chunk_cards"),
+        actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
+        actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"), DTOutput("chunk_rows_table"))
+    )),
     tabItem(tabName = "generate_sas", box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
       selectInput("generate_table", "Table", choices = character()), actionButton("generate", "Generate SAS", icon = icon("play")),
-      downloadButton("download_sas", "Download SAS"), verbatimTextOutput("status"), verbatimTextOutput("source"))))
-  ))
+      downloadButton("download_sas", "Download SAS"), verbatimTextOutput("status"), verbatimTextOutput("source")))
+  )))
 
 server <- function(input, output, session) {
   session_state <- reactiveValues(
