@@ -79,19 +79,34 @@ ui <- dashboardPage(
 )
 
 server <- function(input, output, session) {
-  workspace <- reactiveVal(new_empty_workspace())
   session_state <- reactiveValues(
-    workspace_status = "empty", workspace = workspace(), import_error = NULL,
+    workspace_status = "empty", workspace = new_empty_workspace(), import_error = NULL,
     navigation = list(active_panel = "metadata", selected_population_id = NULL,
                       selected_header_id = NULL, selected_table_id = NULL,
                       selected_template_id = NULL), active_draft = NULL,
     delete_impact = NULL,
     generation = list(table_id = NULL, status = "idle", source_text = "", errors = list())
   )
+  # Compatibility accessor: SessionState remains the only reactive workspace owner.
+  workspace <- function(value) {
+    if (missing(value)) return(session_state$workspace)
+    session_state$workspace <- value
+    invisible(value)
+  }
   status <- reactiveVal("Ready.")
-  source_text <- reactiveVal("")
+  source_text <- function(value) {
+    if (missing(value)) return(session_state$generation$source_text %||% "")
+    generation <- session_state$generation
+    generation$source_text <- value
+    session_state$generation <- generation
+    invisible(value)
+  }
   draft_target <- reactiveVal(NULL)
   selected_target <- reactiveVal(NULL)
+
+  observeEvent(input$main_nav, {
+    session_state$navigation$active_panel <- input$main_nav
+  }, ignoreInit = TRUE)
 
   refresh_tables <- function(value) {
     session_state$workspace <- value
@@ -118,16 +133,16 @@ server <- function(input, output, session) {
 
   begin_edit <- function(type, id) {
     if (is.null(draft_target()) && nzchar(id %||% "")) {
-      begun <- workspace_begin_draft(workspace(), type, id)
+      begun <- workspace_begin_draft(session_state$workspace, type, id)
       if (begun$passed) {
-        workspace(begun$workspace)
+        session_state$workspace <- begun$workspace
         draft_target(TRUE)
       }
     }
   }
 
   observeEvent(input$header, {
-    item <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
+    item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
       column <- item[[1L]]$columns[[1L]]
@@ -143,7 +158,7 @@ server <- function(input, output, session) {
       return()
     }
     selected_target(input$table)
-    item <- Filter(function(value) identical(value$id, input$table), workspace()$tables)
+    item <- Filter(function(value) identical(value$id, input$table), session_state$workspace$tables)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "table_population_id", value = item[[1L]]$population_id)
       updateTextInput(session, "table_header_id", value = item[[1L]]$header_id)
@@ -293,6 +308,7 @@ server <- function(input, output, session) {
       return()
     }
     workspace(result$workspace)
+    session_state$import_error <- NULL
     draft_target(NULL)
     selected_target(input$table)
     refresh_tables(result$workspace)
@@ -311,16 +327,24 @@ server <- function(input, output, session) {
     req(input$bundle$datapath)
     result <- application_import_bundle(workspace(), readBin(input$bundle$datapath, "raw", n = file.info(input$bundle$datapath)$size))
     if (!result$passed) {
+      session_state$import_error <- result$errors
+      session_state$workspace_status <- "import_failed"
       status(paste("Import failed:", error_text(result$errors)))
       showNotification(status(), type = "error")
       return()
     }
     workspace(result$workspace)
+    session_state$import_error <- NULL
     refresh_tables(result$workspace)
     status("Metadata imported.")
   })
 
   observeEvent(input$generate, {
+    if (workspace_is_dirty(workspace())) {
+      status("Save or cancel the active draft before generating SAS.")
+      showNotification(status(), type = "warning")
+      return()
+    }
     result <- application_generate_source(workspace(), input$generate_table)
     if (!result$passed) {
       status(paste("Generation failed:", error_text(result$errors)))
