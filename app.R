@@ -160,9 +160,12 @@ server <- function(input, output, session) {
   output$chunk_cards <- renderUI({
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) != 1L) return(NULL)
-    chunks <- item[[1L]]$body$chunks %||% list()
+    body <- item[[1L]]$body %||% list()
+    chunks <- body$chunks %||% list()
+    if (!is.list(chunks) || !length(chunks)) return(NULL)
     tagList(lapply(seq_along(chunks), function(i) {
       chunk <- chunks[[i]]
+      if (!is.list(chunk)) return(NULL)
       box(title = paste("Chunk", i, chunk$id), width = 12, status = "info", solidHeader = TRUE,
           p(strong("Type: "), chunk$type %||% ""),
           textInput(paste0("chunk_source_data_", i), "Source data", value = chunk$source_data %||% ""),
@@ -186,7 +189,8 @@ server <- function(input, output, session) {
   observeEvent(input$template, {
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) != 1L) return()
-    chunks <- item[[1L]]$body$chunks %||% list()
+    chunks <- (item[[1L]]$body %||% list())$chunks %||% list()
+    if (!is.list(chunks)) return()
     for (index in seq_along(chunks)) {
       observe_chunk_card(index, "source_data")
       observe_chunk_card(index, "filter")
