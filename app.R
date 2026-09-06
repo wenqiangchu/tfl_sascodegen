@@ -28,6 +28,71 @@ readonly_text_input <- function(input_id, label, value = "") {
                       value = value %||% "", readonly = "readonly"))
 }
 
+# Build the single Header DT view. Spanning references are rendered as labels
+# for readability while the in-memory YAML object continues to store IDs.
+header_dt_data <- function(header) {
+  columns <- header$columns %||% list()
+  spans <- header$spanning_headers %||% list()
+  span_labels <- function(column, level) {
+    ref <- column[[paste0("spanning_header_", level)]] %||% ""
+    hit <- Filter(function(x) identical(x$id, ref), spans)
+    if (length(hit) == 1L) as.character(hit[[1L]]$label %||% "") else as.character(ref)
+  }
+  if (!length(columns)) {
+    return(data.frame(id=character(), label=character(), condition=character(),
+                      display_order=integer(), width=numeric(), alignment=character(),
+                      spanning_header_1=character(), spanning_header_2=character(),
+                      stringsAsFactors=FALSE))
+  }
+  data.frame(
+    id = vapply(columns, function(x) as.character(x$id %||% ""), character(1L)),
+    label = vapply(columns, function(x) as.character(x$label %||% ""), character(1L)),
+    condition = vapply(columns, function(x) as.character(x$condition %||% ""), character(1L)),
+    display_order = vapply(columns, function(x) suppressWarnings(as.integer(x$display_order %||% NA_integer_)), integer(1L)),
+    width = vapply(columns, function(x) suppressWarnings(as.numeric(x$width %||% NA_real_)), numeric(1L)),
+    alignment = vapply(columns, function(x) as.character(x$alignment %||% ""), character(1L)),
+    spanning_header_1 = vapply(columns, span_labels, character(1L), level=1L),
+    spanning_header_2 = vapply(columns, span_labels, character(1L), level=2L),
+    stringsAsFactors=FALSE
+  )
+}
+
+# Convert the label-oriented DT representation back to canonical spanning
+# header IDs. Each contiguous run gets a distinct span, even when labels repeat
+# later in the column sequence.
+normalize_header_spanning <- function(header) {
+  columns <- header$columns %||% list()
+  existing <- header$spanning_headers %||% list()
+  lookup <- setNames(vapply(existing, function(x) as.character(x$label %||% ""), character(1L)),
+                     vapply(existing, function(x) as.character(x$id %||% ""), character(1L)))
+  spans <- list()
+  for (level in 1:2) {
+    field <- paste0("spanning_header_", level)
+    labels <- vapply(columns, function(column) {
+      value <- as.character(column[[field]] %||% "")
+      if (nzchar(value) && value %in% names(lookup)) lookup[[value]] else value
+    }, character(1L))
+    if (!length(labels)) next
+    runs <- rle(labels); ends <- cumsum(runs$lengths)
+    starts <- ends - runs$lengths + 1L
+    for (run in seq_along(runs$values)) {
+      label <- runs$values[[run]]
+      positions <- seq.int(starts[[run]], ends[[run]])
+      if (!nzchar(trimws(label))) {
+        for (pos in positions) columns[[pos]][[field]] <- NULL
+        next
+      }
+      level_count <- sum(vapply(spans, function(x) identical(as.integer(x$level), as.integer(level)), logical(1L))) + 1L
+      span_id <- sprintf("spanning_header_level%d_%d", level, level_count)
+      spans[[length(spans) + 1L]] <- list(id=span_id, level=as.integer(level), label=label)
+      for (pos in positions) columns[[pos]][[field]] <- span_id
+    }
+  }
+  header$columns <- columns
+  header$spanning_headers <- if (length(spans)) spans else NULL
+  header
+}
+
 ui <- dashboardPage(
   dashboardHeader(title = "SAS Code Generator",
     dropdownMenu(type = "notifications", badgeStatus = NULL,
@@ -52,8 +117,9 @@ ui <- dashboardPage(
           box(title = "Headers", width = 4, actionButton("header_new", "New header"), actionButton("header_delete", "Delete header"), DTOutput("header_list")),
         box(title = "Header metadata", width = 8, status = "primary", solidHeader = TRUE,
           tags$div(style = "display:none", selectInput("header", "Selected header", choices = character())),
-          textInput("header_source_data", "Source data"), h4("Spanning headers"), DTOutput("header_spanning_table"),
-          h4("Header columns"), actionButton("header_column_new", "Add column"), actionButton("header_column_delete", "Delete column"), DTOutput("header_columns_table"), actionButton("header_save", "Save"), actionButton("header_discard", "Discard changes"))))
+          textInput("header_source_data", "Source data"), h4("Header columns and spanning headers"),
+          actionButton("header_column_new", "Add column"), actionButton("header_column_delete", "Delete column"),
+          DTOutput("header_columns_table"), actionButton("header_save", "Save"), actionButton("header_discard", "Discard changes"))))
     )),
     tabItem(tabName = "table_metadata", fluidRow(
       box(title = "Tables", width = 4, actionButton("table_new", "New table"), actionButton("table_delete", "Delete table"), DTOutput("table_list")),
@@ -602,11 +668,6 @@ server <- function(input, output, session) {
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
-      columns <- item[[1L]]$columns %||% list()
-      if (length(columns) == 0L) return()
-      column <- columns[[1L]]
-      updateTextInput(session, "header_column_label", value = column$label)
-      updateTextInput(session, "header_column_condition", value = column$condition)
     }
   }, ignoreInit = FALSE)
 
@@ -671,61 +732,36 @@ server <- function(input, output, session) {
       workspace(workspace_set_draft(workspace(), draft)$workspace)
     }
   }, ignoreInit = TRUE)
-  observeEvent(input$header_column_label, {
-    if (isTRUE(session_state$suppress_selection)) return()
-    begin_edit("header", input$header)
-    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); if (length(draft$columns %||% list()) == 0L) return(); draft$columns[[1L]]$label <- input$header_column_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
-  }, ignoreInit = TRUE)
-  observeEvent(input$header_column_condition, {
-    if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); draft$columns[[1L]]$condition <- input$header_column_condition; workspace(workspace_set_draft(workspace(), draft)$workspace)
-  }, ignoreInit = TRUE)
   output$header_columns_table <- DT::renderDT({
-    item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
+    shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
+    item <- Filter(function(value) identical(value$id, input$header), shown$headers)
     if (length(item) != 1L) return(data.frame())
-    columns <- item[[1L]]$columns %||% list()
-    if (length(columns) == 0L) return(data.frame())
-    data.frame(id = vapply(columns, `[[`, "", "id"),
-               label = vapply(columns, `[[`, "", "label"),
-               condition = vapply(columns, `[[`, "", "condition"),
-               display_order = vapply(columns, `[[`, integer(1L), "display_order"),
-               width = vapply(columns, `[[`, numeric(1L), "width"),
-               alignment = vapply(columns, `[[`, "", "alignment"),
-               stringsAsFactors = FALSE)
-  }, editable = TRUE, rownames = FALSE, selection = "single")
-  output$header_spanning_table <- DT::renderDT({
-    item <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
-    if (length(item) != 1L) return(data.frame())
-    spans <- item[[1L]]$spanning_headers %||% list()
-    if (!length(spans)) return(data.frame(id=character(), level=integer(), label=character()))
-    data.frame(id=vapply(spans, `[[`, "", "id"), level=vapply(spans, `[[`, integer(1L), "level"), label=vapply(spans, `[[`, "", "label"), stringsAsFactors=FALSE)
-  }, editable=TRUE, rownames=FALSE, selection="single")
-  observeEvent(input$header_spanning_table_cell_edit, {
-    info <- input$header_spanning_table_cell_edit
-    if (is.null(info)) return()
-    begin_edit("header", input$header)
-    if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); spans <- draft$spanning_headers %||% list()
-    if (!length(spans) || info$row > length(spans)) return()
-    if (info$col == 2L) spans[[info$row]]$level <- as.integer(info$value)
-    if (info$col == 3L) spans[[info$row]]$label <- as.character(info$value)
-    draft$spanning_headers <- spans
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
-  })
+    header_dt_data(item[[1L]])
+  }, editable = list(target = "cell", disable = list(columns = c(0))),
+     rownames = FALSE, selection = "single")
   observeEvent(input$header_columns_table_cell_edit, {
     info <- input$header_columns_table_cell_edit
     if (is.null(info)) return()
     begin_edit("header", input$header)
     draft <- workspace_draft_value(workspace())
-    row <- info$row; col <- info$col
-    if (col == 2L) draft$columns[[row]]$label <- as.character(info$value)
-    if (col == 3L) draft$columns[[row]]$condition <- as.character(info$value)
-    if (col == 4L) draft$columns[[row]]$display_order <- as.integer(info$value)
-    if (col == 5L) draft$columns[[row]]$width <- as.numeric(info$value)
-    if (col == 6L) draft$columns[[row]]$alignment <- as.character(info$value)
+    row <- as.integer(info$row); col <- as.integer(info$col)
+    if (row < 1L || row > length(draft$columns %||% list()) || col < 1L || col > 8L) return()
+    fields <- c("id", "label", "condition", "display_order", "width", "alignment",
+                "spanning_header_1", "spanning_header_2")
+    field <- fields[[col]]
+    if (identical(field, "id")) return()
+    if (field == "display_order") value <- suppressWarnings(as.integer(info$value))
+    else if (field == "width") value <- suppressWarnings(as.numeric(info$value))
+    else value <- as.character(info$value %||% "")
+    if (field %in% c("spanning_header_1", "spanning_header_2") && !nzchar(trimws(value))) value <- NULL
+    draft$columns[[row]][[field]] <- value
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   })
   observeEvent(input$header_save, {
+    if (!is.null(draft_target()) && identical(draft_identity()$type, "header")) {
+      draft <- normalize_header_spanning(workspace_draft_value(workspace()))
+      workspace(workspace_set_draft(workspace(), draft)$workspace)
+    }
     result <- application_save_draft(workspace())
     if (result$passed) { workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Header saved.") } else showNotification(error_text(result$errors), type="error")
   })
