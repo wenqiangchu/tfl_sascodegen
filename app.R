@@ -1,4 +1,5 @@
 library(shiny)
+library(shinydashboard)
 
 project_root <- normalizePath(getwd(), mustWork = FALSE)
 source_order <- c(
@@ -17,59 +18,88 @@ error_text <- function(errors) {
         collapse = " ")
 }
 
-ui <- fluidPage(
-  titlePanel("SAS Descriptive-Analysis Code Generator"),
-  sidebarLayout(
-    sidebarPanel(
-      fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
-      actionButton("import", "Import"),
-      selectInput("population", "Population", choices = character()),
-      textInput("population_label", "Population label"),
-      textInput("population_expression", "Population expression"),
-      actionButton("save", "Save"),
-      actionButton("cancel", "Cancel"),
-      selectInput("table", "Table", choices = character()),
-      textInput("table_population_id", "Table population ID"),
-      textInput("table_header_id", "Table header ID"),
-      textInput("table_template_id", "Table template ID"),
-      selectInput("header", "Header", choices = character()),
-      textInput("header_source_data", "Header source data"),
-      textInput("header_column_label", "First header column label"),
-      textInput("header_column_condition", "First header column condition"),
-      selectInput("template", "Template", choices = character()),
-      textInput("template_stub_header", "Template stub header"),
-      selectInput("chunk", "Chunk", choices = character()),
-      textInput("chunk_source_data", "Chunk source data"),
-      textInput("chunk_filter", "Chunk filter"),
-      textInput("chunk_row_label", "First chunk row label"),
-      textInput("chunk_statistic_id", "First statistic ID"),
-      numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
-      actionButton("chunk_add", "Add chunk"),
-      actionButton("chunk_delete", "Delete chunk"),
-      actionButton("chunk_up", "Move chunk up"),
-      actionButton("chunk_down", "Move chunk down"),
-      actionButton("generate", "Generate SAS"),
-      downloadButton("download_bundle", "Download metadata"),
-      downloadButton("download_sas", "Download SAS"),
-      actionButton("discard", "Discard draft")
+ui <- dashboardPage(
+  dashboardHeader(title = "SAS Code Generator",
+    dropdownMenu(type = "notifications", badgeStatus = NULL,
+      notificationItem(text = "Workspace notifications", icon = icon("info")))),
+  dashboardSidebar(
+    sidebarMenu(id = "main_nav",
+      menuItem("Metadata", tabName = "metadata", icon = icon("database")),
+      menuItem("Table Metadata", tabName = "table_metadata", icon = icon("table")),
+      menuItem("Template Editor", tabName = "template_editor", icon = icon("file-code-o")),
+      menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))
     ),
-    mainPanel(
-      verbatimTextOutput("status"),
-      verbatimTextOutput("source")
+    tags$hr(),
+    fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
+    actionButton("import", "Import metadata", icon = icon("upload")),
+    downloadButton("download_bundle", "Download metadata"),
+    actionButton("discard", "Discard draft")
+  ),
+  dashboardBody(
+    tabItems(
+      tabItem(tabName = "metadata",
+        fluidRow(
+          box(title = "Population", width = 6, status = "primary", solidHeader = TRUE,
+            selectInput("population", "Population", choices = character()),
+            textInput("population_label", "Label"),
+            textAreaInput("population_expression", "SAS expression", rows = 3),
+            actionButton("save", "Save"), actionButton("cancel", "Cancel")),
+          box(title = "Header", width = 6, status = "primary", solidHeader = TRUE,
+            selectInput("header", "Header", choices = character()),
+            textInput("header_source_data", "Source data"),
+            textInput("header_column_label", "First column label"),
+            textInput("header_column_condition", "First column condition"))
+        )),
+      tabItem(tabName = "table_metadata",
+        box(title = "Table editor", width = 8, status = "primary", solidHeader = TRUE,
+          selectInput("table", "Table", choices = character()),
+          textInput("table_population_id", "Population ID"),
+          textInput("table_header_id", "Header ID"),
+          textInput("table_template_id", "Template ID"))),
+      tabItem(tabName = "template_editor",
+        box(title = "Template and chunk editor", width = 8, status = "primary", solidHeader = TRUE,
+          selectInput("template", "Template", choices = character()),
+          textInput("template_stub_header", "Stub header"),
+          selectInput("chunk", "Chunk", choices = character()),
+          textInput("chunk_source_data", "Source data"),
+          textInput("chunk_filter", "Filter"),
+          textInput("chunk_row_label", "First row label"),
+          textInput("chunk_statistic_id", "First statistic ID"),
+          numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
+          actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
+          actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"))),
+      tabItem(tabName = "generate_sas",
+        box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
+          selectInput("generate_table", "Table", choices = character()),
+          actionButton("generate", "Generate SAS", icon = icon("play")),
+          downloadButton("download_sas", "Download SAS"),
+          verbatimTextOutput("status"), verbatimTextOutput("source")))
     )
   )
 )
 
 server <- function(input, output, session) {
   workspace <- reactiveVal(new_empty_workspace())
+  session_state <- reactiveValues(
+    workspace_status = "empty", workspace = workspace(), import_error = NULL,
+    navigation = list(active_panel = "metadata", selected_population_id = NULL,
+                      selected_header_id = NULL, selected_table_id = NULL,
+                      selected_template_id = NULL), active_draft = NULL,
+    delete_impact = NULL,
+    generation = list(table_id = NULL, status = "idle", source_text = "", errors = list())
+  )
   status <- reactiveVal("Ready.")
   source_text <- reactiveVal("")
   draft_target <- reactiveVal(NULL)
   selected_target <- reactiveVal(NULL)
 
   refresh_tables <- function(value) {
+    session_state$workspace <- value
+    session_state$workspace_status <- if (length(value$tables) > 0L) "loaded" else "empty"
     ids <- vapply(value$tables, `[[`, "", "id")
     updateSelectInput(session, "table", choices = ids,
+                      selected = if (length(ids) > 0L) ids[[1L]] else character())
+    updateSelectInput(session, "generate_table", choices = ids,
                       selected = if (length(ids) > 0L) ids[[1L]] else character())
     population_ids <- vapply(value$populations, `[[`, "", "id")
     updateSelectInput(session, "population", choices = population_ids,
@@ -291,13 +321,15 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$generate, {
-    result <- application_generate_source(workspace(), input$table)
+    result <- application_generate_source(workspace(), input$generate_table)
     if (!result$passed) {
       status(paste("Generation failed:", error_text(result$errors)))
       showNotification(status(), type = "error")
       return()
     }
     source_text(result$value)
+    session_state$generation <- list(table_id = input$generate_table, status = "generated",
+                                     source_text = result$value, errors = list())
     status("SAS source generated.")
   })
 
@@ -315,7 +347,7 @@ server <- function(input, output, session) {
     content = function(file) writeBin(application_export_bundle(workspace())$value$bytes, file)
   )
   output$download_sas <- downloadHandler(
-    filename = function() paste0(input$table %||% "table", ".sas"),
+    filename = function() paste0(input$generate_table %||% "table", ".sas"),
     content = function(file) writeLines(source_text(), file, useBytes = TRUE)
   )
 }
