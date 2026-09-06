@@ -115,24 +115,25 @@ server <- function(input, output, session) {
   refresh_tables <- function(value) {
     session_state$suppress_selection <- TRUE
     session_state$workspace <- value
-    session_state$workspace_status <- if (length(value$tables) > 0L) "loaded" else "empty"
-    ids <- vapply(value$tables, `[[`, "", "id")
+    displayed <- if (!is.null(value$active_draft)) workspace_overlay_active_draft(value) else value
+    session_state$workspace_status <- if (length(displayed$tables) > 0L) "loaded" else "empty"
+    ids <- vapply(displayed$tables, `[[`, "", "id")
     updateSelectInput(session, "table", choices = ids,
                       selected = if (length(ids) > 0L) ids[[1L]] else character())
     updateSelectInput(session, "generate_table", choices = ids,
                       selected = if (length(ids) > 0L) ids[[1L]] else character())
-    population_ids <- vapply(value$populations, `[[`, "", "id")
+    population_ids <- vapply(displayed$populations, `[[`, "", "id")
     updateSelectInput(session, "population", choices = population_ids,
                       selected = if (length(population_ids) > 0L) population_ids[[1L]] else character())
-    header_ids <- vapply(value$headers, `[[`, "", "id")
+    header_ids <- vapply(displayed$headers, `[[`, "", "id")
     updateSelectInput(session, "header", choices = header_ids,
                       selected = if (length(header_ids) > 0L) header_ids[[1L]] else character())
     updateSelectInput(session, "header2", choices = header_ids,
                       selected = if (length(header_ids) > 0L) header_ids[[1L]] else character())
-    template_ids <- vapply(value$templates, `[[`, "", "id")
+    template_ids <- vapply(displayed$templates, `[[`, "", "id")
     updateSelectInput(session, "template", choices = template_ids,
                       selected = if (length(template_ids) > 0L) template_ids[[1L]] else character())
-    chunks <- unlist(lapply(value$templates, function(template) template$body$chunks %||% list()), recursive = FALSE)
+    chunks <- unlist(lapply(displayed$templates, function(template) template$body$chunks %||% list()), recursive = FALSE)
     chunk_ids <- if (length(chunks) > 0L) vapply(chunks, `[[`, "", "id") else character()
     updateSelectInput(session, "chunk", choices = chunk_ids,
                       selected = if (length(chunk_ids) > 0L) chunk_ids[[1L]] else character())
@@ -379,8 +380,11 @@ server <- function(input, output, session) {
       base <- if (length(values$templates)) clone_metadata_value(values$templates[[1L]]) else list(id="template_1", body=list(stub_header="Characteristic", chunks=list()))
       base$id <- paste0("template_", length(values$templates) + 1L)
     }
-    result <- workspace_create(values, type, base)
-    if (result$passed) { workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status(paste("Created", type, base$id)) } else showNotification(error_text(result$errors), type="error")
+    result <- workspace_begin_draft(values, type, document_id = base$id, operation = "create", value = base)
+    if (result$passed) {
+      workspace(result$workspace); draft_target(TRUE); draft_identity(list(type = type, id = base$id)); refresh_tables(result$workspace)
+      updateSelectInput(session, type, selected = base$id); status(paste("Draft created", type, base$id))
+    } else showNotification(error_text(result$errors), type="error")
   }
   observeEvent(input$population_new, new_object("population"))
   observeEvent(input$header_new, new_object("header"))
