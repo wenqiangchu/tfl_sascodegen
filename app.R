@@ -90,6 +90,7 @@ server <- function(input, output, session) {
     invisible(value)
   }
   draft_target <- reactiveVal(NULL)
+  draft_identity <- reactiveVal(NULL)
   selected_target <- reactiveVal(NULL)
   pending_bundle <- reactiveVal(NULL)
 
@@ -125,16 +126,20 @@ server <- function(input, output, session) {
   output$population_list <- DT::renderDT({
     data.frame(id = vapply(workspace()$populations, `[[`, "", "id"),
                label = vapply(workspace()$populations, `[[`, "", "label"), stringsAsFactors = FALSE)
-  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  }, rownames = FALSE, selection = "single", options = list(dom = "t"))
   output$header_list <- DT::renderDT({
     data.frame(id = vapply(workspace()$headers, `[[`, "", "id"), stringsAsFactors = FALSE)
-  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  }, rownames = FALSE, selection = "single", options = list(dom = "t"))
   output$table_list <- DT::renderDT({
     data.frame(id = vapply(workspace()$tables, `[[`, "", "id"), stringsAsFactors = FALSE)
-  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  }, rownames = FALSE, selection = "single", options = list(dom = "t"))
   output$template_list <- DT::renderDT({
     data.frame(id = vapply(workspace()$templates, `[[`, "", "id"), stringsAsFactors = FALSE)
-  }, rownames = FALSE, selection = "none", options = list(dom = "t"))
+  }, rownames = FALSE, selection = "single", options = list(dom = "t"))
+  observeEvent(input$population_list_rows_selected, { i <- input$population_list_rows_selected; if (length(i)) updateSelectInput(session, "population", selected = vapply(workspace()$populations, `[[`, "", "id")[[i]]) })
+  observeEvent(input$header_list_rows_selected, { i <- input$header_list_rows_selected; if (length(i)) updateSelectInput(session, "header", selected = vapply(workspace()$headers, `[[`, "", "id")[[i]]) })
+  observeEvent(input$table_list_rows_selected, { i <- input$table_list_rows_selected; if (length(i)) updateSelectInput(session, "table", selected = vapply(workspace()$tables, `[[`, "", "id")[[i]]) })
+  observeEvent(input$template_list_rows_selected, { i <- input$template_list_rows_selected; if (length(i)) updateSelectInput(session, "template", selected = vapply(workspace()$templates, `[[`, "", "id")[[i]]) })
   output$chunk_cards <- renderUI({
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) != 1L) return(NULL)
@@ -154,11 +159,13 @@ server <- function(input, output, session) {
       if (begun$passed) {
         session_state$workspace <- begun$workspace
         draft_target(TRUE)
+        draft_identity(list(type = type, id = id))
       }
     }
   }
 
   observeEvent(input$header, {
+    if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "header", id = input$header))) { showNotification("Save or cancel the active draft before switching headers.", type = "warning"); return() }
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
@@ -265,6 +272,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$template, {
+    if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "template", id = input$template))) { showNotification("Save or cancel the active draft before switching templates.", type = "warning"); return() }
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "template_stub_header", value = item[[1L]]$body$stub_header %||% "")
@@ -355,6 +363,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(list(input$population, workspace()), {
+    if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "population", id = input$population))) { showNotification("Save or cancel the active draft before switching populations.", type = "warning"); return() }
     id <- input$population
     if (is.null(id) || !nzchar(id)) return()
     item <- Filter(function(value) identical(value$id, id), workspace()$populations)
@@ -395,6 +404,7 @@ server <- function(input, output, session) {
     workspace(result$workspace)
     session_state$import_error <- NULL
     draft_target(NULL)
+    draft_identity(NULL)
     selected_target(input$table)
     refresh_tables(result$workspace)
     status("Draft saved.")
@@ -404,16 +414,17 @@ server <- function(input, output, session) {
     result <- application_discard_draft(workspace())
     workspace(result$workspace)
     draft_target(NULL)
+    draft_identity(NULL)
     refresh_tables(result$workspace)
     status("Draft cancelled.")
   })
   observeEvent(input$table_save, {
     result <- application_save_draft(workspace())
-    if (result$passed) { workspace(result$workspace); draft_target(NULL); refresh_tables(result$workspace); status("Draft saved.") }
+    if (result$passed) { workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Draft saved.") }
     else { status(paste("Save failed:", error_text(result$errors))); showNotification(status(), type = "error") }
   })
   observeEvent(input$table_cancel, {
-    result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); refresh_tables(result$workspace); status("Draft cancelled.")
+    result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Draft cancelled.")
   })
 
   import_bundle_now <- function(path) {
