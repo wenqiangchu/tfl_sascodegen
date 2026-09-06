@@ -44,7 +44,7 @@ ui <- dashboardPage(
         box(title = "Header metadata", width = 8, status = "primary", solidHeader = TRUE,
           tags$div(style = "display:none", selectInput("header", "Selected header", choices = character())),
           textInput("header_source_data", "Source data"), h4("Spanning headers"), DTOutput("header_spanning_table"),
-          h4("Header columns"), DTOutput("header_columns_table"), actionButton("header_save", "Save"), actionButton("header_discard", "Discard changes"))))
+          h4("Header columns"), actionButton("header_column_new", "Add column"), actionButton("header_column_delete", "Delete column"), DTOutput("header_columns_table"), actionButton("header_save", "Save"), actionButton("header_discard", "Discard changes"))))
     )),
     tabItem(tabName = "table_metadata", fluidRow(
       box(title = "Tables", width = 4, actionButton("table_new", "New table"), actionButton("table_delete", "Delete table"), DTOutput("table_list")),
@@ -58,10 +58,13 @@ ui <- dashboardPage(
       box(title = "Templates", width = 4, actionButton("template_new", "New template"), actionButton("template_delete", "Delete template"), DTOutput("template_list")),
       box(title = "Template metadata", width = 8, status = "primary", solidHeader = TRUE,
         tags$div(style = "display:none", selectInput("template", "Selected template", choices = character())),
-        textInput("template_stub_header", "Stub header"), selectInput("chunk", "Selected chunk", choices = character()),
-        textInput("chunk_source_data", "Source data"), textInput("chunk_filter", "Filter"),
-        textInput("chunk_row_label", "First row label"), textInput("chunk_statistic_id", "First statistic ID"),
-        numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0), uiOutput("chunk_cards"),
+        textInput("template_stub_header", "Stub header"), uiOutput("chunk_cards"),
+        tags$div(style="display:none", selectInput("chunk", "Selected chunk", choices = character())),
+        tags$div(style="display:none", textInput("chunk_source_data", "Source data")),
+        tags$div(style="display:none", textInput("chunk_filter", "Filter")),
+        tags$div(style="display:none", textInput("chunk_row_label", "First row label")),
+        tags$div(style="display:none", textInput("chunk_statistic_id", "First statistic ID")),
+        tags$div(style="display:none", numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0)),
         actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
         actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"), DTOutput("chunk_rows_table"))
     )),
@@ -161,8 +164,9 @@ server <- function(input, output, session) {
       chunk <- chunks[[i]]
       box(title = paste("Chunk", i, chunk$id), width = 12, status = "info", solidHeader = TRUE,
           p(strong("Type: "), chunk$type %||% ""),
-          p(strong("Source data: "), chunk$source_data %||% ""),
-          p(strong("Filter: "), chunk$filter %||% ""))
+          textInput(paste0("chunk_source_data_", i), "Source data", value = chunk$source_data %||% ""),
+          textInput(paste0("chunk_filter_", i), "Filter", value = chunk$filter %||% ""),
+          DTOutput(paste0("chunk_rows_", i)))
     }))
   })
 
@@ -300,6 +304,18 @@ server <- function(input, output, session) {
   })
   observeEvent(input$header_discard, {
     result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Header changes discarded.")
+  })
+  observeEvent(input$header_column_new, {
+    begin_edit("header", input$header); if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); n <- length(draft$columns %||% list())
+    draft$columns[[n + 1L]] <- list(id=paste0("column_", n + 1L), label="New column", condition="1", display_order=n + 1L, width=1, alignment="center")
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  })
+  observeEvent(input$header_column_delete, {
+    info <- input$header_columns_table_rows_selected; if (!length(info)) return()
+    begin_edit("header", input$header); if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$columns <- draft$columns[-info[[1L]]]
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
   })
   request_delete <- function(type, id) {
     impact <- workspace_delete_impact(workspace(), type, id)
