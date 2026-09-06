@@ -34,27 +34,27 @@ ui <- dashboardPage(
   dashboardBody(tabItems(
     tabItem(tabName = "metadata", tabsetPanel(
       tabPanel("Population", fluidRow(
-        box(title = "Populations", width = 4, DTOutput("population_list")),
+          box(title = "Populations", width = 4, actionButton("population_new", "New population"), actionButton("population_delete", "Delete population"), DTOutput("population_list")),
         box(title = "Population metadata", width = 8, status = "primary", solidHeader = TRUE,
           tags$div(style = "display:none", selectInput("population", "Selected population", choices = character())),
           textInput("population_label", "Label"), textAreaInput("population_expression", "SAS expression", rows = 3),
-          actionButton("save", "Save"), actionButton("cancel", "Cancel"), actionButton("population_delete", "Delete")))),
+            actionButton("save", "Save"), actionButton("cancel", "Discard changes")))),
       tabPanel("Header", fluidRow(
-        box(title = "Headers", width = 4, DTOutput("header_list")),
+          box(title = "Headers", width = 4, actionButton("header_new", "New header"), actionButton("header_delete", "Delete header"), DTOutput("header_list")),
         box(title = "Header metadata", width = 8, status = "primary", solidHeader = TRUE,
           tags$div(style = "display:none", selectInput("header", "Selected header", choices = character())),
-          textInput("header_source_data", "Source data"), DTOutput("header_columns_table"),
-          actionButton("header_delete", "Delete"))))
+          textInput("header_source_data", "Source data"), h4("Spanning headers"), DTOutput("header_spanning_table"),
+          h4("Header columns"), DTOutput("header_columns_table"), actionButton("header_save", "Save"), actionButton("header_discard", "Discard changes"))))
     )),
     tabItem(tabName = "table_metadata", fluidRow(
-      box(title = "Tables", width = 4, DTOutput("table_list")),
+      box(title = "Tables", width = 4, actionButton("table_new", "New table"), actionButton("table_delete", "Delete table"), DTOutput("table_list")),
       box(title = "Table metadata", width = 8, status = "primary", solidHeader = TRUE,
         tags$div(style = "display:none", selectInput("table", "Selected table", choices = character())),
         textInput("table_population_id", "Population ID"), textInput("table_header_id", "Header ID"),
         textInput("table_template_id", "Template ID"), actionButton("table_save", "Save"), actionButton("table_cancel", "Cancel"))
     )),
     tabItem(tabName = "template_editor", fluidRow(
-      box(title = "Templates", width = 4, DTOutput("template_list")),
+      box(title = "Templates", width = 4, actionButton("template_new", "New template"), actionButton("template_delete", "Delete template"), DTOutput("template_list")),
       box(title = "Template metadata", width = 8, status = "primary", solidHeader = TRUE,
         tags$div(style = "display:none", selectInput("template", "Selected template", choices = character())),
         textInput("template_stub_header", "Stub header"), selectInput("chunk", "Selected chunk", choices = character()),
@@ -77,6 +77,7 @@ server <- function(input, output, session) {
                       selected_template_id = NULL), active_draft = NULL,
     delete_impact = NULL,
     generation = list(table_id = NULL, status = "idle", source_text = "", errors = list())
+    , suppress_selection = FALSE
   )
   # Compatibility accessor: SessionState remains the only reactive workspace owner.
   workspace <- function(value) {
@@ -108,6 +109,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   refresh_tables <- function(value) {
+    session_state$suppress_selection <- TRUE
     session_state$workspace <- value
     session_state$workspace_status <- if (length(value$tables) > 0L) "loaded" else "empty"
     ids <- vapply(value$tables, `[[`, "", "id")
@@ -130,6 +132,7 @@ server <- function(input, output, session) {
     chunk_ids <- if (length(chunks) > 0L) vapply(chunks, `[[`, "", "id") else character()
     updateSelectInput(session, "chunk", choices = chunk_ids,
                       selected = if (length(chunk_ids) > 0L) chunk_ids[[1L]] else character())
+    session$onFlushed(function() session_state$suppress_selection <- FALSE, once = TRUE)
   }
 
   output$population_list <- DT::renderDT({
@@ -174,6 +177,7 @@ server <- function(input, output, session) {
   }
 
   observeEvent(input$header, {
+    if (isTRUE(session_state$suppress_selection)) return()
     if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "header", id = input$header))) { request_switch("header", input$header, "header"); return() }
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
@@ -187,6 +191,7 @@ server <- function(input, output, session) {
   }, ignoreInit = FALSE)
 
   observeEvent(input$table, {
+    if (isTRUE(session_state$suppress_selection)) return()
     if (!is.null(draft_target()) && !identical(selected_target(), input$table)) {
       request_switch("table", input$table, "table")
       return()
@@ -244,6 +249,13 @@ server <- function(input, output, session) {
                alignment = vapply(columns, `[[`, "", "alignment"),
                stringsAsFactors = FALSE)
   }, editable = TRUE, rownames = FALSE, selection = "single")
+  output$header_spanning_table <- DT::renderDT({
+    item <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
+    if (length(item) != 1L) return(data.frame())
+    spans <- item[[1L]]$spanning_headers %||% list()
+    if (!length(spans)) return(data.frame(id=character(), level=integer(), label=character()))
+    data.frame(id=vapply(spans, `[[`, "", "id"), level=vapply(spans, `[[`, integer(1L), "level"), label=vapply(spans, `[[`, "", "label"), stringsAsFactors=FALSE)
+  }, editable=TRUE, rownames=FALSE, selection="single")
   observeEvent(input$header_columns_table_cell_edit, {
     info <- input$header_columns_table_cell_edit
     if (is.null(info)) return()
@@ -256,6 +268,13 @@ server <- function(input, output, session) {
     if (col == 5L) draft$columns[[row]]$width <- as.numeric(info$value)
     if (col == 6L) draft$columns[[row]]$alignment <- as.character(info$value)
     workspace(workspace_set_draft(workspace(), draft)$workspace)
+  })
+  observeEvent(input$header_save, {
+    result <- application_save_draft(workspace())
+    if (result$passed) { workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Header saved.") } else showNotification(error_text(result$errors), type="error")
+  })
+  observeEvent(input$header_discard, {
+    result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Header changes discarded.")
   })
   request_delete <- function(type, id) {
     impact <- workspace_delete_impact(workspace(), type, id)
@@ -282,6 +301,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$template, {
+    if (isTRUE(session_state$suppress_selection)) return()
     if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "template", id = input$template))) { request_switch("template", input$template, "template"); return() }
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) == 1L && is.null(draft_target())) {
@@ -329,15 +349,15 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_row_label, {
     begin_edit("chunk", input$chunk)
-    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); draft$rows[[1L]]$label <- input$chunk_row_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
+    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); rows <- draft$rows %||% list(); if (!length(rows)) return(); draft$rows[[1L]]$label <- input$chunk_row_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_id, {
     if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); draft$rows[[1L]]$statistics[[1L]]$id <- input$chunk_statistic_id; workspace(workspace_set_draft(workspace(), draft)$workspace)
+    draft <- workspace_draft_value(workspace()); rows <- draft$rows %||% list(); if (!length(rows) || !length(rows[[1L]]$statistics %||% list())) return(); draft$rows[[1L]]$statistics[[1L]]$id <- input$chunk_statistic_id; workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_digits, {
     if (is.null(draft_target()) || is.na(input$chunk_statistic_digits)) return()
-    draft <- workspace_draft_value(workspace()); draft$rows[[1L]]$statistics[[1L]]$digits <- as.integer(input$chunk_statistic_digits); workspace(workspace_set_draft(workspace(), draft)$workspace)
+    draft <- workspace_draft_value(workspace()); rows <- draft$rows %||% list(); if (!length(rows) || !length(rows[[1L]]$statistics %||% list())) return(); draft$rows[[1L]]$statistics[[1L]]$digits <- as.integer(input$chunk_statistic_digits); workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
   output$chunk_rows_table <- DT::renderDT({
     item <- find_chunk(workspace(), input$chunk)
@@ -383,6 +403,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(list(input$population, workspace()), {
+    if (isTRUE(session_state$suppress_selection)) return()
     if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "population", id = input$population))) { request_switch("population", input$population, "population"); return() }
     id <- input$population
     if (is.null(id) || !nzchar(id)) return()
