@@ -194,15 +194,30 @@ server <- function(input, output, session) {
           textInput(paste0(prefix, "sc_subject_key"), "Subject key", value = sc$subject_key %||% ""),
           textInput(paste0(prefix, "sc_record_key"), "Record key", value = paste(sc$record_key %||% character(), collapse = ", ")),
           textInput(paste0(prefix, "sc_duplicate_policy"), "Duplicate policy", value = sc$duplicate_policy %||% ""),
-          h4("Levels"), DTOutput(paste0(prefix, "levels")),
-          h4("Analysis blocks"), DTOutput(paste0(prefix, "blocks"))
+          h4("Levels"), actionButton(paste0(prefix, "level_new"), "Add level"),
+          actionButton(paste0(prefix, "level_delete"), "Delete level"),
+          actionButton(paste0(prefix, "level_up"), "Move level up"),
+          actionButton(paste0(prefix, "level_down"), "Move level down"),
+          DTOutput(paste0(prefix, "levels")),
+          h4("Analysis blocks"), actionButton(paste0(prefix, "block_new"), "Add analysis block"),
+          actionButton(paste0(prefix, "block_delete"), "Delete analysis block"),
+          actionButton(paste0(prefix, "block_up"), "Move block up"),
+          actionButton(paste0(prefix, "block_down"), "Move block down"),
+          DTOutput(paste0(prefix, "blocks"))
         )
       }
       rows <- if (identical(chunk$type, "hierarchical_summary")) NULL else {
         row_ui <- lapply(seq_along(chunk$rows %||% list()), function(r) {
-          tagList(h5(paste("Statistics for row", r)), DTOutput(paste0(prefix, "stats_", r)))
+          tagList(h5(paste("Statistics for row", r)),
+                  actionButton(paste0(prefix, "stats_new_", r), "Add statistic"),
+                  actionButton(paste0(prefix, "stats_delete_", r), "Delete statistic"),
+                  DTOutput(paste0(prefix, "stats_", r)))
         })
-        tagList(DTOutput(paste0(prefix, "rows")), row_ui)
+        tagList(actionButton(paste0(prefix, "row_new"), "Add row"),
+                actionButton(paste0(prefix, "row_delete"), "Delete row"),
+                actionButton(paste0(prefix, "row_up"), "Move row up"),
+                actionButton(paste0(prefix, "row_down"), "Move row down"),
+                DTOutput(paste0(prefix, "rows")), row_ui)
       }
       box(title = paste("Chunk", i, chunk$id %||% ""), width = 12, status = "info", solidHeader = TRUE,
           tagList(common, specific, if (!is.null(rows)) list(h4("Rows"), rows) else NULL))
@@ -249,6 +264,7 @@ server <- function(input, output, session) {
                      node_analysis_id=vapply(levels, function(x) x$node_analysis_id %||% "", character(1)),
                      missing_policy=vapply(levels, function(x) x$missing_policy %||% "", character(1)),
                      missing_label=vapply(levels, function(x) x$missing_label %||% "", character(1)),
+                     parent_level=vapply(seq_along(levels), function(j) if (j > 1L) levels[[j-1L]]$id %||% "" else "", character(1)),
                      stringsAsFactors=FALSE)
         }, editable = TRUE, rownames = FALSE, selection = "single")
         output[[paste0(prefix, "blocks")]] <- DT::renderDT({
@@ -310,6 +326,48 @@ server <- function(input, output, session) {
           if (info$col >= 2L && info$col <= 5L) bl[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
           d$body$chunks[[i]]$analysis_blocks <- bl; workspace(workspace_set_draft(workspace(), d)$workspace)
         }, ignoreInit = TRUE)
+      }
+      # Collection controls use the selected row (DT is 1-based) and mutate
+      # the template draft. IDs are generated from the parent and position.
+      collection_action <- function(collection, action, selected, make_item) {
+        begin_edit("template", input$template); if (is.null(draft_target())) return()
+        d <- workspace_draft_value(workspace()); current <- d$body$chunks[[i]][[collection]] %||% list()
+        if (action == "new") current[[length(current) + 1L]] <- make_item(length(current) + 1L)
+        if (action == "delete" && length(selected) && selected[[1L]] <= length(current)) current <- current[-selected[[1L]]]
+        if (action %in% c("up", "down") && length(selected) && selected[[1L]] <= length(current)) {
+          j <- selected[[1L]] + if (action == "up") -1L else 1L
+          if (j >= 1L && j <= length(current)) { z <- current[[selected[[1L]]]]; current[[selected[[1L]]]] <- current[[j]]; current[[j]] <- z }
+        }
+        d$body$chunks[[i]][[collection]] <- current
+        workspace(workspace_set_draft(workspace(), d)$workspace)
+      }
+      observeEvent(input[[paste0(p, "row_new")]], collection_action("rows", "new", integer(), function(n) {
+        typ <- if (grepl("categorical", chunks[[i]]$type %||% "")) "analysis" else "analysis"
+        list(id=paste0(chunks[[i]]$id, "_", sprintf("%03d", n)), type=typ, label="New row", indent_level=0L,
+             condition=if (grepl("categorical", chunks[[i]]$type %||% "")) "1" else NULL,
+             statistics=if (grepl("categorical", chunks[[i]]$type %||% "")) list(list(id="n", digits=0L), list(id="pct", digits=1L)) else list(list(id="n", digits=0L)), cell_format=list())
+      }), ignoreInit=TRUE)
+      observeEvent(input[[paste0(p, "row_delete")]], collection_action("rows", "delete", input[[paste0(p, "rows_rows_selected")]], identity), ignoreInit=TRUE)
+      observeEvent(input[[paste0(p, "row_up")]], collection_action("rows", "up", input[[paste0(p, "rows_rows_selected")]], identity), ignoreInit=TRUE)
+      observeEvent(input[[paste0(p, "row_down")]], collection_action("rows", "down", input[[paste0(p, "rows_rows_selected")]], identity), ignoreInit=TRUE)
+      for (r in seq_along(chunks[[i]]$rows %||% list())) {
+        local_r <- r
+        observeEvent(input[[paste0(p, "stats_new_", local_r)]], collection_action("rows", "new", integer(), identity), ignoreInit=TRUE)
+        observeEvent(input[[paste0(p, "stats_delete_", local_r)]], {
+          begin_edit("template", input$template); if (is.null(draft_target())) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); s <- input[[paste0(p, "stats_", local_r, "_rows_selected")]]; if (length(s) && s[[1L]] <= length(st)) { d$body$chunks[[i]]$rows[[local_r]]$statistics <- st[-s[[1L]]]; workspace(workspace_set_draft(workspace(), d)$workspace) }
+        }, ignoreInit=TRUE)
+      }
+      if (identical(chunks[[i]]$type, "hierarchical_summary")) {
+        for (kind in c("level", "block")) {
+          coll <- if (kind == "level") "levels" else "analysis_blocks"
+          for (act in c("new", "delete", "up", "down")) {
+            observeEvent(input[[paste0(p, kind, "_", act)]], {
+              sel <- input[[paste0(p, coll, "_rows_selected")]]
+              maker <- if (kind == "level") function(n) list(id=paste0(chunks[[i]]$id, "_level_", sprintf("%03d", n)), variable="VAR", order_variable="VAR", order_direction="asc", node_role="label", missing_policy="exclude") else function(n) list(id=paste0(chunks[[i]]$id, "_analysis_", sprintf("%03d", n)), anchor_level=(chunks[[i]]$levels[[1L]]$id %||% "level_001"), placement="same_row", type="continuous_summary", counting_unit="record", analysis_variable="VALUE", rows=list(list(id="row_001", type="analysis", label="New row", indent_level=0L, statistics=list(list(id="n", digits=0L)), cell_format=list())))
+              collection_action(coll, act, sel, maker)
+            }, ignoreInit=TRUE)
+          }
+        }
       }
     }
   })
