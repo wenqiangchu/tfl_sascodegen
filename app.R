@@ -296,8 +296,32 @@ server <- function(input, output, session) {
       footer = tagList(modalButton("Cancel"), actionButton("confirm_delete", "Delete", class = "btn-danger"))
     ))
   }
+  new_object <- function(type) {
+    values <- workspace()
+    if (type == "population") {
+      base <- if (length(values$populations)) clone_metadata_value(values$populations[[1L]]) else list(id="population_1", label="New population", expression="1")
+      base$id <- paste0("population_", length(values$populations) + 1L)
+    } else if (type == "header") {
+      base <- if (length(values$headers)) clone_metadata_value(values$headers[[1L]]) else list(id="header_1", source_data="adam.adsl", columns=list(list(id="overall", label="Overall", condition="1", display_order=1L, width=1, alignment="center")))
+      base$id <- paste0("header_", length(values$headers) + 1L)
+    } else if (type == "table") {
+      if (!length(values$populations) || !length(values$headers) || !length(values$templates)) { showNotification("Create a population, header, and template first.", type="warning"); return() }
+      base <- list(id=paste0("table_", length(values$tables) + 1L), population_id=values$populations[[1L]]$id, header_id=values$headers[[1L]]$id, template_id=values$templates[[1L]]$id)
+    } else {
+      base <- if (length(values$templates)) clone_metadata_value(values$templates[[1L]]) else list(id="template_1", body=list(stub_header="Characteristic", chunks=list()))
+      base$id <- paste0("template_", length(values$templates) + 1L)
+    }
+    result <- workspace_create(values, type, base)
+    if (result$passed) { workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status(paste("Created", type, base$id)) } else showNotification(error_text(result$errors), type="error")
+  }
+  observeEvent(input$population_new, new_object("population"))
+  observeEvent(input$header_new, new_object("header"))
+  observeEvent(input$table_new, new_object("table"))
+  observeEvent(input$template_new, new_object("template"))
   observeEvent(input$population_delete, request_delete("population", input$population))
   observeEvent(input$header_delete, request_delete("header", input$header))
+  observeEvent(input$table_delete, request_delete("table", input$table))
+  observeEvent(input$template_delete, request_delete("template", input$template))
   observeEvent(input$confirm_delete, {
     impact <- session_state$delete_impact
     removeModal()
