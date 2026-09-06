@@ -178,7 +178,9 @@ server <- function(input, output, session) {
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
-      column <- item[[1L]]$columns[[1L]]
+      columns <- item[[1L]]$columns %||% list()
+      if (length(columns) == 0L) return()
+      column <- columns[[1L]]
       updateTextInput(session, "header_column_label", value = column$label)
       updateTextInput(session, "header_column_condition", value = column$condition)
     }
@@ -223,7 +225,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   observeEvent(input$header_column_label, {
     begin_edit("header", input$header)
-    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); draft$columns[[1L]]$label <- input$header_column_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
+    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); if (length(draft$columns %||% list()) == 0L) return(); draft$columns[[1L]]$label <- input$header_column_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
   }, ignoreInit = TRUE)
   observeEvent(input$header_column_condition, {
     if (is.null(draft_target())) return()
@@ -303,9 +305,17 @@ server <- function(input, output, session) {
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "chunk_source_data", value = item[[1L]]$source_data)
       updateTextInput(session, "chunk_filter", value = item[[1L]]$filter %||% "")
-      row <- item[[1L]]$rows[[1L]]
+      rows <- item[[1L]]$rows %||% list()
+      if (length(rows) == 0L) {
+        updateTextInput(session, "chunk_row_label", value = "")
+        updateTextInput(session, "chunk_statistic_id", value = "")
+        updateNumericInput(session, "chunk_statistic_digits", value = NA)
+        return()
+      }
+      row <- rows[[1L]]
       updateTextInput(session, "chunk_row_label", value = row$label %||% "")
-      statistic <- (row$statistics %||% list())[[1L]]
+      statistics <- row$statistics %||% list()
+      statistic <- if (length(statistics) > 0L) statistics[[1L]] else list()
       updateTextInput(session, "chunk_statistic_id", value = statistic$id %||% "")
       updateNumericInput(session, "chunk_statistic_digits", value = statistic$digits %||% NA)
     }
@@ -351,7 +361,9 @@ server <- function(input, output, session) {
   chunk_operation <- function(operation) {
     item <- find_chunk(workspace(), input$chunk)
     if (length(item) != 1L) return()
-    template <- Filter(function(value) any(vapply(value$body$chunks %||% list(), function(chunk) identical(chunk$id, input$chunk), logical(1L))), workspace()$templates)[[1L]]
+    templates <- Filter(function(value) any(vapply(value$body$chunks %||% list(), function(chunk) identical(chunk$id, input$chunk), logical(1L))), workspace()$templates)
+    if (length(templates) == 0L) return()
+    template <- templates[[1L]]
     result <- switch(operation,
       add = workspace_create(workspace(), "chunk", { value <- clone_metadata_value(item[[1L]]); value$id <- paste0(input$chunk, "_new"); value }, template_id = template$id),
       delete = workspace_delete(workspace(), workspace_target("chunk", input$chunk, template_id = template$id), confirm = TRUE),
