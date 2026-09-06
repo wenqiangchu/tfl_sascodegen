@@ -158,7 +158,8 @@ server <- function(input, output, session) {
   observeEvent(input$table_list_rows_selected, { i <- input$table_list_rows_selected; if (length(i)) updateSelectInput(session, "table", selected = vapply(workspace()$tables, `[[`, "", "id")[[i]]) })
   observeEvent(input$template_list_rows_selected, { i <- input$template_list_rows_selected; if (length(i)) updateSelectInput(session, "template", selected = vapply(workspace()$templates, `[[`, "", "id")[[i]]) })
   output$chunk_cards <- renderUI({
-    item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
+    shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
+    item <- Filter(function(value) identical(value$id, input$template), shown$templates)
     if (length(item) != 1L) return(NULL)
     body <- item[[1L]]$body %||% list()
     chunks <- body$chunks %||% list()
@@ -166,12 +167,182 @@ server <- function(input, output, session) {
     tagList(lapply(seq_along(chunks), function(i) {
       chunk <- chunks[[i]]
       if (!is.list(chunk)) return(NULL)
-      box(title = paste("Chunk", i, chunk$id), width = 12, status = "info", solidHeader = TRUE,
-          p(strong("Type: "), chunk$type %||% ""),
-          textInput(paste0("chunk_source_data_", i), "Source data", value = chunk$source_data %||% ""),
-          textInput(paste0("chunk_filter_", i), "Filter", value = chunk$filter %||% ""),
-          DTOutput(paste0("chunk_rows_", i)))
+      prefix <- paste0("chunk_card_", i, "_")
+      common <- list(
+        textInput(paste0(prefix, "id"), "ID", value = chunk$id %||% "", readonly = TRUE),
+        textInput(paste0(prefix, "type"), "Type", value = chunk$type %||% "", readonly = TRUE),
+        textInput(paste0(prefix, "source_data"), "Source data", value = chunk$source_data %||% ""),
+        textInput(paste0(prefix, "filter"), "Filter", value = chunk$filter %||% "")
+      )
+      specific <- list()
+      if (identical(chunk$type, "continuous_summary")) {
+        specific <- list(textInput(paste0(prefix, "analysis_variable"), "Analysis variable", value = chunk$analysis_variable %||% ""))
+      } else if (chunk$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
+        den <- chunk$denominator %||% list()
+        specific <- list(
+          h4("Denominator"),
+          textInput(paste0(prefix, "den_scope"), "Scope", value = den$scope %||% ""),
+          textInput(paste0(prefix, "den_unit"), "Unit", value = den$unit %||% ""),
+          textInput(paste0(prefix, "den_variable"), "Variable", value = den$variable %||% ""),
+          textInput(paste0(prefix, "den_expression"), "Expression", value = den$expression %||% "")
+        )
+      } else if (identical(chunk$type, "hierarchical_summary")) {
+        sc <- chunk$source_contract %||% list()
+        specific <- list(
+          h4("Source contract"),
+          textInput(paste0(prefix, "sc_grain"), "Grain", value = sc$grain %||% ""),
+          textInput(paste0(prefix, "sc_subject_key"), "Subject key", value = sc$subject_key %||% ""),
+          textInput(paste0(prefix, "sc_record_key"), "Record key", value = paste(sc$record_key %||% character(), collapse = ", ")),
+          textInput(paste0(prefix, "sc_duplicate_policy"), "Duplicate policy", value = sc$duplicate_policy %||% ""),
+          h4("Levels"), DTOutput(paste0(prefix, "levels")),
+          h4("Analysis blocks"), DTOutput(paste0(prefix, "blocks"))
+        )
+      }
+      rows <- if (identical(chunk$type, "hierarchical_summary")) NULL else {
+        row_ui <- lapply(seq_along(chunk$rows %||% list()), function(r) {
+          tagList(h5(paste("Statistics for row", r)), DTOutput(paste0(prefix, "stats_", r)))
+        })
+        tagList(DTOutput(paste0(prefix, "rows")), row_ui)
+      }
+      box(title = paste("Chunk", i, chunk$id %||% ""), width = 12, status = "info", solidHeader = TRUE,
+          tagList(common, specific, if (!is.null(rows)) list(h4("Rows"), rows) else NULL))
     }))
+  })
+
+  # Render card-level nested tables from the currently displayed (draft-aware) template.
+  observe({
+    shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
+    item <- Filter(function(value) identical(value$id, input$template), shown$templates)
+    if (length(item) != 1L) return()
+    chunks <- (item[[1L]]$body %||% list())$chunks %||% list()
+    for (i in seq_along(chunks)) {
+      local_i <- i; chunk <- chunks[[i]]; prefix <- paste0("chunk_card_", local_i, "_")
+      if (!identical(chunk$type, "hierarchical_summary")) {
+        output[[paste0(prefix, "rows")]] <- DT::renderDT({
+          rows <- chunk$rows %||% list()
+          if (!length(rows)) return(data.frame())
+          data.frame(id=vapply(rows, function(x) x$id %||% "", character(1)),
+                     type=vapply(rows, function(x) x$type %||% "", character(1)),
+                     label=vapply(rows, function(x) x$label %||% "", character(1)),
+                     indent_level=vapply(rows, function(x) as.integer(x$indent_level %||% 0L), integer(1)),
+                     stringsAsFactors=FALSE)
+        }, editable = TRUE, rownames = FALSE, selection = "single")
+        for (r in seq_along(chunk$rows %||% list())) {
+          local_r <- r
+          output[[paste0(prefix, "stats_", local_r)]] <- DT::renderDT({
+            stats <- (chunk$rows[[local_r]]$statistics %||% list())
+            if (!length(stats)) return(data.frame())
+            data.frame(id=vapply(stats, function(x) x$id %||% "", character(1)),
+                       digits=vapply(stats, function(x) as.character(x$digits %||% ""), character(1)),
+                       stringsAsFactors=FALSE)
+          }, editable = TRUE, rownames = FALSE, selection = "single")
+        }
+      } else {
+        output[[paste0(prefix, "levels")]] <- DT::renderDT({
+          levels <- chunk$levels %||% list(); if (!length(levels)) return(data.frame())
+          data.frame(id=vapply(levels, function(x) x$id %||% "", character(1)),
+                     variable=vapply(levels, function(x) x$variable %||% "", character(1)),
+                     label_variable=vapply(levels, function(x) x$label_variable %||% "", character(1)),
+                     order_variable=vapply(levels, function(x) x$order_variable %||% "", character(1)),
+                     order_direction=vapply(levels, function(x) x$order_direction %||% "", character(1)),
+                     node_role=vapply(levels, function(x) x$node_role %||% "", character(1)),
+                     node_analysis_id=vapply(levels, function(x) x$node_analysis_id %||% "", character(1)),
+                     missing_policy=vapply(levels, function(x) x$missing_policy %||% "", character(1)),
+                     missing_label=vapply(levels, function(x) x$missing_label %||% "", character(1)),
+                     stringsAsFactors=FALSE)
+        }, editable = TRUE, rownames = FALSE, selection = "single")
+        output[[paste0(prefix, "blocks")]] <- DT::renderDT({
+          blocks <- chunk$analysis_blocks %||% list(); if (!length(blocks)) return(data.frame())
+          data.frame(id=vapply(blocks, function(x) x$id %||% "", character(1)),
+                     anchor_level=vapply(blocks, function(x) x$anchor_level %||% "", character(1)),
+                     placement=vapply(blocks, function(x) x$placement %||% "", character(1)),
+                     type=vapply(blocks, function(x) x$type %||% "", character(1)),
+                     counting_unit=vapply(blocks, function(x) x$counting_unit %||% "", character(1)),
+                     analysis_variable=vapply(blocks, function(x) x$analysis_variable %||% "", character(1)),
+                     stringsAsFactors=FALSE)
+        }, editable = TRUE, rownames = FALSE, selection = "single")
+      }
+    }
+  })
+
+  # Card-level DT edits write directly into the active template draft.
+  observe({
+    req(input$template)
+    shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
+    item <- Filter(function(x) identical(x$id, input$template), shown$templates); if (length(item) != 1L) return()
+    chunks <- item[[1L]]$body$chunks %||% list()
+    for (i in seq_along(chunks)) {
+      p <- paste0("chunk_card_", i, "_")
+      observeEvent(input[[paste0(p, "rows_cell_edit")]], {
+        info <- input[[paste0(p, "rows_cell_edit")]]; if (is.null(info)) return()
+        begin_edit("template", input$template); if (is.null(draft_target())) return()
+        d <- workspace_draft_value(workspace()); if (info$row > length(d$body$chunks[[i]]$rows %||% list())) return()
+        if (info$col == 3L) d$body$chunks[[i]]$rows[[info$row]]$label <- as.character(info$value)
+        if (info$col == 4L) d$body$chunks[[i]]$rows[[info$row]]$indent_level <- as.integer(info$value)
+        workspace(workspace_set_draft(workspace(), d)$workspace)
+      }, ignoreInit = TRUE)
+      for (r in seq_along(chunks[[i]]$rows %||% list())) {
+        local_r <- r
+        observeEvent(input[[paste0(p, "stats_", local_r, "_cell_edit")]], {
+          info <- input[[paste0(p, "stats_", local_r, "_cell_edit")]]; if (is.null(info)) return()
+          begin_edit("template", input$template); if (is.null(draft_target())) return()
+          d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list()
+          if (info$row > length(st)) return()
+          if (info$col == 2L) st[[info$row]]$digits <- suppressWarnings(as.numeric(info$value))
+          d$body$chunks[[i]]$rows[[local_r]]$statistics <- st
+          workspace(workspace_set_draft(workspace(), d)$workspace)
+        }, ignoreInit = TRUE)
+      }
+      if (identical(chunks[[i]]$type, "hierarchical_summary")) {
+        observeEvent(input[[paste0(p, "levels_cell_edit")]], {
+          info <- input[[paste0(p, "levels_cell_edit")]]; if (is.null(info)) return()
+          begin_edit("template", input$template); if (is.null(draft_target())) return()
+          d <- workspace_draft_value(workspace()); lv <- d$body$chunks[[i]]$levels %||% list(); if (info$row > length(lv)) return()
+          fields <- c("variable","label_variable","order_variable","order_direction","node_role","node_analysis_id","missing_policy","missing_label")
+          if (info$col >= 2L && info$col <= 9L) lv[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
+          d$body$chunks[[i]]$levels <- lv; workspace(workspace_set_draft(workspace(), d)$workspace)
+        }, ignoreInit = TRUE)
+        observeEvent(input[[paste0(p, "blocks_cell_edit")]], {
+          info <- input[[paste0(p, "blocks_cell_edit")]]; if (is.null(info)) return()
+          begin_edit("template", input$template); if (is.null(draft_target())) return()
+          d <- workspace_draft_value(workspace()); bl <- d$body$chunks[[i]]$analysis_blocks %||% list(); if (info$row > length(bl)) return()
+          fields <- c("anchor_level","placement","counting_unit","analysis_variable")
+          if (info$col >= 2L && info$col <= 5L) bl[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
+          d$body$chunks[[i]]$analysis_blocks <- bl; workspace(workspace_set_draft(workspace(), d)$workspace)
+        }, ignoreInit = TRUE)
+      }
+    }
+  })
+
+  update_template_chunk_field <- function(index, field, value) {
+    if (isTRUE(session_state$suppress_selection) || is.null(input$template)) return()
+    if (is.null(value)) return()
+    shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
+    item <- Filter(function(x) identical(x$id, input$template), shown$templates)
+    if (length(item) != 1L) return()
+    chunks <- item[[1L]]$body$chunks %||% list(); if (index > length(chunks)) return()
+    old <- chunks[[index]][[field]] %||% ""
+    if (identical(as.character(old), as.character(value))) return()
+    begin_edit("template", input$template); if (is.null(draft_target())) return()
+    draft <- workspace_draft_value(workspace()); draft$body$chunks[[index]][[field]] <- value
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }
+  observe({
+    req(input$template)
+    shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
+    item <- Filter(function(x) identical(x$id, input$template), shown$templates); if (length(item) != 1L) return()
+    chunks <- item[[1L]]$body$chunks %||% list()
+    for (i in seq_along(chunks)) {
+      p <- paste0("chunk_card_", i, "_"); ch <- chunks[[i]]
+      update_template_chunk_field(i, "source_data", input[[paste0(p, "source_data")]])
+      update_template_chunk_field(i, "filter", if (nzchar(input[[paste0(p, "filter")]] %||% "")) input[[paste0(p, "filter")]] else NULL)
+      if (identical(ch$type, "continuous_summary")) update_template_chunk_field(i, "analysis_variable", input[[paste0(p, "analysis_variable")]])
+      if (ch$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
+        den <- ch$denominator %||% list(); vals <- list(scope=input[[paste0(p,"den_scope")]], unit=input[[paste0(p,"den_unit")]], variable=input[[paste0(p,"den_variable")]], expression=input[[paste0(p,"den_expression")]])
+        den <- den[!vapply(vals, is.null, logical(1L))]; den <- den[nzchar(unlist(den))]
+        if (length(den)) { begin_edit("template", input$template); if (!is.null(draft_target())) { d <- workspace_draft_value(workspace()); d$body$chunks[[i]]$denominator <- den; workspace(workspace_set_draft(workspace(), d)$workspace) } }
+      }
+    }
   })
   observe_chunk_card <- function(index, field) {
     observeEvent(input[[paste0("chunk_", field, "_", index)]], {
