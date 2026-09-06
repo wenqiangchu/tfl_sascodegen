@@ -1,5 +1,6 @@
 library(shiny)
 library(shinydashboard)
+library(DT)
 
 project_root <- normalizePath(getwd(), mustWork = FALSE)
 source_order <- c(
@@ -26,7 +27,7 @@ ui <- dashboardPage(
     sidebarMenu(id = "main_nav",
       menuItem("Metadata", tabName = "metadata", icon = icon("database")),
       menuItem("Table Metadata", tabName = "table_metadata", icon = icon("table")),
-      menuItem("Template Editor", tabName = "template_editor", icon = icon("file-code-o")),
+      menuItem("Template Editor", tabName = "template_editor", icon = icon("file")),
       menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))
     ),
     tags$hr(),
@@ -43,12 +44,14 @@ ui <- dashboardPage(
             selectInput("population", "Population", choices = character()),
             textInput("population_label", "Label"),
             textAreaInput("population_expression", "SAS expression", rows = 3),
-            actionButton("save", "Save"), actionButton("cancel", "Cancel")),
+            actionButton("save", "Save"), actionButton("cancel", "Cancel"),
+            actionButton("population_delete", "Delete population")),
           box(title = "Header", width = 6, status = "primary", solidHeader = TRUE,
             selectInput("header", "Header", choices = character()),
             textInput("header_source_data", "Source data"),
             textInput("header_column_label", "First column label"),
-            textInput("header_column_condition", "First column condition"))
+            textInput("header_column_condition", "First column condition"),
+            DTOutput("header_columns_table"), actionButton("header_delete", "Delete header"))
         )),
       tabItem(tabName = "table_metadata",
         box(title = "Table editor", width = 8, status = "primary", solidHeader = TRUE,
@@ -67,7 +70,8 @@ ui <- dashboardPage(
           textInput("chunk_statistic_id", "First statistic ID"),
           numericInput("chunk_statistic_digits", "Statistic digits", value = NA, min = 0),
           actionButton("chunk_add", "Add chunk"), actionButton("chunk_delete", "Delete chunk"),
-          actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"))),
+          actionButton("chunk_up", "Move up"), actionButton("chunk_down", "Move down"),
+          DTOutput("chunk_rows_table"))),
       tabItem(tabName = "generate_sas",
         box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
           selectInput("generate_table", "Table", choices = character()),
@@ -197,6 +201,55 @@ server <- function(input, output, session) {
     if (is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace()); draft$columns[[1L]]$condition <- input$header_column_condition; workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
+  output$header_columns_table <- DT::renderDT({
+    item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
+    if (length(item) != 1L) return(data.frame())
+    columns <- item[[1L]]$columns %||% list()
+    if (length(columns) == 0L) return(data.frame())
+    data.frame(id = vapply(columns, `[[`, "", "id"),
+               label = vapply(columns, `[[`, "", "label"),
+               condition = vapply(columns, `[[`, "", "condition"),
+               display_order = vapply(columns, `[[`, integer(1L), "display_order"),
+               width = vapply(columns, `[[`, numeric(1L), "width"),
+               alignment = vapply(columns, `[[`, "", "alignment"),
+               stringsAsFactors = FALSE)
+  }, editable = TRUE, rownames = FALSE, selection = "single")
+  observeEvent(input$header_columns_table_cell_edit, {
+    info <- input$header_columns_table_cell_edit
+    if (is.null(info)) return()
+    begin_edit("header", input$header)
+    draft <- workspace_draft_value(workspace())
+    row <- info$row; col <- info$col
+    if (col == 2L) draft$columns[[row]]$label <- as.character(info$value)
+    if (col == 3L) draft$columns[[row]]$condition <- as.character(info$value)
+    if (col == 4L) draft$columns[[row]]$display_order <- as.integer(info$value)
+    if (col == 5L) draft$columns[[row]]$width <- as.numeric(info$value)
+    if (col == 6L) draft$columns[[row]]$alignment <- as.character(info$value)
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  })
+  request_delete <- function(type, id) {
+    impact <- workspace_delete_impact(workspace(), type, id)
+    session_state$delete_impact <- impact
+    if (!isTRUE(impact$allowed)) {
+      showNotification(error_text(impact$errors), type = "error")
+      return()
+    }
+    showModal(modalDialog(
+      title = "Confirm delete",
+      paste("Delete", type, id, "? Affected tables:", paste(impact$affected_tables, collapse = ", ")),
+      footer = tagList(modalButton("Cancel"), actionButton("confirm_delete", "Delete", class = "btn-danger"))
+    ))
+  }
+  observeEvent(input$population_delete, request_delete("population", input$population))
+  observeEvent(input$header_delete, request_delete("header", input$header))
+  observeEvent(input$confirm_delete, {
+    impact <- session_state$delete_impact
+    removeModal()
+    if (is.null(impact)) return()
+    result <- workspace_delete(workspace(), impact$target, confirm = TRUE)
+    if (result$passed) { workspace(result$workspace); session_state$delete_impact <- NULL; refresh_tables(result$workspace); status("Object deleted.") }
+    else status(error_text(result$errors))
+  })
 
   observeEvent(input$template, {
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
@@ -247,6 +300,25 @@ server <- function(input, output, session) {
     if (is.null(draft_target()) || is.na(input$chunk_statistic_digits)) return()
     draft <- workspace_draft_value(workspace()); draft$rows[[1L]]$statistics[[1L]]$digits <- as.integer(input$chunk_statistic_digits); workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
+  output$chunk_rows_table <- DT::renderDT({
+    item <- find_chunk(workspace(), input$chunk)
+    if (length(item) != 1L) return(data.frame())
+    rows <- item[[1L]]$rows %||% list()
+    if (length(rows) == 0L) return(data.frame())
+    data.frame(id = vapply(rows, `[[`, "", "id"), type = vapply(rows, `[[`, "", "type"),
+               label = vapply(rows, `[[`, "", "label"),
+               indent_level = vapply(rows, function(row) as.integer(row$indent_level %||% 0L), integer(1L)),
+               stringsAsFactors = FALSE)
+  }, editable = TRUE, rownames = FALSE, selection = "single")
+  observeEvent(input$chunk_rows_table_cell_edit, {
+    info <- input$chunk_rows_table_cell_edit
+    if (is.null(info)) return()
+    begin_edit("chunk", input$chunk)
+    draft <- workspace_draft_value(workspace())
+    if (info$col == 3L) draft$rows[[info$row]]$label <- as.character(info$value)
+    if (info$col == 4L) draft$rows[[info$row]]$indent_level <- as.integer(info$value)
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  })
   chunk_operation <- function(operation) {
     item <- find_chunk(workspace(), input$chunk)
     if (length(item) != 1L) return()

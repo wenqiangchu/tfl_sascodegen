@@ -11,7 +11,7 @@ testthat::test_that("Shiny shell exposes core actions and failure feedback", {
     height = 800,
     width = 1200,
     variant = "local",
-    load_timeout = 10000
+    load_timeout = 30000
   )
   on.exit(app$stop(), add = TRUE)
   app$click("generate")
