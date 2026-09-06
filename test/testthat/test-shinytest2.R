@@ -45,6 +45,9 @@ testthat::test_that("Template cards expose typed collection controls", {
   app$wait_for_idle(1000)
   html <- app$get_html("#chunk_cards")
   testthat::expect_match(html, "chunk_cards", fixed = TRUE)
+  # ID and type are rendered as native read-only inputs; Shiny textInput does
+  # not support a readonly argument.
+  testthat::expect_match(html, 'readonly="readonly"', fixed = TRUE)
 })
 
 testthat::test_that("Template collection actions are clickable", {

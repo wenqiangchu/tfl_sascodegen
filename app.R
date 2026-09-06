@@ -19,6 +19,15 @@ error_text <- function(errors) {
         collapse = " ")
 }
 
+# Shiny's textInput does not expose a readonly argument.  Use a native input
+# element so generated IDs/types remain visible while non-editable.
+readonly_text_input <- function(input_id, label, value = "") {
+  tags$div(class = "form-group shiny-input-container",
+           tags$label(class = "control-label", `for` = input_id, label),
+           tags$input(id = input_id, type = "text", class = "form-control",
+                      value = value %||% "", readonly = "readonly"))
+}
+
 ui <- dashboardPage(
   dashboardHeader(title = "SAS Code Generator",
     dropdownMenu(type = "notifications", badgeStatus = NULL,
@@ -169,8 +178,8 @@ server <- function(input, output, session) {
       if (!is.list(chunk)) return(NULL)
       prefix <- paste0("chunk_card_", i, "_")
       common <- list(
-        textInput(paste0(prefix, "id"), "ID", value = chunk$id %||% "", readonly = TRUE),
-        textInput(paste0(prefix, "type"), "Type", value = chunk$type %||% "", readonly = TRUE),
+        readonly_text_input(paste0(prefix, "id"), "ID", value = chunk$id %||% ""),
+        readonly_text_input(paste0(prefix, "type"), "Type", value = chunk$type %||% ""),
         textInput(paste0(prefix, "source_data"), "Source data", value = chunk$source_data %||% ""),
         textInput(paste0(prefix, "filter"), "Filter", value = chunk$filter %||% "")
       )
@@ -527,9 +536,28 @@ server <- function(input, output, session) {
       update_template_chunk_field(i, "filter", if (nzchar(input[[paste0(p, "filter")]] %||% "")) input[[paste0(p, "filter")]] else NULL)
       if (identical(ch$type, "continuous_summary")) update_template_chunk_field(i, "analysis_variable", input[[paste0(p, "analysis_variable")]])
       if (ch$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
-        den <- ch$denominator %||% list(); vals <- list(scope=input[[paste0(p,"den_scope")]], unit=input[[paste0(p,"den_unit")]], variable=input[[paste0(p,"den_variable")]], expression=input[[paste0(p,"den_expression")]])
-        den <- den[!vapply(vals, is.null, logical(1L))]; den <- den[nzchar(unlist(den))]
-        if (length(den)) { begin_edit("template", input$template); if (!is.null(draft_target())) { d <- workspace_draft_value(workspace()); d$body$chunks[[i]]$denominator <- den; workspace(workspace_set_draft(workspace(), d)$workspace) } }
+        den <- ch$denominator %||% list()
+        vals <- list(scope = input[[paste0(p, "den_scope")]],
+                     unit = input[[paste0(p, "den_unit")]],
+                     variable = input[[paste0(p, "den_variable")]],
+                     expression = input[[paste0(p, "den_expression")]])
+        vals <- vals[!vapply(vals, is.null, logical(1L))]
+        vals <- vals[nzchar(as.character(unlist(vals)))]
+        # Dynamic UI inputs fire while cards are rebuilt.  Only create/update
+        # a draft when the denominator actually differs from the displayed
+        # metadata, and guard the chunk index against a stale observer.
+        old_den <- den[names(vals)]
+        changed <- !identical(as.character(old_den), as.character(vals))
+        if (changed) {
+          begin_edit("template", input$template)
+          if (!is.null(draft_target())) {
+            d <- workspace_draft_value(workspace())
+            if (length(d$body$chunks %||% list()) >= i) {
+              d$body$chunks[[i]]$denominator <- vals
+              workspace(workspace_set_draft(workspace(), d)$workspace)
+            }
+          }
+        }
       }
     }
   })
