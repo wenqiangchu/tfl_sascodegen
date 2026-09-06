@@ -204,7 +204,8 @@ server <- function(input, output, session) {
           actionButton(paste0(prefix, "block_delete"), "Delete analysis block"),
           actionButton(paste0(prefix, "block_up"), "Move block up"),
           actionButton(paste0(prefix, "block_down"), "Move block down"),
-          DTOutput(paste0(prefix, "blocks"))
+          DTOutput(paste0(prefix, "blocks")),
+          uiOutput(paste0(prefix, "block_rows_ui"))
         )
       }
       rows <- if (identical(chunk$type, "hierarchical_summary")) NULL else {
@@ -284,6 +285,30 @@ server <- function(input, output, session) {
                      denominator_expression=vapply(blocks, function(x) x$denominator$expression %||% "", character(1)),
                      stringsAsFactors=FALSE)
         }, editable = TRUE, rownames = FALSE, selection = "single")
+        output[[paste0(prefix, "block_rows_ui")]] <- renderUI({
+          blocks <- chunk$analysis_blocks %||% list()
+          if (!length(blocks)) return(NULL)
+          tagList(lapply(seq_along(blocks), function(b) {
+            tagList(h5(paste("Rows for analysis block", b, blocks[[b]]$id %||% "")),
+                    actionButton(paste0(prefix, "block_", b, "_row_new"), "Add row"),
+                    actionButton(paste0(prefix, "block_", b, "_row_delete"), "Delete row"),
+                    actionButton(paste0(prefix, "block_", b, "_row_up"), "Move row up"),
+                    actionButton(paste0(prefix, "block_", b, "_row_down"), "Move row down"),
+                    DTOutput(paste0(prefix, "block_", b, "_rows")))
+          }))
+        })
+        for (b in seq_along(chunk$analysis_blocks %||% list())) {
+          local_b <- b
+          output[[paste0(prefix, "block_", local_b, "_rows")]] <- DT::renderDT({
+            rows <- chunk$analysis_blocks[[local_b]]$rows %||% list()
+            if (!length(rows)) return(data.frame())
+            data.frame(id=vapply(rows, function(x) x$id %||% "", character(1)),
+                       type=vapply(rows, function(x) x$type %||% "", character(1)),
+                       label=vapply(rows, function(x) x$label %||% "", character(1)),
+                       indent_level=vapply(rows, function(x) as.integer(x$indent_level %||% 0L), integer(1)),
+                       stringsAsFactors=FALSE)
+          }, editable=TRUE, rownames=FALSE, selection="single")
+        }
       }
     }
   })
@@ -386,7 +411,13 @@ server <- function(input, output, session) {
       observeEvent(input[[paste0(p, "row_down")]], collection_action("rows", "down", input[[paste0(p, "rows_rows_selected")]], identity), ignoreInit=TRUE)
       for (r in seq_along(chunks[[i]]$rows %||% list())) {
         local_r <- r
-        observeEvent(input[[paste0(p, "stats_new_", local_r)]], collection_action("rows", "new", integer(), identity), ignoreInit=TRUE)
+        observeEvent(input[[paste0(p, "stats_new_", local_r)]], {
+          begin_edit("template", input$template); if (is.null(draft_target())) return()
+          d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list()
+          st[[length(st) + 1L]] <- list(id = "n", digits = 0L)
+          d$body$chunks[[i]]$rows[[local_r]]$statistics <- st
+          workspace(workspace_set_draft(workspace(), d)$workspace)
+        }, ignoreInit=TRUE)
         observeEvent(input[[paste0(p, "stats_delete_", local_r)]], {
           begin_edit("template", input$template); if (is.null(draft_target())) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); s <- input[[paste0(p, "stats_", local_r, "_rows_selected")]]; if (length(s) && s[[1L]] <= length(st)) { d$body$chunks[[i]]$rows[[local_r]]$statistics <- st[-s[[1L]]]; workspace(workspace_set_draft(workspace(), d)$workspace) }
         }, ignoreInit=TRUE)
@@ -405,6 +436,19 @@ server <- function(input, output, session) {
               collection_action(coll, act, sel, maker)
             }, ignoreInit=TRUE)
           }
+        }
+        for (b in seq_along(chunks[[i]]$analysis_blocks %||% list())) {
+          local_b <- b
+          for (act in c("new", "delete", "up", "down")) observeEvent(input[[paste0(p, "block_", local_b, "_row_", act)]], {
+            begin_edit("template", input$template); if (is.null(draft_target())) return()
+            d <- workspace_draft_value(workspace()); rows <- d$body$chunks[[i]]$analysis_blocks[[local_b]]$rows %||% list()
+            sel <- input[[paste0(p, "block_", local_b, "_rows_rows_selected")]]
+            if (act == "new") rows[[length(rows) + 1L]] <- list(id=paste0(d$body$chunks[[i]]$analysis_blocks[[local_b]]$id, "_", sprintf("%03d", length(rows)+1L)), type="analysis", label="New row", indent_level=0L, statistics=list(list(id="n", digits=0L)), cell_format=list())
+            if (act == "delete" && length(sel) && sel[[1L]] <= length(rows)) rows <- rows[-sel[[1L]]]
+            if (act %in% c("up", "down") && length(sel) && sel[[1L]] <= length(rows)) { j <- sel[[1L]] + if (act == "up") -1L else 1L; if (j >= 1L && j <= length(rows)) { z <- rows[[sel[[1L]]]]; rows[[sel[[1L]]]] <- rows[[j]]; rows[[j]] <- z } }
+            d$body$chunks[[i]]$analysis_blocks[[local_b]]$rows <- rows
+            workspace(workspace_set_draft(workspace(), d)$workspace)
+          }, ignoreInit=TRUE)
         }
       }
     }

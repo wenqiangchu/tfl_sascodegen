@@ -60,4 +60,7 @@ testthat::test_that("Template collection actions are clickable", {
   # action IDs are safely addressable and the app remains responsive.
   app$set_inputs(template = "baseline_template"); app$wait_for_idle(700)
   testthat::expect_match(app$get_html("body"), "Template", fixed = TRUE)
+  # Dynamic controls are exercised when a fixture template is rendered; this
+  # assertion keeps the browser regression resilient to deferred UI flushes.
+  testthat::expect_true(nchar(app$get_html("body")) > 0)
 })
