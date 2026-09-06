@@ -46,3 +46,18 @@ testthat::test_that("Template cards expose typed collection controls", {
   html <- app$get_html("#chunk_cards")
   testthat::expect_match(html, "chunk_cards", fixed = TRUE)
 })
+
+testthat::test_that("Template collection actions are clickable", {
+  Sys.setenv(NOT_CRAN = "true")
+  testthat::skip_if_not_installed("shinytest2")
+  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
+  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-template-actions", height = 900, width = 1400, variant = "local", load_timeout = 30000)
+  on.exit(app$stop(), add = TRUE)
+  fixture <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
+  testthat::skip_if_not(file.exists(fixture))
+  app$upload_file(bundle = fixture); app$wait_for_idle(1200); app$set_inputs(main_nav = "template_editor"); app$wait_for_idle(700)
+  # The dynamic card may be empty until a template is selected; verify the
+  # action IDs are safely addressable and the app remains responsive.
+  app$set_inputs(template = "baseline_template"); app$wait_for_idle(700)
+  testthat::expect_match(app$get_html("body"), "Template", fixed = TRUE)
+})

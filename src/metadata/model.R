@@ -788,12 +788,18 @@ parse_result_sort_value <- function(value, path, collector) {
 }
 
 parse_level_value <- function(value, path, collector) {
-  allowed <- c("id", "variable", "label_variable", "order_variable", "order_direction",
+  allowed <- c("id", "parent_level", "variable", "label_variable", "order_variable", "order_direction",
                "result_sort", "node_role", "node_analysis_id", "missing_policy", "missing_label")
   required <- c("id", "variable", "order_variable", "order_direction", "node_role",
                 "missing_policy")
   if (!check_mapping(value, path, collector, allowed, required)) return(NULL)
   id <- parse_id_value(get_field(value, "id"), error_path_field(path, "id"), collector)
+  parent_level <- NULL
+  if (has_field(value, "parent_level")) {
+    parent_level <- parse_id_value(get_field(value, "parent_level"),
+                                   error_path_field(path, "parent_level"), collector,
+                                   "parent_level")
+  }
   variable <- parse_string_value(get_field(value, "variable"),
                                  error_path_field(path, "variable"), collector,
                                  "variable", non_empty = TRUE)
@@ -864,6 +870,7 @@ parse_level_value <- function(value, path, collector) {
   if (is.null(id) || is.null(variable) || is.null(order_variable) ||
       is.null(order_direction) || is.null(node_role) || is.null(missing_policy)) return(NULL)
   result <- list(id = id, variable = variable)
+  if (!is.null(parent_level)) result$parent_level <- parent_level
   if (!is.null(label_variable)) result$label_variable <- label_variable
   result$order_variable <- order_variable
   result$order_direction <- order_direction
@@ -1007,6 +1014,12 @@ validate_hierarchical_references <- function(chunk, path, collector) {
   for (i in seq_along(chunk$levels)) {
     level <- chunk$levels[[i]]
     level_path <- error_path_index(error_path_field(path, "levels"), i - 1L)
+    if (!is.null(level$parent_level)) {
+      if (identical(level$parent_level, level$id) || !level$parent_level %in% level_ids) {
+        add_value_error(collector, error_path_field(level_path, "parent_level"),
+                        "Parent level must reference another declared level.")
+      }
+    }
     if (identical(level$node_role, "analysis")) {
       if (!level$node_analysis_id %in% block_ids) {
         add_value_error(collector, error_path_field(level_path, "node_analysis_id"),

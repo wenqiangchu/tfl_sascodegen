@@ -81,7 +81,7 @@ server <- function(input, output, session) {
                       selected_template_id = NULL), active_draft = NULL,
     delete_impact = NULL,
     generation = list(table_id = NULL, status = "idle", source_text = "", errors = list())
-    , suppress_selection = FALSE
+    , suppress_selection = FALSE, template_observer_key = NULL
   )
   # Compatibility accessor: SessionState remains the only reactive workspace owner.
   workspace <- function(value) {
@@ -199,7 +199,8 @@ server <- function(input, output, session) {
           actionButton(paste0(prefix, "level_up"), "Move level up"),
           actionButton(paste0(prefix, "level_down"), "Move level down"),
           DTOutput(paste0(prefix, "levels")),
-          h4("Analysis blocks"), actionButton(paste0(prefix, "block_new"), "Add analysis block"),
+          h4("Analysis blocks"), selectInput(paste0(prefix, "block_type"), "Selected block type", choices = c("continuous_summary", "categorical_summary_nonexclusive", "categorical_summary_exclusive"), selected = if (length(chunk$analysis_blocks %||% list())) chunk$analysis_blocks[[1L]]$type else "continuous_summary"),
+          actionButton(paste0(prefix, "block_new"), "Add analysis block"),
           actionButton(paste0(prefix, "block_delete"), "Delete analysis block"),
           actionButton(paste0(prefix, "block_up"), "Move block up"),
           actionButton(paste0(prefix, "block_down"), "Move block down"),
@@ -211,6 +212,8 @@ server <- function(input, output, session) {
           tagList(h5(paste("Statistics for row", r)),
                   actionButton(paste0(prefix, "stats_new_", r), "Add statistic"),
                   actionButton(paste0(prefix, "stats_delete_", r), "Delete statistic"),
+                  actionButton(paste0(prefix, "stats_up_", r), "Move statistic up"),
+                  actionButton(paste0(prefix, "stats_down_", r), "Move statistic down"),
                   DTOutput(paste0(prefix, "stats_", r)))
         })
         tagList(actionButton(paste0(prefix, "row_new"), "Add row"),
@@ -264,7 +267,7 @@ server <- function(input, output, session) {
                      node_analysis_id=vapply(levels, function(x) x$node_analysis_id %||% "", character(1)),
                      missing_policy=vapply(levels, function(x) x$missing_policy %||% "", character(1)),
                      missing_label=vapply(levels, function(x) x$missing_label %||% "", character(1)),
-                     parent_level=vapply(seq_along(levels), function(j) if (j > 1L) levels[[j-1L]]$id %||% "" else "", character(1)),
+                     parent_level=vapply(levels, function(x) x$parent_level %||% "", character(1)),
                      stringsAsFactors=FALSE)
         }, editable = TRUE, rownames = FALSE, selection = "single")
         output[[paste0(prefix, "blocks")]] <- DT::renderDT({
@@ -275,6 +278,10 @@ server <- function(input, output, session) {
                      type=vapply(blocks, function(x) x$type %||% "", character(1)),
                      counting_unit=vapply(blocks, function(x) x$counting_unit %||% "", character(1)),
                      analysis_variable=vapply(blocks, function(x) x$analysis_variable %||% "", character(1)),
+                     denominator_scope=vapply(blocks, function(x) x$denominator$scope %||% "", character(1)),
+                     denominator_unit=vapply(blocks, function(x) x$denominator$unit %||% "", character(1)),
+                     denominator_variable=vapply(blocks, function(x) x$denominator$variable %||% "", character(1)),
+                     denominator_expression=vapply(blocks, function(x) x$denominator$expression %||% "", character(1)),
                      stringsAsFactors=FALSE)
         }, editable = TRUE, rownames = FALSE, selection = "single")
       }
@@ -287,6 +294,9 @@ server <- function(input, output, session) {
     shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
     item <- Filter(function(x) identical(x$id, input$template), shown$templates); if (length(item) != 1L) return()
     chunks <- item[[1L]]$body$chunks %||% list()
+    observer_key <- paste(input$template, paste(vapply(chunks, function(x) x$id %||% "", character(1L)), collapse = "|"), sep = "::")
+    if (identical(session_state$template_observer_key, observer_key)) return()
+    session_state$template_observer_key <- observer_key
     for (i in seq_along(chunks)) {
       p <- paste0("chunk_card_", i, "_")
       observeEvent(input[[paste0(p, "rows_cell_edit")]], {
@@ -316,15 +326,39 @@ server <- function(input, output, session) {
           d <- workspace_draft_value(workspace()); lv <- d$body$chunks[[i]]$levels %||% list(); if (info$row > length(lv)) return()
           fields <- c("variable","label_variable","order_variable","order_direction","node_role","node_analysis_id","missing_policy","missing_label")
           if (info$col >= 2L && info$col <= 9L) lv[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
+          if (info$col == 10L) lv[[info$row]]$parent_level <- as.character(info$value)
           d$body$chunks[[i]]$levels <- lv; workspace(workspace_set_draft(workspace(), d)$workspace)
         }, ignoreInit = TRUE)
         observeEvent(input[[paste0(p, "blocks_cell_edit")]], {
           info <- input[[paste0(p, "blocks_cell_edit")]]; if (is.null(info)) return()
           begin_edit("template", input$template); if (is.null(draft_target())) return()
           d <- workspace_draft_value(workspace()); bl <- d$body$chunks[[i]]$analysis_blocks %||% list(); if (info$row > length(bl)) return()
-          fields <- c("anchor_level","placement","counting_unit","analysis_variable")
-          if (info$col >= 2L && info$col <= 5L) bl[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
+          fields <- c("anchor_level","placement","type","counting_unit","analysis_variable")
+          if (info$col >= 2L && info$col <= 6L) bl[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
+          if (info$col >= 7L && info$col <= 10L) {
+            bl[[info$row]]$denominator <- bl[[info$row]]$denominator %||% list()
+            df <- c("scope", "unit", "variable", "expression")
+            bl[[info$row]]$denominator[[df[[info$col - 6L]]]] <- as.character(info$value)
+          }
           d$body$chunks[[i]]$analysis_blocks <- bl; workspace(workspace_set_draft(workspace(), d)$workspace)
+        }, ignoreInit = TRUE)
+        observeEvent(input[[paste0(p, "block_type")]], {
+          sel <- input[[paste0(p, "blocks_rows_selected")]]
+          if (!length(sel)) return()
+          begin_edit("template", input$template); if (is.null(draft_target())) return()
+          d <- workspace_draft_value(workspace()); bl <- d$body$chunks[[i]]$analysis_blocks %||% list()
+          if (sel[[1L]] > length(bl)) return()
+          new_type <- input[[paste0(p, "block_type")]]
+          bl[[sel[[1L]]] ]$type <- new_type
+          if (new_type == "continuous_summary") {
+            bl[[sel[[1L]]] ]$analysis_variable <- bl[[sel[[1L]]] ]$analysis_variable %||% "VALUE"
+            bl[[sel[[1L]]] ]$denominator <- NULL
+          } else {
+            bl[[sel[[1L]]] ]$denominator <- bl[[sel[[1L]]] ]$denominator %||% list(scope="current_group", unit="record")
+            bl[[sel[[1L]]] ]$analysis_variable <- NULL
+          }
+          d$body$chunks[[i]]$analysis_blocks <- bl
+          workspace(workspace_set_draft(workspace(), d)$workspace)
         }, ignoreInit = TRUE)
       }
       # Collection controls use the selected row (DT is 1-based) and mutate
@@ -356,6 +390,10 @@ server <- function(input, output, session) {
         observeEvent(input[[paste0(p, "stats_delete_", local_r)]], {
           begin_edit("template", input$template); if (is.null(draft_target())) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); s <- input[[paste0(p, "stats_", local_r, "_rows_selected")]]; if (length(s) && s[[1L]] <= length(st)) { d$body$chunks[[i]]$rows[[local_r]]$statistics <- st[-s[[1L]]]; workspace(workspace_set_draft(workspace(), d)$workspace) }
         }, ignoreInit=TRUE)
+        for (act in c("up", "down")) observeEvent(input[[paste0(p, "stats_", act, "_", local_r)]], {
+          s <- input[[paste0(p, "stats_", local_r, "_rows_selected")]]; if (!length(s)) return()
+          begin_edit("template", input$template); if (is.null(draft_target())) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); j <- s[[1L]] + if (act == "up") -1L else 1L; if (j >= 1L && j <= length(st)) { z <- st[[s[[1L]]]]; st[[s[[1L]]]] <- st[[j]]; st[[j]] <- z; d$body$chunks[[i]]$rows[[local_r]]$statistics <- st; workspace(workspace_set_draft(workspace(), d)$workspace) }
+        }, ignoreInit=TRUE)
       }
       if (identical(chunks[[i]]$type, "hierarchical_summary")) {
         for (kind in c("level", "block")) {
@@ -363,7 +401,7 @@ server <- function(input, output, session) {
           for (act in c("new", "delete", "up", "down")) {
             observeEvent(input[[paste0(p, kind, "_", act)]], {
               sel <- input[[paste0(p, coll, "_rows_selected")]]
-              maker <- if (kind == "level") function(n) list(id=paste0(chunks[[i]]$id, "_level_", sprintf("%03d", n)), variable="VAR", order_variable="VAR", order_direction="asc", node_role="label", missing_policy="exclude") else function(n) list(id=paste0(chunks[[i]]$id, "_analysis_", sprintf("%03d", n)), anchor_level=(chunks[[i]]$levels[[1L]]$id %||% "level_001"), placement="same_row", type="continuous_summary", counting_unit="record", analysis_variable="VALUE", rows=list(list(id="row_001", type="analysis", label="New row", indent_level=0L, statistics=list(list(id="n", digits=0L)), cell_format=list())))
+              maker <- if (kind == "level") function(n) list(id=paste0(chunks[[i]]$id, "_level_", sprintf("%03d", n)), parent_level=if (length(chunks[[i]]$levels)) chunks[[i]]$levels[[length(chunks[[i]]$levels)]]$id else NULL, variable="VAR", order_variable="VAR", order_direction="asc", node_role="label", missing_policy="exclude") else function(n) { bt <- input[[paste0(p, "block_type")]] %||% "continuous_summary"; z <- list(id=paste0(chunks[[i]]$id, "_analysis_", sprintf("%03d", n)), anchor_level=(chunks[[i]]$levels[[1L]]$id %||% "level_001"), placement="same_row", type=bt, counting_unit="record", rows=list(list(id="row_001", type="analysis", label="New row", indent_level=0L, statistics=list(list(id="n", digits=0L)), cell_format=list()))); if (bt == "continuous_summary") z$analysis_variable <- "VALUE" else z$denominator <- list(scope="current_group", unit="record"); z }
               collection_action(coll, act, sel, maker)
             }, ignoreInit=TRUE)
           }
