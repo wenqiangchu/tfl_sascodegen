@@ -1,5 +1,7 @@
 testthat::test_that("Shiny shell exposes core actions and failure feedback", {
-  testthat::skip_if_not_installed("shinytest2")
+  Sys.setenv(NOT_CRAN = "true")
+  testthat::expect_true(requireNamespace("shinytest2", quietly = TRUE))
+  testthat::expect_true(requireNamespace("chromote", quietly = TRUE))
   chromote::set_chrome_args(c(
     "--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"
   ))
@@ -17,5 +19,5 @@ testthat::test_that("Shiny shell exposes core actions and failure feedback", {
   app$wait_for_idle(1000)
   app$expect_screenshot()
   app$click("cancel")
-  app$click("download_bundle")
+  app$expect_download("download_bundle", compare = FALSE)
 })
