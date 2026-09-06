@@ -259,8 +259,9 @@ server <- function(input, output, session) {
       } else {
         output[[paste0(prefix, "levels")]] <- DT::renderDT({
           levels <- chunk$levels %||% list(); if (!length(levels)) return(data.frame())
+          level_depth <- function(j, seen = integer()) { p <- levels[[j]]$parent_level %||% ""; if (!nzchar(p) || !(p %in% vapply(levels, function(x) x$id %||% "", character(1))) || j %in% seen) return(0L); pi <- match(p, vapply(levels, function(x) x$id %||% "", character(1))); 1L + level_depth(pi, c(seen, j)) }
           data.frame(id=vapply(levels, function(x) x$id %||% "", character(1)),
-                     variable=vapply(levels, function(x) x$variable %||% "", character(1)),
+                     variable=vapply(seq_along(levels), function(j) paste0(strrep("  ", level_depth(j)), levels[[j]]$variable %||% ""), character(1)),
                      label_variable=vapply(levels, function(x) x$label_variable %||% "", character(1)),
                      order_variable=vapply(levels, function(x) x$order_variable %||% "", character(1)),
                      order_direction=vapply(levels, function(x) x$order_direction %||% "", character(1)),
@@ -294,7 +295,8 @@ server <- function(input, output, session) {
                     actionButton(paste0(prefix, "block_", b, "_row_delete"), "Delete row"),
                     actionButton(paste0(prefix, "block_", b, "_row_up"), "Move row up"),
                     actionButton(paste0(prefix, "block_", b, "_row_down"), "Move row down"),
-                    DTOutput(paste0(prefix, "block_", b, "_rows")))
+                    DTOutput(paste0(prefix, "block_", b, "_rows")),
+                    uiOutput(paste0(prefix, "block_", b, "_stats_ui")))
           }))
         })
         for (b in seq_along(chunk$analysis_blocks %||% list())) {
@@ -308,6 +310,17 @@ server <- function(input, output, session) {
                        indent_level=vapply(rows, function(x) as.integer(x$indent_level %||% 0L), integer(1)),
                        stringsAsFactors=FALSE)
           }, editable=TRUE, rownames=FALSE, selection="single")
+          output[[paste0(prefix, "block_", local_b, "_stats_ui")]] <- renderUI({
+            rows <- chunk$analysis_blocks[[local_b]]$rows %||% list(); if (!length(rows)) return(NULL)
+            tagList(lapply(seq_along(rows), function(rr) tagList(h6(paste("Statistics for block row", rr)), DTOutput(paste0(prefix, "block_", local_b, "_stats_", rr)))))
+          })
+          for (rr in seq_along(chunk$analysis_blocks[[local_b]]$rows %||% list())) {
+            local_rr <- rr
+            output[[paste0(prefix, "block_", local_b, "_stats_", local_rr)]] <- DT::renderDT({
+              st <- chunk$analysis_blocks[[local_b]]$rows[[local_rr]]$statistics %||% list(); if (!length(st)) return(data.frame())
+              data.frame(id=vapply(st, function(x) x$id %||% "", character(1)), digits=vapply(st, function(x) as.character(x$digits %||% ""), character(1)), stringsAsFactors=FALSE)
+            }, editable=TRUE, rownames=FALSE, selection="single")
+          }
         }
       }
     }
@@ -965,7 +978,10 @@ server <- function(input, output, session) {
 
   output$download_bundle <- downloadHandler(
     filename = function() "metadata_bundle.zip",
-    content = function(file) writeBin(application_export_bundle(workspace())$value$bytes, file)
+    content = function(file) {
+      exported <- application_export_bundle(workspace())
+      if (isTRUE(exported$passed)) writeBin(exported$value$bytes, file)
+    }
   )
   output$download_sas <- downloadHandler(
     filename = function() paste0(input$generate_table %||% "table", ".sas"),
