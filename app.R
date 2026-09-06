@@ -205,6 +205,9 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   observeEvent(input$table_population_id, {
+    if (isTRUE(session_state$suppress_selection)) return()
+    current <- Filter(function(value) identical(value$id, input$table), workspace()$tables)
+    if (length(current) == 1L && identical(current[[1L]]$population_id, input$table_population_id)) return()
     begin_edit("table", input$table)
     if (!is.null(draft_target())) {
       draft <- workspace_draft_value(workspace()); draft$population_id <- input$table_population_id
@@ -222,6 +225,9 @@ server <- function(input, output, session) {
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
   observeEvent(input$header_source_data, {
+    if (isTRUE(session_state$suppress_selection)) return()
+    current <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
+    if (length(current) == 1L && identical(current[[1L]]$source_data, input$header_source_data)) return()
     begin_edit("header", input$header)
     if (!is.null(draft_target())) {
       draft <- workspace_draft_value(workspace()); draft$source_data <- input$header_source_data
@@ -229,6 +235,7 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = TRUE)
   observeEvent(input$header_column_label, {
+    if (isTRUE(session_state$suppress_selection)) return()
     begin_edit("header", input$header)
     if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); if (length(draft$columns %||% list()) == 0L) return(); draft$columns[[1L]]$label <- input$header_column_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
   }, ignoreInit = TRUE)
@@ -309,6 +316,9 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   observeEvent(input$template_stub_header, {
+    if (isTRUE(session_state$suppress_selection)) return()
+    current <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
+    if (length(current) == 1L && identical(current[[1L]]$body$stub_header %||% "", input$template_stub_header)) return()
     begin_edit("template", input$template)
     if (!is.null(draft_target())) {
       draft <- workspace_draft_value(workspace()); draft$body$stub_header <- input$template_stub_header
@@ -341,6 +351,7 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   observeEvent(input$chunk_source_data, {
+    if (isTRUE(session_state$suppress_selection)) return()
     begin_edit("chunk", input$chunk)
     if (!is.null(draft_target())) {
       draft <- workspace_draft_value(workspace()); draft$source_data <- input$chunk_source_data
@@ -348,6 +359,7 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_row_label, {
+    if (isTRUE(session_state$suppress_selection)) return()
     begin_edit("chunk", input$chunk)
     if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); rows <- draft$rows %||% list(); if (!length(rows)) return(); draft$rows[[1L]]$label <- input$chunk_row_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
   }, ignoreInit = TRUE)
@@ -415,6 +427,9 @@ server <- function(input, output, session) {
   }, ignoreInit = FALSE)
 
   observeEvent(input$population_label, {
+    if (isTRUE(session_state$suppress_selection)) return()
+    current <- Filter(function(value) identical(value$id, input$population), workspace()$populations)
+    if (length(current) == 1L && identical(current[[1L]]$label, input$population_label)) return()
     if (is.null(input$population) || !nzchar(input$population)) return()
     current <- workspace()
     if (is.null(draft_target())) {
