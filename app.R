@@ -156,7 +156,8 @@ server <- function(input, output, session) {
                       selected_template_id = NULL), active_draft = NULL,
     delete_impact = NULL,
     generation = list(table_id = NULL, status = "idle", source_text = "", errors = list())
-    , suppress_selection = FALSE, template_observer_key = NULL
+    , suppress_selection = FALSE, template_observer_key = NULL,
+    ui_sync_expected = list()
   )
   # Compatibility accessor: SessionState remains the only reactive workspace owner.
   workspace <- function(value) {
@@ -205,6 +206,17 @@ server <- function(input, output, session) {
   effective_workspace <- function() {
     if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
   }
+  mark_ui_sync <- function(id, value) {
+    expected <- session_state$ui_sync_expected
+    expected[[id]] <- if (is.null(value)) "" else as.character(value)
+    session_state$ui_sync_expected <- expected
+  }
+  consume_ui_sync <- function(id, value) {
+    expected <- session_state$ui_sync_expected[[id]]
+    if (is.null(expected)) return(FALSE)
+    session_state$ui_sync_expected[[id]] <- NULL
+    identical(expected, if (is.null(value)) "" else as.character(value))
+  }
   request_switch <- function(type, id, input_id) {
     pending_switch(list(type=type, id=id, input_id=input_id))
     showModal(modalDialog(title="Unsaved changes", "Save or discard the active draft before switching?",
@@ -221,19 +233,24 @@ server <- function(input, output, session) {
     displayed <- if (!is.null(value$active_draft)) workspace_overlay_active_draft(value) else value
     session_state$workspace_status <- if (length(displayed$tables) > 0L) "loaded" else "empty"
     ids <- vapply(displayed$tables, `[[`, "", "id")
+    mark_ui_sync("table", if (length(ids)) ids[[1L]] else "")
+    mark_ui_sync("generate_table", if (length(ids)) ids[[1L]] else "")
     updateSelectInput(session, "table", choices = ids,
                       selected = if (length(ids) > 0L) ids[[1L]] else character())
     updateSelectInput(session, "generate_table", choices = ids,
                       selected = if (length(ids) > 0L) ids[[1L]] else character())
     population_ids <- vapply(displayed$populations, `[[`, "", "id")
+    mark_ui_sync("population", if (length(population_ids)) population_ids[[1L]] else "")
     updateSelectInput(session, "population", choices = population_ids,
                       selected = if (length(population_ids) > 0L) population_ids[[1L]] else character())
     header_ids <- vapply(displayed$headers, `[[`, "", "id")
+    mark_ui_sync("header", if (length(header_ids)) header_ids[[1L]] else "")
     updateSelectInput(session, "header", choices = header_ids,
                       selected = if (length(header_ids) > 0L) header_ids[[1L]] else character())
     updateSelectInput(session, "header2", choices = header_ids,
                       selected = if (length(header_ids) > 0L) header_ids[[1L]] else character())
     template_ids <- vapply(displayed$templates, `[[`, "", "id")
+    mark_ui_sync("template", if (length(template_ids)) template_ids[[1L]] else "")
     updateSelectInput(session, "template", choices = template_ids,
                       selected = if (length(template_ids) > 0L) template_ids[[1L]] else character())
     chunks <- unlist(lapply(displayed$templates, function(template) template$body$chunks %||% list()), recursive = FALSE)
@@ -696,6 +713,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$header, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("header", input$header)) return()
     if (has_dirty_draft() && !identical(draft_identity(), list(type = "header", id = input$header))) { request_switch("header", input$header, "header"); return() }
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
@@ -705,6 +723,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$table, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("table", input$table)) return()
     if (has_dirty_draft() && !identical(selected_target(), input$table)) {
       request_switch("table", input$table, "table")
       return()
@@ -813,12 +832,29 @@ server <- function(input, output, session) {
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   })
   request_delete <- function(type, id) {
+    if (!is.null(workspace()$active_draft) &&
+        identical(workspace()$active_draft$operation, "create") &&
+        identical(draft_identity(), list(type = type, id = id))) {
+      result <- application_discard_draft(workspace())
+      workspace(result$workspace); refresh_tables(result$workspace)
+      status("New object discarded.")
+      return()
+    }
     impact <- workspace_delete_impact(workspace(), type, id)
-    session_state$delete_impact <- impact
     if (!isTRUE(impact$allowed)) {
       showNotification(error_text(impact$errors), type = "error")
       return()
     }
+    if (has_dirty_draft() && !identical(draft_identity(), list(type = type, id = id))) {
+      pending_switch(list(type = type, id = id, input_id = type,
+                          action = "delete", impact = impact))
+      showModal(modalDialog(title = "Unsaved changes",
+        "Discard the active changes before deleting this object?",
+        footer = tagList(actionButton("switch_discard", "Discard changes"),
+                         actionButton("switch_cancel", "Cancel"))))
+      return()
+    }
+    session_state$delete_impact <- impact
     showModal(modalDialog(
       title = "Confirm delete",
       paste("Delete", type, id, "? Affected tables:", paste(impact$affected_tables, collapse = ", ")),
@@ -865,6 +901,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$template, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("template", input$template)) return()
     if (is.null(input$template) || !nzchar(input$template)) return()
     if (has_dirty_draft() && !identical(draft_identity(), list(type = "template", id = input$template))) { request_switch("template", input$template, "template"); return() }
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
@@ -975,6 +1012,7 @@ server <- function(input, output, session) {
 
   observeEvent(list(input$population, workspace()), {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("population", input$population)) return()
     if (has_dirty_draft() && !identical(draft_identity(), list(type = "population", id = input$population))) { request_switch("population", input$population, "population"); return() }
     id <- input$population
     if (is.null(id) || !nzchar(id)) return()
@@ -1044,7 +1082,12 @@ server <- function(input, output, session) {
   observeEvent(input$switch_discard, {
     target <- pending_switch(); removeModal(); pending_switch(NULL)
     result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace)
-    if (!is.null(target)) updateSelectInput(session, target$input_id, selected = target$id)
+    if (!is.null(target) && identical(target$action, "delete")) {
+      deleted <- workspace_delete_immediate(workspace(), target$impact$target)
+      if (deleted$passed) {
+        workspace(deleted$workspace); refresh_tables(deleted$workspace); status("Object deleted.")
+      } else showNotification(error_text(deleted$errors), type = "error")
+    } else if (!is.null(target)) updateSelectInput(session, target$input_id, selected = target$id)
   })
   observeEvent(input$switch_cancel, {
     target <- pending_switch(); removeModal(); pending_switch(NULL)
