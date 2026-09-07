@@ -267,6 +267,9 @@ server <- function(input, output, session) {
 
   refresh_tables <- function(value) {
     session_state$suppress_selection <- TRUE
+    # Detail inputs are also refreshed below; keep them suppressed until the
+    # next flush so stale browser values cannot start a draft.
+    session_state$ui_sync_generation <- (session_state$ui_sync_generation %||% 0L) + 1L
     workspace(value)
     displayed <- if (!is.null(value$active_draft)) workspace_overlay_active_draft(value) else value
     session_state$workspace_status <- if (length(displayed$tables) > 0L) "loaded" else "empty"
@@ -330,6 +333,18 @@ server <- function(input, output, session) {
       chunk <- chunks[[i]]
       if (!is.list(chunk)) return(NULL)
       prefix <- paste0("chunk_card_", i, "_")
+      mark_ui_sync(paste0(prefix, "source_data"), chunk$source_data %||% "")
+      mark_ui_sync(paste0(prefix, "filter"), chunk$filter %||% "")
+      mark_ui_sync(paste0(prefix, "analysis_variable"), chunk$analysis_variable %||% "")
+      den0 <- chunk$denominator %||% list()
+      for (nm in c("scope", "unit", "variable", "expression")) {
+        mark_ui_sync(paste0(prefix, "den_", nm), den0[[nm]] %||% "")
+      }
+      sc0 <- chunk$source_contract %||% list()
+      mark_ui_sync(paste0(prefix, "sc_grain"), sc0$grain %||% "")
+      mark_ui_sync(paste0(prefix, "sc_subject_key"), sc0$subject_key %||% "")
+      mark_ui_sync(paste0(prefix, "sc_record_key"), paste(sc0$record_key %||% character(), collapse = ", "))
+      mark_ui_sync(paste0(prefix, "sc_duplicate_policy"), sc0$duplicate_policy %||% "")
       common <- list(
         readonly_text_input(paste0(prefix, "id"), "ID", value = chunk$id %||% ""),
         readonly_text_input(paste0(prefix, "type"), "Type", value = chunk$type %||% ""),
@@ -506,6 +521,7 @@ server <- function(input, output, session) {
 
   # Card-level DT edits write directly into the active template draft.
   observe({
+    if (isTRUE(session_state$suppress_selection)) return()
     req(input$template)
     shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
     item <- Filter(function(x) identical(x$id, input$template), shown$templates); if (length(item) != 1L) return()
@@ -701,24 +717,31 @@ server <- function(input, output, session) {
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   }
   observe({
+    if (isTRUE(session_state$suppress_selection)) return()
     req(input$template)
     shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
     item <- Filter(function(x) identical(x$id, input$template), shown$templates); if (length(item) != 1L) return()
     chunks <- item[[1L]]$body$chunks %||% list()
     for (i in seq_along(chunks)) {
       p <- paste0("chunk_card_", i, "_"); ch <- chunks[[i]]
-      update_template_chunk_field(i, "source_data", input[[paste0(p, "source_data")]])
-      update_template_chunk_field(i, "filter", if (nzchar(input[[paste0(p, "filter")]] %||% "")) input[[paste0(p, "filter")]] else NULL)
-      if (identical(ch$type, "continuous_summary")) update_template_chunk_field(i, "analysis_variable", input[[paste0(p, "analysis_variable")]])
+      source_value <- input[[paste0(p, "source_data")]]
+      filter_value <- input[[paste0(p, "filter")]]
+      analysis_value <- input[[paste0(p, "analysis_variable")]]
+      if (!consume_ui_sync(paste0(p, "source_data"), source_value)) update_template_chunk_field(i, "source_data", source_value)
+      if (!consume_ui_sync(paste0(p, "filter"), filter_value)) update_template_chunk_field(i, "filter", if (nzchar(filter_value %||% "")) filter_value else NULL)
+      if (identical(ch$type, "continuous_summary") && !consume_ui_sync(paste0(p, "analysis_variable"), analysis_value)) update_template_chunk_field(i, "analysis_variable", analysis_value)
       if (identical(ch$type, "hierarchical_summary")) {
-        update_template_chunk_path(i, c("source_contract", "grain"), input[[paste0(p, "sc_grain")]])
-        update_template_chunk_path(i, c("source_contract", "subject_key"), input[[paste0(p, "sc_subject_key")]])
+        grain_value <- input[[paste0(p, "sc_grain")]]
+        subject_value <- input[[paste0(p, "sc_subject_key")]]
+        if (!consume_ui_sync(paste0(p, "sc_grain"), grain_value)) update_template_chunk_path(i, c("source_contract", "grain"), grain_value)
+        if (!consume_ui_sync(paste0(p, "sc_subject_key"), subject_value)) update_template_chunk_path(i, c("source_contract", "subject_key"), subject_value)
         record_key_text <- as.character(input[[paste0(p, "sc_record_key")]] %||% "")
         record_keys <- if (length(record_key_text) && nzchar(record_key_text)) strsplit(record_key_text, "\\s*,\\s*")[[1L]] else character()
-        update_template_chunk_path(i, c("source_contract", "record_key"),
+        if (!consume_ui_sync(paste0(p, "sc_record_key"), record_key_text)) update_template_chunk_path(i, c("source_contract", "record_key"),
           record_keys,
           function(x) { x <- x[nzchar(x)]; x })
-        update_template_chunk_path(i, c("source_contract", "duplicate_policy"), input[[paste0(p, "sc_duplicate_policy")]])
+        duplicate_value <- input[[paste0(p, "sc_duplicate_policy")]]
+        if (!consume_ui_sync(paste0(p, "sc_duplicate_policy"), duplicate_value)) update_template_chunk_path(i, c("source_contract", "duplicate_policy"), duplicate_value)
       }
       if (ch$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
         den <- ch$denominator %||% list()
@@ -726,6 +749,8 @@ server <- function(input, output, session) {
                      unit = input[[paste0(p, "den_unit")]],
                      variable = input[[paste0(p, "den_variable")]],
                      expression = input[[paste0(p, "den_expression")]])
+        den_sync <- vapply(names(vals), function(nm) consume_ui_sync(paste0(p, "den_", nm), vals[[nm]]), logical(1L))
+        if (all(den_sync)) next
         vals <- vals[!vapply(vals, is.null, logical(1L))]
         vals <- vals[nzchar(as.character(unlist(vals)))]
         # Dynamic UI inputs fire while cards are rebuilt.  Only create/update
@@ -1111,6 +1136,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$population_expression, {
+    if (isTRUE(session_state$suppress_selection)) return()
     if (is.null(input$population_expression)) return()
     if (consume_ui_sync("population_expression", input$population_expression)) return()
     if (is.null(input$population) || !nzchar(input$population) || is.null(workspace()$active_draft)) return()
