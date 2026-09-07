@@ -917,3 +917,12 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
 - ref 中的 study roots、datasets catalog、磁盘多文件布局、orientation/titles/
   footnotes、R program、Rscript、RTF 和 run artifacts 不进入本项目 bundle 或
   生成产品，除非另行批准。
+# Draft lifecycle and deletion semantics
+
+- `workspace_draft_status()` is the canonical state classification. An update
+  draft whose value equals its base is clean and must not trigger a guard.
+- New objects remain `create_pending` until the user explicitly saves them.
+- Deletion is immediate after confirmation and does not create a user-visible
+  dirty draft. Deleting a pending create discards that create draft.
+- UI metadata lists render the effective workspace so pending creates are
+  visible before save.
