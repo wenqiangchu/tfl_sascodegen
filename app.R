@@ -931,13 +931,8 @@ server <- function(input, output, session) {
   observeEvent(input$template_stub_header, {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("template_stub_header", input$template_stub_header)) return()
-    current <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
-    if (length(current) == 1L && identical(current[[1L]]$body$stub_header %||% "", input$template_stub_header)) return()
     begin_edit("template", input$template)
-    if (!is.null(draft_target())) {
-      draft <- workspace_draft_value(workspace()); draft$body$stub_header <- input$template_stub_header
-      workspace(workspace_set_draft(workspace(), draft)$workspace)
-    }
+    set_draft_path_if_changed(list("body", "stub_header"), as.character(input$template_stub_header %||% ""), as.character)
   }, ignoreInit = TRUE)
 
   find_chunk <- function(values, id) {
@@ -969,23 +964,20 @@ server <- function(input, output, session) {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("chunk_source_data", input$chunk_source_data)) return()
     begin_edit("chunk", input$chunk)
-    if (!is.null(draft_target())) {
-      draft <- workspace_draft_value(workspace()); draft$source_data <- input$chunk_source_data
-      workspace(workspace_set_draft(workspace(), draft)$workspace)
-    }
+    set_draft_path_if_changed(list("source_data"), as.character(input$chunk_source_data %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_row_label, {
     if (isTRUE(session_state$suppress_selection)) return()
     begin_edit("chunk", input$chunk)
-    if (!is.null(draft_target())) { draft <- workspace_draft_value(workspace()); rows <- draft$rows %||% list(); if (!length(rows)) return(); draft$rows[[1L]]$label <- input$chunk_row_label; workspace(workspace_set_draft(workspace(), draft)$workspace) }
+    if (!is.null(draft_target())) set_draft_path_if_changed(list("rows", 1L, "label"), as.character(input$chunk_row_label %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_id, {
     if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); rows <- draft$rows %||% list(); if (!length(rows) || !length(rows[[1L]]$statistics %||% list())) return(); draft$rows[[1L]]$statistics[[1L]]$id <- input$chunk_statistic_id; workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("rows", 1L, "statistics", 1L, "id"), as.character(input$chunk_statistic_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_digits, {
     if (is.null(draft_target()) || is.na(input$chunk_statistic_digits)) return()
-    draft <- workspace_draft_value(workspace()); rows <- draft$rows %||% list(); if (!length(rows) || !length(rows[[1L]]$statistics %||% list())) return(); draft$rows[[1L]]$statistics[[1L]]$digits <- as.integer(input$chunk_statistic_digits); workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("rows", 1L, "statistics", 1L, "digits"), as.integer(input$chunk_statistic_digits), as.integer)
   }, ignoreInit = TRUE)
   output$chunk_rows_table <- DT::renderDT({
     item <- find_chunk(workspace(), input$chunk)
@@ -1026,9 +1018,7 @@ server <- function(input, output, session) {
   observeEvent(input$chunk_filter, {
     if (consume_ui_sync("chunk_filter", input$chunk_filter)) return()
     if (is.null(input$chunk) || !nzchar(input$chunk) || is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace())
-    draft$filter <- if (nzchar(input$chunk_filter)) input$chunk_filter else NULL
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("filter"), if (nzchar(input$chunk_filter %||% "")) as.character(input$chunk_filter) else NULL)
   }, ignoreInit = TRUE)
 
   observeEvent(list(input$population, workspace()), {
