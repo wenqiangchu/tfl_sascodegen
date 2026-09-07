@@ -287,6 +287,11 @@ server <- function(input, output, session) {
     mark_ui_sync("population", if (length(population_ids)) population_ids[[1L]] else "")
     updateSelectInput(session, "population", choices = population_ids,
                       selected = if (length(population_ids) > 0L) population_ids[[1L]] else character())
+    if (length(population_ids)) {
+      pop0 <- displayed$populations[[1L]]
+      sync_text_input("population_label", pop0$label)
+      sync_text_area("population_expression", pop0$expression)
+    }
     header_ids <- vapply(displayed$headers, `[[`, "", "id")
     mark_ui_sync("header", if (length(header_ids)) header_ids[[1L]] else "")
     updateSelectInput(session, "header", choices = header_ids,
@@ -297,6 +302,10 @@ server <- function(input, output, session) {
     mark_ui_sync("template", if (length(template_ids)) template_ids[[1L]] else "")
     updateSelectInput(session, "template", choices = template_ids,
                       selected = if (length(template_ids) > 0L) template_ids[[1L]] else character())
+    if (length(template_ids)) {
+      tpl0 <- displayed$templates[[1L]]
+      sync_text_input("template_stub_header", tpl0$body$stub_header %||% "")
+    }
     chunks <- unlist(lapply(displayed$templates, function(template) template$body$chunks %||% list()), recursive = FALSE)
     chunk_ids <- if (length(chunks) > 0L) vapply(chunks, `[[`, "", "id") else character()
     updateSelectInput(session, "chunk", choices = chunk_ids,
