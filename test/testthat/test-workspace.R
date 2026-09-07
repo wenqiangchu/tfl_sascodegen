@@ -234,6 +234,20 @@ testthat::test_that("immediate delete does not leave a delete draft", {
   testthat::expect_identical(vapply(deleted$workspace$populations, `[[`, "", "id"), "p1")
 })
 
+testthat::test_that("pending create supports explicit discard and save", {
+  workspace <- new_metadata_workspace(workspace_fixture_bundle())
+  pending <- workspace_begin_draft(workspace, "population", "p_new", operation = "create",
+                                    value = list(id = "p_new", label = "New", expression = "1"))
+  testthat::expect_true(pending$passed)
+  testthat::expect_true("p_new" %in% vapply(workspace_overlay_active_draft(pending$workspace)$populations, `[[`, "", "id"))
+  discarded <- workspace_discard_draft(pending$workspace)
+  testthat::expect_false("p_new" %in% vapply(discarded$workspace$populations, `[[`, "", "id"))
+  saved <- workspace_create(workspace, "population", list(id = "p_new", label = "New", expression = "1"))
+  testthat::expect_true(saved$passed)
+  testthat::expect_true("p_new" %in% vapply(saved$workspace$populations, `[[`, "", "id"))
+  testthat::expect_null(saved$workspace$active_draft)
+})
+
 testthat::test_that("position IDs and hierarchical references are rebuilt together", {
   reindexed <- workspace_reindex_bundle_positions(workspace_fixture_bundle())
   chunks <- reindexed$templates[[1L]]$body$chunks
