@@ -858,7 +858,7 @@ server <- function(input, output, session) {
     impact <- session_state$delete_impact
     removeModal()
     if (is.null(impact)) return()
-    result <- workspace_delete(workspace(), impact$target, confirm = TRUE)
+    result <- workspace_delete_immediate(workspace(), impact$target)
     if (result$passed) { workspace(result$workspace); session_state$delete_impact <- NULL; refresh_tables(result$workspace); status("Object deleted.") }
     else status(error_text(result$errors))
   })

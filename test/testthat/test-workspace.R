@@ -226,6 +226,14 @@ testthat::test_that("draft status distinguishes clean updates and pending create
   testthat::expect_identical(workspace_draft_status(created$workspace), "create_pending")
 })
 
+testthat::test_that("immediate delete does not leave a delete draft", {
+  workspace <- new_metadata_workspace(workspace_fixture_bundle())
+  deleted <- workspace_delete_immediate(workspace, workspace_target("population", "p2"))
+  testthat::expect_true(deleted$passed)
+  testthat::expect_null(deleted$workspace$active_draft)
+  testthat::expect_identical(vapply(deleted$workspace$populations, `[[`, "", "id"), "p1")
+})
+
 testthat::test_that("position IDs and hierarchical references are rebuilt together", {
   reindexed <- workspace_reindex_bundle_positions(workspace_fixture_bundle())
   chunks <- reindexed$templates[[1L]]$body$chunks

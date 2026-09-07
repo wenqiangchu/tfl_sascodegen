@@ -1153,6 +1153,26 @@ workspace_delete <- function(workspace, target, confirm = FALSE,
   workspace_save_draft(begun$workspace, registry)
 }
 
+# Public deletion operation. The confirmation is part of the delete command,
+# not an editable metadata draft: on success the returned workspace has no
+# active draft and the object is removed immediately.
+workspace_delete_immediate <- function(workspace, target,
+                                        registry = default_chunk_registry()) {
+  target <- workspace_target(target)
+  if (!is.null(workspace$active_draft) &&
+      identical(workspace$active_draft$operation, "create") &&
+      workspace_same_target(workspace$active_draft$target, target)) {
+    return(workspace_discard_draft(workspace))
+  }
+  begun <- workspace_begin_delete(
+    workspace, target$document_type, target$document_id,
+    target$template_id, target$chunk_id, target$level_id,
+    target$analysis_id, target$row_id, confirm = TRUE
+  )
+  if (!isTRUE(begun$passed)) return(begun)
+  workspace_save_draft(begun$workspace, registry)
+}
+
 workspace_move <- function(workspace, target, direction = c("up", "down"),
                            position = NULL, registry = default_chunk_registry()) {
   target <- workspace_target(target)
