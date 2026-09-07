@@ -156,9 +156,11 @@ server <- function(input, output, session) {
                       selected_template_id = NULL), active_draft = NULL,
     delete_impact = NULL,
     generation = list(table_id = NULL, status = "idle", source_text = "", errors = list())
-    , suppress_selection = FALSE, template_observer_key = NULL,
+     , suppress_selection = FALSE, initialized = FALSE, template_observer_key = NULL,
     ui_sync_expected = list()
   )
+  ui_sync_env <- new.env(parent = emptyenv())
+  ui_sync_env$expected <- list()
   # Compatibility accessor: SessionState remains the only reactive workspace owner.
   workspace <- function(value) {
     if (missing(value)) return(session_state$workspace)
@@ -233,14 +235,14 @@ server <- function(input, output, session) {
     TRUE
   }
   mark_ui_sync <- function(id, value) {
-    expected <- session_state$ui_sync_expected
+    expected <- ui_sync_env$expected
     expected[[id]] <- if (is.null(value)) "" else as.character(value)
-    session_state$ui_sync_expected <- expected
+    ui_sync_env$expected <- expected
   }
   consume_ui_sync <- function(id, value) {
-    expected <- session_state$ui_sync_expected[[id]]
+    expected <- ui_sync_env$expected[[id]]
     if (is.null(expected)) return(FALSE)
-    session_state$ui_sync_expected[[id]] <- NULL
+    ui_sync_env$expected[[id]] <- NULL
     identical(expected, if (is.null(value)) "" else as.character(value))
   }
   sync_text_input <- function(id, value) {
@@ -298,7 +300,10 @@ server <- function(input, output, session) {
     chunk_ids <- if (length(chunks) > 0L) vapply(chunks, `[[`, "", "id") else character()
     updateSelectInput(session, "chunk", choices = chunk_ids,
                       selected = if (length(chunk_ids) > 0L) chunk_ids[[1L]] else character())
-    session$onFlushed(function() session_state$suppress_selection <- FALSE, once = TRUE)
+     session$onFlushed(function() {
+       session_state$suppress_selection <- FALSE
+       session_state$initialized <- TRUE
+     }, once = TRUE)
   }
 
   output$population_list <- DT::renderDT({
@@ -837,6 +842,7 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   observeEvent(input$table_population_id, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("table_population_id", input$table_population_id)) return()
     current <- Filter(function(value) identical(value$id, input$table), workspace()$tables)
@@ -845,26 +851,31 @@ server <- function(input, output, session) {
     set_draft_path_if_changed(list("population_id"), as.character(input$table_population_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$table_header_id, {
+    if (!isTRUE(session_state$initialized)) return()
     if (consume_ui_sync("table_header_id", input$table_header_id)) return()
     set_draft_path_if_changed(list("header_id"), as.character(input$table_header_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$table_template_id, {
+    if (!isTRUE(session_state$initialized)) return()
     if (consume_ui_sync("table_template_id", input$table_template_id)) return()
     set_draft_path_if_changed(list("template_id"), as.character(input$table_template_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$table_custom_before, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("table_custom_before", input$table_custom_before)) return()
     begin_edit("table", input$table)
     set_draft_path_if_changed(list("custom_code", "before"), if (nzchar(input$table_custom_before %||% "")) as.character(input$table_custom_before) else NULL)
   }, ignoreInit = TRUE)
   observeEvent(input$table_custom_after, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("table_custom_after", input$table_custom_after)) return()
     begin_edit("table", input$table)
     set_draft_path_if_changed(list("custom_code", "after"), if (nzchar(input$table_custom_after %||% "")) as.character(input$table_custom_after) else NULL)
   }, ignoreInit = TRUE)
   observeEvent(input$header_source_data, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("header_source_data", input$header_source_data)) return()
     current <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
@@ -1010,6 +1021,7 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   observeEvent(input$template_stub_header, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("template_stub_header", input$template_stub_header)) return()
     begin_edit("template", input$template)
@@ -1042,21 +1054,25 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   observeEvent(input$chunk_source_data, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("chunk_source_data", input$chunk_source_data)) return()
     begin_edit("chunk", input$chunk)
     set_draft_path_if_changed(list("source_data"), as.character(input$chunk_source_data %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_row_label, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     begin_edit("chunk", input$chunk)
     if (!is.null(workspace()$active_draft)) set_draft_path_if_changed(list("rows", 1L, "label"), as.character(input$chunk_row_label %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_id, {
+    if (!isTRUE(session_state$initialized)) return()
     if (is.null(workspace()$active_draft)) return()
     set_draft_path_if_changed(list("rows", 1L, "statistics", 1L, "id"), as.character(input$chunk_statistic_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_digits, {
+    if (!isTRUE(session_state$initialized)) return()
     if (is.null(workspace()$active_draft) || is.na(input$chunk_statistic_digits)) return()
     set_draft_path_if_changed(list("rows", 1L, "statistics", 1L, "digits"), as.integer(input$chunk_statistic_digits), as.integer)
   }, ignoreInit = TRUE)
@@ -1097,6 +1113,7 @@ server <- function(input, output, session) {
   observeEvent(input$chunk_up, chunk_operation("up"))
   observeEvent(input$chunk_down, chunk_operation("down"))
   observeEvent(input$chunk_filter, {
+    if (!isTRUE(session_state$initialized)) return()
     if (consume_ui_sync("chunk_filter", input$chunk_filter)) return()
     if (is.null(input$chunk) || !nzchar(input$chunk) || is.null(workspace()$active_draft)) return()
     set_draft_path_if_changed(list("filter"), if (nzchar(input$chunk_filter %||% "")) as.character(input$chunk_filter) else NULL)
@@ -1116,6 +1133,7 @@ server <- function(input, output, session) {
   }, ignoreInit = FALSE)
 
   observeEvent(input$population_label, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection) || is.null(input$population_label)) return()
     if (consume_ui_sync("population_label", input$population_label)) return()
     current <- Filter(function(value) identical(value$id, input$population), workspace()$populations)
@@ -1136,6 +1154,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$population_expression, {
+    if (!isTRUE(session_state$initialized)) return()
     if (isTRUE(session_state$suppress_selection)) return()
     if (is.null(input$population_expression)) return()
     if (consume_ui_sync("population_expression", input$population_expression)) return()
