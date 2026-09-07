@@ -926,3 +926,67 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
   dirty draft. Deleting a pending create discards that create draft.
 - UI metadata lists render the effective workspace so pending creates are
   visible before save.
+
+## Active editor state and user-entered IDs
+
+状态：已确认（2026-09-08）。本节冻结 Shiny 编辑器所需的最小内存对象和
+边界动作语义。实现不得把每个输入控件的即时事件当作 draft 事实来源。
+
+### 已批准的最小内存对象
+
+1. `workspace` 是 session-owned 的已保存 metadata 快照，包含
+   `schema_version`、`populations`、`headers`、`tables`、`templates` 和
+   `revision.saved_revision`。它不保存 UI 控件值、session 状态或运行期结果。
+2. `active_editor` 只记录当前编辑入口：
+
+   ```r
+   list(
+     panel = "population",        # population | header | table | template
+     document_type = "population",
+     document_id = "fas"
+   )
+   ```
+
+   不维护 `selected_ids$population`、`selected_ids$header`、
+   `selected_ids$table` 或 `selected_ids$template`；非活动 panel 的列表选择由
+   其 UI 控件持有，需要时再读取。
+3. `active_draft` 只保存编辑操作、目标和进入编辑时的原始快照：
+
+   ```r
+   list(
+     operation = "update",        # update | create
+     target = list(document_type = "population", document_id = "fas"),
+     original = <metadata object or NULL>
+   )
+   ```
+
+   不持久化实时 `current` 副本。`current` 仅在 Save、Discard、Switch、Delete、
+   Import 或 Generate 等边界动作发生时由 collector 从当前 UI 一次性读取。
+4. `pending_action` 仅在 dirty guard 出现后暂存待继续的动作（例如 switch 或
+   delete），完成或取消后清空；它不是 metadata，也不参与 dirty 比较。
+
+### 顶层 ID 与 New 对话框
+
+- Population、Header、Table 和 Template 的顶层 `id` 由用户输入，不能由系统
+  静默生成。点击 New 时先显示 ID 对话框；确认后创建带该 ID 的 pending object，
+  并将其设为 active editor。
+- Chunk、row、statistic、level、analysis block 和 spanning header 等内部位置
+  标识可以由系统按 sequence 自动生成或重建；重建时同步更新引用。
+- ID 对话框取消不会创建对象，也不会改变 workspace、active draft 或 revision。
+  空 ID、重复 ID 或不符合结构契约的 ID 在创建边界返回明确错误，不修改已有对象。
+
+### Dirty 判定和边界动作
+
+用户编辑控件时只改变浏览器中的 UI 值，不更新 workspace，也不创建或更新
+`active_draft`。在边界动作执行前，按目标 panel 的 collector 完成类型转换和空值
+标准化，再与 `active_draft$original` 做 `workspace_canonical_equal()`：
+
+- 没有 active draft：`none`；
+- `operation = update` 且 current 等于 original：`update_clean`，不拦截切换；
+- `operation = update` 且 current 不等于 original：`update_dirty`，显示丢弃/取消；
+- `operation = create`：在 Save 前始终为 `create_pending`，即使 UI 尚未填写其他字段。
+
+Discard 对已有对象重新渲染 original 并清除 draft；对新对象直接移除整个 pending
+object。Save 只在点击时收集并写入 workspace；无变化时不产生新 revision。程序同步
+只负责重新渲染 UI，不改变 dirty 事实。删除在通过 dirty guard 和引用检查后即时生效，
+不创建新的用户可见 delete draft；删除 pending create 等同于丢弃该新对象。
