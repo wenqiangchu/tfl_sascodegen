@@ -58,6 +58,42 @@ workspace_draft_status <- function(workspace) {
   "unknown"
 }
 
+# Structural comparison used by every draft update. It removes UI transport
+# differences (NULL versus empty text, numeric values versus numeric strings)
+# while preserving ordinary character identifiers and SAS expressions.
+workspace_canonical_equal <- function(left, right) {
+  if (is.null(left) || is.null(right)) {
+    return((is.null(left) && (is.null(right) || identical(right, ""))) ||
+            (is.null(right) && identical(left, "")))
+  }
+  if (length(left) == 0L || length(right) == 0L) {
+    return(length(left) == 0L && length(right) == 0L)
+  }
+  if (is.list(left) || is.list(right)) {
+    if (!is.list(left) || !is.list(right) || length(left) != length(right)) return(FALSE)
+    if (!identical(names(left), names(right))) return(FALSE)
+    return(all(vapply(seq_along(left), function(index) {
+      workspace_canonical_equal(left[[index]], right[[index]])
+    }, logical(1L))))
+  }
+  if (length(left) != length(right)) return(FALSE)
+  if (length(left) == 1L && length(right) == 1L) {
+    if ((is.numeric(left) || is.integer(left)) && is.character(right) &&
+        !is.na(suppressWarnings(as.numeric(right)))) {
+      return(identical(as.numeric(left), suppressWarnings(as.numeric(right))))
+    }
+    if ((is.numeric(right) || is.integer(right)) && is.character(left) &&
+        !is.na(suppressWarnings(as.numeric(left)))) {
+      return(identical(suppressWarnings(as.numeric(left)), as.numeric(right)))
+    }
+    if (is.atomic(left) && is.atomic(right) &&
+        is.na(left) && (is.na(right) || identical(right, ""))) return(TRUE)
+    if (is.atomic(left) && is.atomic(right) &&
+        is.na(right) && (is.na(left) || identical(left, ""))) return(TRUE)
+  }
+  identical(left, right)
+}
+
 workspace_same_target <- function(left, right) {
   fields <- c("document_type", "document_id", "template_id", "chunk_id",
               "level_id", "analysis_id", "row_id", "parent_id")
@@ -819,7 +855,7 @@ workspace_set_draft <- function(workspace, value) {
   if (identical(draft$operation, "create")) {
     draft$dirty <- TRUE
   } else {
-    draft$dirty <- !identical(draft$base_value, draft$draft_value)
+    draft$dirty <- !workspace_canonical_equal(draft$base_value, draft$draft_value)
   }
   next_workspace <- workspace_with_metadata(
     workspace, workspace_metadata_value(workspace), active_draft = draft,

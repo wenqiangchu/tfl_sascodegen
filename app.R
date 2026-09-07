@@ -199,9 +199,24 @@ server <- function(input, output, session) {
     }
     FALSE
   }
-  has_dirty_draft <- function() {
+  current_draft_status <- function() {
+    # The workspace draft is the sole source of truth for business decisions.
+    # A reverted update is immediately discarded so it cannot block navigation.
     clean_update_draft()
-    workspace_is_dirty(workspace())
+    workspace_draft_status(workspace())
+  }
+  current_draft_identity <- function() {
+    draft <- workspace()$active_draft
+    if (is.null(draft)) return(NULL)
+    target <- draft$target %||% list()
+    list(type = target$document_type %||% draft$document_type,
+         id = target$document_id %||% draft$document_id)
+  }
+  draft_requires_guard <- function() {
+    current_draft_status() %in% c("update_dirty", "create_pending")
+  }
+  has_dirty_draft <- function() {
+    draft_requires_guard()
   }
   effective_workspace <- function() {
     if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
@@ -211,7 +226,7 @@ server <- function(input, output, session) {
     draft <- workspace_draft_value(workspace())
     old <- tryCatch(workspace_path_get(draft, path), error = function(e) NULL)
     new <- normalize(value)
-    equal <- if (is.null(old) && (is.null(new) || identical(new, ""))) TRUE else identical(old, new)
+    equal <- workspace_canonical_equal(old, new)
     if (equal) return(FALSE)
     updated <- workspace_path_replace(draft, path, new)
     workspace(workspace_set_draft(workspace(), updated)$workspace)
@@ -502,7 +517,7 @@ server <- function(input, output, session) {
       p <- paste0("chunk_card_", i, "_")
       observeEvent(input[[paste0(p, "rows_cell_edit")]], {
         info <- input[[paste0(p, "rows_cell_edit")]]; if (is.null(info)) return()
-        begin_edit("template", input$template); if (is.null(draft_target())) return()
+         begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
         d <- workspace_draft_value(workspace()); if (info$row > length(d$body$chunks[[i]]$rows %||% list())) return()
         if (info$col == 3L) d$body$chunks[[i]]$rows[[info$row]]$label <- as.character(info$value)
         if (info$col == 4L) d$body$chunks[[i]]$rows[[info$row]]$indent_level <- as.integer(info$value)
@@ -512,7 +527,7 @@ server <- function(input, output, session) {
         local_r <- r
         observeEvent(input[[paste0(p, "stats_", local_r, "_cell_edit")]], {
           info <- input[[paste0(p, "stats_", local_r, "_cell_edit")]]; if (is.null(info)) return()
-          begin_edit("template", input$template); if (is.null(draft_target())) return()
+           begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
           d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list()
           if (info$row > length(st)) return()
           if (info$col == 2L) st[[info$row]]$digits <- suppressWarnings(as.numeric(info$value))
@@ -524,7 +539,7 @@ server <- function(input, output, session) {
         for (lv_i in seq_along(chunks[[i]]$levels %||% list())) {
           local_lv_i <- lv_i
           observeEvent(input[[paste0(p, "parent_level_", local_lv_i)]], {
-            begin_edit("template", input$template); if (is.null(draft_target())) return()
+             begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
             d <- workspace_draft_value(workspace()); lv <- d$body$chunks[[i]]$levels %||% list(); if (local_lv_i > length(lv)) return()
             val <- input[[paste0(p, "parent_level_", local_lv_i)]]; lv[[local_lv_i]]$parent_level <- if (nzchar(val %||% "")) val else NULL
             d$body$chunks[[i]]$levels <- lv; workspace(workspace_set_draft(workspace(), d)$workspace)
@@ -532,7 +547,7 @@ server <- function(input, output, session) {
         }
         observeEvent(input[[paste0(p, "levels_cell_edit")]], {
           info <- input[[paste0(p, "levels_cell_edit")]]; if (is.null(info)) return()
-          begin_edit("template", input$template); if (is.null(draft_target())) return()
+           begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
           d <- workspace_draft_value(workspace()); lv <- d$body$chunks[[i]]$levels %||% list(); if (info$row > length(lv)) return()
           fields <- c("variable","label_variable","order_variable","order_direction","node_role","node_analysis_id","missing_policy","missing_label")
           if (info$col >= 2L && info$col <= 9L) {
@@ -545,7 +560,7 @@ server <- function(input, output, session) {
         }, ignoreInit = TRUE)
         observeEvent(input[[paste0(p, "blocks_cell_edit")]], {
           info <- input[[paste0(p, "blocks_cell_edit")]]; if (is.null(info)) return()
-          begin_edit("template", input$template); if (is.null(draft_target())) return()
+           begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
           d <- workspace_draft_value(workspace()); bl <- d$body$chunks[[i]]$analysis_blocks %||% list(); if (info$row > length(bl)) return()
           fields <- c("anchor_level","placement","type","counting_unit","analysis_variable")
           if (info$col >= 2L && info$col <= 6L) bl[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
@@ -560,7 +575,7 @@ server <- function(input, output, session) {
         observeEvent(input[[paste0(p, "block_type")]], {
           sel <- input[[paste0(p, "blocks_rows_selected")]]
           if (!length(sel)) return()
-          begin_edit("template", input$template); if (is.null(draft_target())) return()
+           begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
           d <- workspace_draft_value(workspace()); bl <- d$body$chunks[[i]]$analysis_blocks %||% list()
           if (sel[[1L]] > length(bl)) return()
           new_type <- input[[paste0(p, "block_type")]]
@@ -579,7 +594,7 @@ server <- function(input, output, session) {
       # Collection controls use the selected row (DT is 1-based) and mutate
       # the template draft. IDs are generated from the parent and position.
       collection_action <- function(collection, action, selected, make_item) {
-        begin_edit("template", input$template); if (is.null(draft_target())) return()
+         begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
         d <- workspace_draft_value(workspace()); current <- d$body$chunks[[i]][[collection]] %||% list()
         if (action == "new") current[[length(current) + 1L]] <- make_item(length(current) + 1L)
         if (action == "delete" && length(selected) && selected[[1L]] <= length(current)) current <- current[-selected[[1L]]]
@@ -602,18 +617,18 @@ server <- function(input, output, session) {
       for (r in seq_along(chunks[[i]]$rows %||% list())) {
         local_r <- r
         observeEvent(input[[paste0(p, "stats_new_", local_r)]], {
-          begin_edit("template", input$template); if (is.null(draft_target())) return()
+           begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
           d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list()
           st[[length(st) + 1L]] <- list(id = "n", digits = 0L)
           d$body$chunks[[i]]$rows[[local_r]]$statistics <- st
           workspace(workspace_set_draft(workspace(), d)$workspace)
         }, ignoreInit=TRUE)
         observeEvent(input[[paste0(p, "stats_delete_", local_r)]], {
-          begin_edit("template", input$template); if (is.null(draft_target())) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); s <- input[[paste0(p, "stats_", local_r, "_rows_selected")]]; if (length(s) && s[[1L]] <= length(st)) { d$body$chunks[[i]]$rows[[local_r]]$statistics <- st[-s[[1L]]]; workspace(workspace_set_draft(workspace(), d)$workspace) }
+           begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); s <- input[[paste0(p, "stats_", local_r, "_rows_selected")]]; if (length(s) && s[[1L]] <= length(st)) { d$body$chunks[[i]]$rows[[local_r]]$statistics <- st[-s[[1L]]]; workspace(workspace_set_draft(workspace(), d)$workspace) }
         }, ignoreInit=TRUE)
         for (act in c("up", "down")) observeEvent(input[[paste0(p, "stats_", act, "_", local_r)]], {
           s <- input[[paste0(p, "stats_", local_r, "_rows_selected")]]; if (!length(s)) return()
-          begin_edit("template", input$template); if (is.null(draft_target())) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); j <- s[[1L]] + if (act == "up") -1L else 1L; if (j >= 1L && j <= length(st)) { z <- st[[s[[1L]]]]; st[[s[[1L]]]] <- st[[j]]; st[[j]] <- z; d$body$chunks[[i]]$rows[[local_r]]$statistics <- st; workspace(workspace_set_draft(workspace(), d)$workspace) }
+           begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return(); d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$rows[[local_r]]$statistics %||% list(); j <- s[[1L]] + if (act == "up") -1L else 1L; if (j >= 1L && j <= length(st)) { z <- st[[s[[1L]]]]; st[[s[[1L]]]] <- st[[j]]; st[[j]] <- z; d$body$chunks[[i]]$rows[[local_r]]$statistics <- st; workspace(workspace_set_draft(workspace(), d)$workspace) }
         }, ignoreInit=TRUE)
       }
       if (identical(chunks[[i]]$type, "hierarchical_summary")) {
@@ -630,7 +645,7 @@ server <- function(input, output, session) {
         for (b in seq_along(chunks[[i]]$analysis_blocks %||% list())) {
           local_b <- b
           for (act in c("new", "delete", "up", "down")) observeEvent(input[[paste0(p, "block_", local_b, "_row_", act)]], {
-            begin_edit("template", input$template); if (is.null(draft_target())) return()
+             begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
             d <- workspace_draft_value(workspace()); rows <- d$body$chunks[[i]]$analysis_blocks[[local_b]]$rows %||% list()
             sel <- input[[paste0(p, "block_", local_b, "_rows_rows_selected")]]
             if (act == "new") rows[[length(rows) + 1L]] <- list(id=paste0(d$body$chunks[[i]]$analysis_blocks[[local_b]]$id, "_", sprintf("%03d", length(rows)+1L)), type="analysis", label="New row", indent_level=0L, statistics=list(list(id="n", digits=0L)), cell_format=list())
@@ -642,7 +657,7 @@ server <- function(input, output, session) {
           for (rr in seq_along(chunks[[i]]$analysis_blocks[[local_b]]$rows %||% list())) {
             local_rr <- rr
             for (act in c("new", "delete", "up", "down")) observeEvent(input[[paste0(p, "block_", local_b, "_stats_", local_rr, "_", act)]], {
-              begin_edit("template", input$template); if (is.null(draft_target())) return()
+               begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
               d <- workspace_draft_value(workspace()); st <- d$body$chunks[[i]]$analysis_blocks[[local_b]]$rows[[local_rr]]$statistics %||% list(); sel <- input[[paste0(p, "block_", local_b, "_stats_", local_rr, "_rows_selected")]]
               if (act == "new") st[[length(st)+1L]] <- list(id="n", digits=0L)
               if (act == "delete" && length(sel) && sel[[1L]] <= length(st)) st <- st[-sel[[1L]]]
@@ -663,8 +678,8 @@ server <- function(input, output, session) {
     if (length(item) != 1L) return()
     chunks <- item[[1L]]$body$chunks %||% list(); if (index > length(chunks)) return()
     old <- chunks[[index]][[field]] %||% ""
-    if (identical(as.character(old), as.character(value))) return()
-    begin_edit("template", input$template); if (is.null(draft_target())) return()
+     if (workspace_canonical_equal(old, value)) return()
+     begin_edit("template", input$template); if (is.null(workspace()$active_draft)) return()
     draft <- workspace_draft_value(workspace()); draft$body$chunks[[index]][[field]] <- value
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   }
@@ -690,10 +705,10 @@ server <- function(input, output, session) {
         # a draft when the denominator actually differs from the displayed
         # metadata, and guard the chunk index against a stale observer.
         old_den <- den[names(vals)]
-        changed <- !identical(as.character(old_den), as.character(vals))
+         changed <- !workspace_canonical_equal(old_den, vals)
         if (changed) {
           begin_edit("template", input$template)
-          if (!is.null(draft_target())) {
+           if (!is.null(workspace()$active_draft)) {
             d <- workspace_draft_value(workspace())
             if (length(d$body$chunks %||% list()) >= i) {
               d$body$chunks[[i]]$denominator <- vals
@@ -712,7 +727,7 @@ server <- function(input, output, session) {
       chunks <- item[[1L]]$body$chunks %||% list()
       if (index > length(chunks)) return()
       begin_edit("template", input$template)
-      if (is.null(draft_target())) return()
+       if (is.null(workspace()$active_draft)) return()
       draft <- workspace_draft_value(workspace()); draft$body$chunks[[index]][[field]] <- input[[paste0("chunk_", field, "_", index)]]
       workspace(workspace_set_draft(workspace(), draft)$workspace)
     }, ignoreInit = TRUE)
@@ -729,7 +744,9 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   begin_edit <- function(type, id) {
-    if (is.null(draft_target()) && nzchar(id %||% "")) {
+    clean_update_draft()
+    draft <- workspace()$active_draft
+    if (is.null(draft) && nzchar(id %||% "")) {
       begun <- workspace_begin_draft(session_state$workspace, type, id)
       if (begun$passed) {
         session_state$workspace <- begun$workspace
@@ -742,9 +759,9 @@ server <- function(input, output, session) {
   observeEvent(input$header, {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("header", input$header)) return()
-    if (has_dirty_draft() && !identical(draft_identity(), list(type = "header", id = input$header))) { request_switch("header", input$header, "header"); return() }
+     if (draft_requires_guard() && !identical(current_draft_identity(), list(type = "header", id = input$header))) { request_switch("header", input$header, "header"); return() }
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
-    if (length(item) == 1L && is.null(draft_target())) {
+     if (length(item) == 1L && identical(current_draft_status(), "none")) {
       sync_text_input("header_source_data", item[[1L]]$source_data)
     }
   }, ignoreInit = FALSE)
@@ -752,13 +769,13 @@ server <- function(input, output, session) {
   observeEvent(input$table, {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("table", input$table)) return()
-    if (has_dirty_draft() && !identical(selected_target(), input$table)) {
+     if (draft_requires_guard() && !identical(current_draft_identity(), list(type = "table", id = input$table))) {
       request_switch("table", input$table, "table")
       return()
     }
     selected_target(input$table)
     item <- Filter(function(value) identical(value$id, input$table), session_state$workspace$tables)
-    if (length(item) == 1L && is.null(draft_target())) {
+     if (length(item) == 1L && identical(current_draft_status(), "none")) {
       sync_text_input("table_population_id", item[[1L]]$population_id)
       sync_text_input("table_header_id", item[[1L]]$header_id)
       sync_text_input("table_template_id", item[[1L]]$template_id)
@@ -771,7 +788,7 @@ server <- function(input, output, session) {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("table_population_id", input$table_population_id)) return()
     current <- Filter(function(value) identical(value$id, input$table), workspace()$tables)
-    if (length(current) == 1L && identical(current[[1L]]$population_id, input$table_population_id)) return()
+     if (length(current) == 1L && workspace_canonical_equal(current[[1L]]$population_id, as.character(input$table_population_id %||% "")) && identical(current_draft_status(), "none")) return()
     begin_edit("table", input$table)
     set_draft_path_if_changed(list("population_id"), as.character(input$table_population_id %||% ""), as.character)
   }, ignoreInit = TRUE)
@@ -801,7 +818,7 @@ server <- function(input, output, session) {
     current <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
     if (length(current) == 1L && identical(current[[1L]]$source_data, input$header_source_data)) return()
     begin_edit("header", input$header)
-    if (!is.null(draft_target())) {
+     if (draft_requires_guard() || identical(current_draft_status(), "update_clean")) {
       draft <- workspace_draft_value(workspace()); draft$source_data <- input$header_source_data
       workspace(workspace_set_draft(workspace(), draft)$workspace)
     }
@@ -832,7 +849,7 @@ server <- function(input, output, session) {
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   })
   observeEvent(input$header_save, {
-    if (!is.null(draft_target()) && identical(draft_identity()$type, "header")) {
+     if (identical(current_draft_status(), "update_dirty") && identical(current_draft_identity()$type, "header")) {
       draft <- normalize_header_spanning(workspace_draft_value(workspace()))
       workspace(workspace_set_draft(workspace(), draft)$workspace)
     }
@@ -843,21 +860,20 @@ server <- function(input, output, session) {
     result <- application_discard_draft(workspace()); workspace(result$workspace); draft_target(NULL); draft_identity(NULL); refresh_tables(result$workspace); status("Header changes discarded.")
   })
   observeEvent(input$header_column_new, {
-    begin_edit("header", input$header); if (is.null(draft_target())) return()
+     begin_edit("header", input$header); if (is.null(workspace()$active_draft)) return()
     draft <- workspace_draft_value(workspace()); n <- length(draft$columns %||% list())
     draft$columns[[n + 1L]] <- list(id=paste0("column_", n + 1L), label="New column", condition="1", display_order=n + 1L, width=1, alignment="center")
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   })
   observeEvent(input$header_column_delete, {
     info <- input$header_columns_table_rows_selected; if (!length(info)) return()
-    begin_edit("header", input$header); if (is.null(draft_target())) return()
+     begin_edit("header", input$header); if (is.null(workspace()$active_draft)) return()
     draft <- workspace_draft_value(workspace()); draft$columns <- draft$columns[-info[[1L]]]
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   })
   request_delete <- function(type, id) {
-    if (!is.null(workspace()$active_draft) &&
-        identical(workspace()$active_draft$operation, "create") &&
-        identical(draft_identity(), list(type = type, id = id))) {
+    if (identical(current_draft_status(), "create_pending") &&
+        identical(current_draft_identity(), list(type = type, id = id))) {
       result <- application_discard_draft(workspace())
       workspace(result$workspace); refresh_tables(result$workspace)
       status("New object discarded.")
@@ -868,7 +884,7 @@ server <- function(input, output, session) {
       showNotification(error_text(impact$errors), type = "error")
       return()
     }
-    if (has_dirty_draft() && !identical(draft_identity(), list(type = type, id = id))) {
+    if (draft_requires_guard() && !identical(current_draft_identity(), list(type = type, id = id))) {
       pending_switch(list(type = type, id = id, input_id = type,
                           action = "delete", impact = impact))
       showModal(modalDialog(title = "Unsaved changes",
@@ -885,6 +901,14 @@ server <- function(input, output, session) {
     ))
   }
   new_object <- function(type) {
+    if (draft_requires_guard()) {
+      pending_switch(list(type = type, id = NULL, input_id = type, action = "new"))
+      showModal(modalDialog(title = "Unsaved changes",
+        "Discard the active changes before creating a new object?",
+        footer = tagList(actionButton("switch_discard", "Discard changes"),
+                         actionButton("switch_cancel", "Cancel"))))
+      return(invisible(NULL))
+    }
     values <- workspace()
     if (type == "population") {
       base <- if (length(values$populations)) clone_metadata_value(values$populations[[1L]]) else list(id="population_1", label="New population", expression="1")
@@ -901,7 +925,7 @@ server <- function(input, output, session) {
     }
     result <- workspace_begin_draft(values, type, document_id = base$id, operation = "create", value = base)
     if (result$passed) {
-      workspace(result$workspace); draft_target(TRUE); draft_identity(list(type = type, id = base$id)); refresh_tables(result$workspace)
+      workspace(result$workspace); refresh_tables(result$workspace)
       updateSelectInput(session, type, selected = base$id); status(paste("Draft created", type, base$id))
     } else showNotification(error_text(result$errors), type="error")
   }
@@ -926,9 +950,9 @@ server <- function(input, output, session) {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("template", input$template)) return()
     if (is.null(input$template) || !nzchar(input$template)) return()
-    if (has_dirty_draft() && !identical(draft_identity(), list(type = "template", id = input$template))) { request_switch("template", input$template, "template"); return() }
+     if (draft_requires_guard() && !identical(current_draft_identity(), list(type = "template", id = input$template))) { request_switch("template", input$template, "template"); return() }
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
-    if (length(item) == 1L && is.null(draft_target())) {
+     if (length(item) == 1L && identical(current_draft_status(), "none")) {
       body <- item[[1L]]$body %||% list()
       sync_text_input("template_stub_header", body$stub_header)
     }
@@ -947,7 +971,7 @@ server <- function(input, output, session) {
   observeEvent(input$chunk, {
     if (is.null(input$chunk) || !nzchar(input$chunk)) return()
     item <- find_chunk(workspace(), input$chunk)
-    if (length(item) == 1L && is.null(draft_target())) {
+     if (length(item) == 1L && identical(current_draft_status(), "none")) {
       sync_text_input("chunk_source_data", item[[1L]]$source_data)
       sync_text_input("chunk_filter", item[[1L]]$filter)
       rows <- item[[1L]]$rows %||% list()
@@ -974,14 +998,14 @@ server <- function(input, output, session) {
   observeEvent(input$chunk_row_label, {
     if (isTRUE(session_state$suppress_selection)) return()
     begin_edit("chunk", input$chunk)
-    if (!is.null(draft_target())) set_draft_path_if_changed(list("rows", 1L, "label"), as.character(input$chunk_row_label %||% ""), as.character)
+    if (!is.null(workspace()$active_draft)) set_draft_path_if_changed(list("rows", 1L, "label"), as.character(input$chunk_row_label %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_id, {
-    if (is.null(draft_target())) return()
+    if (is.null(workspace()$active_draft)) return()
     set_draft_path_if_changed(list("rows", 1L, "statistics", 1L, "id"), as.character(input$chunk_statistic_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$chunk_statistic_digits, {
-    if (is.null(draft_target()) || is.na(input$chunk_statistic_digits)) return()
+    if (is.null(workspace()$active_draft) || is.na(input$chunk_statistic_digits)) return()
     set_draft_path_if_changed(list("rows", 1L, "statistics", 1L, "digits"), as.integer(input$chunk_statistic_digits), as.integer)
   }, ignoreInit = TRUE)
   output$chunk_rows_table <- DT::renderDT({
@@ -1022,18 +1046,18 @@ server <- function(input, output, session) {
   observeEvent(input$chunk_down, chunk_operation("down"))
   observeEvent(input$chunk_filter, {
     if (consume_ui_sync("chunk_filter", input$chunk_filter)) return()
-    if (is.null(input$chunk) || !nzchar(input$chunk) || is.null(draft_target())) return()
+    if (is.null(input$chunk) || !nzchar(input$chunk) || is.null(workspace()$active_draft)) return()
     set_draft_path_if_changed(list("filter"), if (nzchar(input$chunk_filter %||% "")) as.character(input$chunk_filter) else NULL)
   }, ignoreInit = TRUE)
 
   observeEvent(list(input$population, workspace()), {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("population", input$population)) return()
-    if (has_dirty_draft() && !identical(draft_identity(), list(type = "population", id = input$population))) { request_switch("population", input$population, "population"); return() }
+     if (draft_requires_guard() && !identical(current_draft_identity(), list(type = "population", id = input$population))) { request_switch("population", input$population, "population"); return() }
     id <- input$population
     if (is.null(id) || !nzchar(id)) return()
     item <- Filter(function(value) identical(value$id, id), workspace()$populations)
-    if (length(item) == 1L && is.null(draft_target())) {
+     if (length(item) == 1L && identical(current_draft_status(), "none")) {
       sync_text_input("population_label", item[[1L]]$label)
       sync_text_input("population_expression", item[[1L]]$expression)
     }
@@ -1044,16 +1068,15 @@ server <- function(input, output, session) {
     if (consume_ui_sync("population_label", input$population_label)) return()
     current <- Filter(function(value) identical(value$id, input$population), workspace()$populations)
     if (is.null(input$population) || !nzchar(input$population)) return()
-    if (!is.null(draft_target())) {
+    if (!is.null(workspace()$active_draft)) {
       draft_current <- workspace_draft_value(workspace())
-      if (identical(as.character(draft_current$label %||% ""), as.character(input$population_label %||% ""))) return()
-    } else if (length(current) == 1L && identical(as.character(current[[1L]]$label %||% ""), as.character(input$population_label %||% ""))) return()
+       if (workspace_canonical_equal(draft_current$label, as.character(input$population_label %||% ""))) return()
+     } else if (length(current) == 1L && workspace_canonical_equal(current[[1L]]$label, as.character(input$population_label %||% ""))) return()
     current <- workspace()
-    if (is.null(draft_target())) {
+    if (is.null(workspace()$active_draft)) {
       begun <- workspace_begin_draft(current, "population", input$population)
       if (!begun$passed) return()
-      workspace(begun$workspace)
-      draft_target(TRUE)
+                workspace(begun$workspace)
     }
     draft <- workspace_draft_value(workspace())
     draft$label <- input$population_label
@@ -1062,7 +1085,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$population_expression, {
     if (consume_ui_sync("population_expression", input$population_expression)) return()
-    if (is.null(input$population) || !nzchar(input$population) || is.null(draft_target())) return()
+    if (is.null(input$population) || !nzchar(input$population) || is.null(workspace()$active_draft)) return()
     set_draft_path_if_changed(list("expression"), as.character(input$population_expression %||% ""), as.character)
   }, ignoreInit = TRUE)
 
@@ -1106,11 +1129,15 @@ server <- function(input, output, session) {
       if (deleted$passed) {
         workspace(deleted$workspace); refresh_tables(deleted$workspace); status("Object deleted.")
       } else showNotification(error_text(deleted$errors), type = "error")
+    } else if (!is.null(target) && identical(target$action, "new")) {
+      new_object(target$type)
+    } else if (!is.null(target) && identical(target$action, "import")) {
+      import_bundle_now(target$path)
     } else if (!is.null(target)) updateSelectInput(session, target$input_id, selected = target$id)
   })
   observeEvent(input$switch_cancel, {
     target <- pending_switch(); removeModal(); pending_switch(NULL)
-    current <- draft_identity()
+    current <- current_draft_identity()
     if (!is.null(target) && !is.null(current) && identical(target$type, current$type)) {
       updateSelectInput(session, target$input_id, selected = current$id)
     }
@@ -1134,7 +1161,13 @@ server <- function(input, output, session) {
     req(input$bundle$datapath)
     path <- input$bundle$datapath
     has_metadata <- length(workspace()$tables) + length(workspace()$populations) + length(workspace()$headers) + length(workspace()$templates) > 0L
-    if (has_metadata) {
+    if (draft_requires_guard()) {
+      pending_switch(list(action = "import", path = path))
+      showModal(modalDialog(title = "Unsaved changes",
+        "Discard the active changes before importing metadata?",
+        footer = tagList(actionButton("switch_discard", "Discard changes"),
+                         actionButton("switch_cancel", "Cancel"))))
+    } else if (has_metadata) {
       pending_bundle(path)
       showModal(modalDialog(title = "Replace workspace?",
         "Importing this bundle will replace the current workspace. Continue?",
@@ -1144,7 +1177,7 @@ server <- function(input, output, session) {
   observeEvent(input$confirm_import, { removeModal(); path <- pending_bundle(); pending_bundle(NULL); if (!is.null(path)) import_bundle_now(path) })
 
   observeEvent(input$generate, {
-    if (workspace_is_dirty(workspace())) {
+            if (draft_requires_guard()) {
       status("Save or cancel the active draft before generating SAS.")
       showNotification(status(), type = "warning")
       return()

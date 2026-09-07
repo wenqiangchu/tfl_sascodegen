@@ -226,6 +226,13 @@ testthat::test_that("draft status distinguishes clean updates and pending create
   testthat::expect_identical(workspace_draft_status(created$workspace), "create_pending")
 })
 
+testthat::test_that("canonical equality ignores UI transport type differences", {
+  testthat::expect_true(workspace_canonical_equal(NULL, ""))
+  testthat::expect_true(workspace_canonical_equal(1L, "1"))
+  testthat::expect_true(workspace_canonical_equal(list(a = NULL), list(a = "")))
+  testthat::expect_false(workspace_canonical_equal("001", "1"))
+})
+
 testthat::test_that("immediate delete does not leave a delete draft", {
   workspace <- new_metadata_workspace(workspace_fixture_bundle())
   deleted <- workspace_delete_immediate(workspace, workspace_target("population", "p2"))
