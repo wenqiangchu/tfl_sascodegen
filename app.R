@@ -206,6 +206,17 @@ server <- function(input, output, session) {
   effective_workspace <- function() {
     if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
   }
+  set_draft_path_if_changed <- function(path, value, normalize = identity) {
+    if (is.null(workspace()$active_draft)) return(FALSE)
+    draft <- workspace_draft_value(workspace())
+    old <- tryCatch(workspace_path_get(draft, path), error = function(e) NULL)
+    new <- normalize(value)
+    equal <- if (is.null(old) && (is.null(new) || identical(new, ""))) TRUE else identical(old, new)
+    if (equal) return(FALSE)
+    updated <- workspace_path_replace(draft, path, new)
+    workspace(workspace_set_draft(workspace(), updated)$workspace)
+    TRUE
+  }
   mark_ui_sync <- function(id, value) {
     expected <- session_state$ui_sync_expected
     expected[[id]] <- if (is.null(value)) "" else as.character(value)
@@ -757,38 +768,27 @@ server <- function(input, output, session) {
     current <- Filter(function(value) identical(value$id, input$table), workspace()$tables)
     if (length(current) == 1L && identical(current[[1L]]$population_id, input$table_population_id)) return()
     begin_edit("table", input$table)
-    if (!is.null(draft_target())) {
-      draft <- workspace_draft_value(workspace()); draft$population_id <- input$table_population_id
-      workspace(workspace_set_draft(workspace(), draft)$workspace)
-    }
+    set_draft_path_if_changed(list("population_id"), as.character(input$table_population_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$table_header_id, {
     if (consume_ui_sync("table_header_id", input$table_header_id)) return()
-    if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); draft$header_id <- input$table_header_id
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("header_id"), as.character(input$table_header_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$table_template_id, {
     if (consume_ui_sync("table_template_id", input$table_template_id)) return()
-    if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); draft$template_id <- input$table_template_id
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("template_id"), as.character(input$table_template_id %||% ""), as.character)
   }, ignoreInit = TRUE)
   observeEvent(input$table_custom_before, {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("table_custom_before", input$table_custom_before)) return()
     begin_edit("table", input$table)
-    if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); draft$custom_code <- draft$custom_code %||% list(); draft$custom_code$before <- if (nzchar(input$table_custom_before)) input$table_custom_before else NULL
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("custom_code", "before"), if (nzchar(input$table_custom_before %||% "")) as.character(input$table_custom_before) else NULL)
   }, ignoreInit = TRUE)
   observeEvent(input$table_custom_after, {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("table_custom_after", input$table_custom_after)) return()
     begin_edit("table", input$table)
-    if (is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace()); draft$custom_code <- draft$custom_code %||% list(); draft$custom_code$after <- if (nzchar(input$table_custom_after)) input$table_custom_after else NULL
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("custom_code", "after"), if (nzchar(input$table_custom_after %||% "")) as.character(input$table_custom_after) else NULL)
   }, ignoreInit = TRUE)
   observeEvent(input$header_source_data, {
     if (isTRUE(session_state$suppress_selection)) return()
@@ -1068,9 +1068,7 @@ server <- function(input, output, session) {
   observeEvent(input$population_expression, {
     if (consume_ui_sync("population_expression", input$population_expression)) return()
     if (is.null(input$population) || !nzchar(input$population) || is.null(draft_target())) return()
-    draft <- workspace_draft_value(workspace())
-    draft$expression <- input$population_expression
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("expression"), as.character(input$population_expression %||% ""), as.character)
   }, ignoreInit = TRUE)
 
   observeEvent(input$save, {
