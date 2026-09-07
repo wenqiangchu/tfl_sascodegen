@@ -845,8 +845,8 @@ server <- function(input, output, session) {
     else if (field == "width") value <- suppressWarnings(as.numeric(info$value))
     else value <- as.character(info$value %||% "")
     if (field %in% c("spanning_header_1", "spanning_header_2") && !nzchar(trimws(value))) value <- NULL
-    draft$columns[[row]][[field]] <- value
-    workspace(workspace_set_draft(workspace(), draft)$workspace)
+    set_draft_path_if_changed(list("columns", row, field), value,
+      if (field == "display_order") as.integer else if (field == "width") as.numeric else identity)
   })
   observeEvent(input$header_save, {
      if (identical(current_draft_status(), "update_dirty") && identical(current_draft_identity()$type, "header")) {
@@ -884,7 +884,7 @@ server <- function(input, output, session) {
       showNotification(error_text(impact$errors), type = "error")
       return()
     }
-    if (draft_requires_guard() && !identical(current_draft_identity(), list(type = type, id = id))) {
+    if (draft_requires_guard()) {
       pending_switch(list(type = type, id = id, input_id = type,
                           action = "delete", impact = impact))
       showModal(modalDialog(title = "Unsaved changes",
