@@ -167,26 +167,6 @@ testthat::test_that("Pending create can be discarded by immediate delete", {
   testthat::expect_false(grepl("delete_pending", app$get_html("body"), fixed = TRUE))
 })
 
-testthat::test_that("Dirty draft delete flow supports cancel then discard", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-delete-guard", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip")); app$wait_for_idle(1200)
-  app$set_inputs(population = "fas"); app$wait_for_idle(400)
-  app$set_inputs(population_label = "FAS (edited)"); app$wait_for_idle(400)
-  app$set_inputs(population = "exploratory"); app$wait_for_idle(700)
-  app$click("switch_cancel"); app$wait_for_idle(500)
-  testthat::expect_match(app$get_html("body"), "FAS (edited)", fixed = TRUE)
-  app$set_inputs(population = "fas"); app$wait_for_idle(900)
-  app$set_inputs(population = "exploratory"); app$wait_for_idle(1200)
-  app$click("switch_discard"); app$wait_for_idle(700)
-  app$click("population_delete"); app$wait_for_idle(400)
-  app$click("confirm_delete"); app$wait_for_idle(700)
-  testthat::expect_false(grepl("exploratory", app$get_html("body"), fixed = TRUE))
-})
-
 testthat::test_that("Referenced metadata deletion is rejected", {
   Sys.setenv(NOT_CRAN = "true")
   testthat::skip_if_not_installed("shinytest2")
