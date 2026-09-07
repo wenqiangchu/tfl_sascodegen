@@ -162,6 +162,17 @@ server <- function(input, output, session) {
   workspace <- function(value) {
     if (missing(value)) return(session_state$workspace)
     session_state$workspace <- value
+    # Keep the legacy UI helpers synchronized with the canonical workspace
+    # draft. They are compatibility state only and must never diverge.
+    draft <- value$active_draft
+    if (is.null(draft)) {
+      draft_target(NULL)
+      draft_identity(NULL)
+    } else {
+      draft_target(TRUE)
+      draft_identity(list(type = draft$target$document_type %||% draft$document_type,
+                          id = draft$target$document_id %||% draft$document_id))
+    }
     invisible(value)
   }
   status <- reactiveVal("Ready.")
@@ -177,6 +188,23 @@ server <- function(input, output, session) {
   selected_target <- reactiveVal(NULL)
   pending_bundle <- reactiveVal(NULL)
   pending_switch <- reactiveVal(NULL)
+  clean_update_draft <- function() {
+    draft <- workspace()$active_draft
+    if (!is.null(draft) && identical(draft$operation, "update") &&
+        !isTRUE(draft$dirty)) {
+      result <- application_discard_draft(workspace())
+      workspace(result$workspace)
+      return(TRUE)
+    }
+    FALSE
+  }
+  has_dirty_draft <- function() {
+    clean_update_draft()
+    workspace_is_dirty(workspace())
+  }
+  effective_workspace <- function() {
+    if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
+  }
   request_switch <- function(type, id, input_id) {
     pending_switch(list(type=type, id=id, input_id=input_id))
     showModal(modalDialog(title="Unsaved changes", "Save or discard the active draft before switching?",
@@ -189,7 +217,7 @@ server <- function(input, output, session) {
 
   refresh_tables <- function(value) {
     session_state$suppress_selection <- TRUE
-    session_state$workspace <- value
+    workspace(value)
     displayed <- if (!is.null(value$active_draft)) workspace_overlay_active_draft(value) else value
     session_state$workspace_status <- if (length(displayed$tables) > 0L) "loaded" else "empty"
     ids <- vapply(displayed$tables, `[[`, "", "id")
@@ -216,22 +244,26 @@ server <- function(input, output, session) {
   }
 
   output$population_list <- DT::renderDT({
-    data.frame(id = vapply(workspace()$populations, `[[`, "", "id"),
-               label = vapply(workspace()$populations, `[[`, "", "label"), stringsAsFactors = FALSE)
+    shown <- effective_workspace()
+    data.frame(id = vapply(shown$populations, `[[`, "", "id"),
+               label = vapply(shown$populations, `[[`, "", "label"), stringsAsFactors = FALSE)
   }, rownames = FALSE, selection = "single", options = list(dom = "t"))
   output$header_list <- DT::renderDT({
-    data.frame(id = vapply(workspace()$headers, `[[`, "", "id"), stringsAsFactors = FALSE)
+    shown <- effective_workspace()
+    data.frame(id = vapply(shown$headers, `[[`, "", "id"), stringsAsFactors = FALSE)
   }, rownames = FALSE, selection = "single", options = list(dom = "t"))
   output$table_list <- DT::renderDT({
-    data.frame(id = vapply(workspace()$tables, `[[`, "", "id"), stringsAsFactors = FALSE)
+    shown <- effective_workspace()
+    data.frame(id = vapply(shown$tables, `[[`, "", "id"), stringsAsFactors = FALSE)
   }, rownames = FALSE, selection = "single", options = list(dom = "t"))
   output$template_list <- DT::renderDT({
-    data.frame(id = vapply(workspace()$templates, `[[`, "", "id"), stringsAsFactors = FALSE)
+    shown <- effective_workspace()
+    data.frame(id = vapply(shown$templates, `[[`, "", "id"), stringsAsFactors = FALSE)
   }, rownames = FALSE, selection = "single", options = list(dom = "t"))
-  observeEvent(input$population_list_rows_selected, { i <- input$population_list_rows_selected; if (length(i)) updateSelectInput(session, "population", selected = vapply(workspace()$populations, `[[`, "", "id")[[i]]) })
-  observeEvent(input$header_list_rows_selected, { i <- input$header_list_rows_selected; if (length(i)) updateSelectInput(session, "header", selected = vapply(workspace()$headers, `[[`, "", "id")[[i]]) })
-  observeEvent(input$table_list_rows_selected, { i <- input$table_list_rows_selected; if (length(i)) updateSelectInput(session, "table", selected = vapply(workspace()$tables, `[[`, "", "id")[[i]]) })
-  observeEvent(input$template_list_rows_selected, { i <- input$template_list_rows_selected; if (length(i)) updateSelectInput(session, "template", selected = vapply(workspace()$templates, `[[`, "", "id")[[i]]) })
+  observeEvent(input$population_list_rows_selected, { i <- input$population_list_rows_selected; shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace(); ids <- vapply(shown$populations, `[[`, "", "id"); if (length(i) && i[[1L]] <= length(ids)) updateSelectInput(session, "population", selected = ids[[i[[1L]]]]) })
+  observeEvent(input$header_list_rows_selected, { i <- input$header_list_rows_selected; shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace(); ids <- vapply(shown$headers, `[[`, "", "id"); if (length(i) && i[[1L]] <= length(ids)) updateSelectInput(session, "header", selected = ids[[i[[1L]]]]) })
+  observeEvent(input$table_list_rows_selected, { i <- input$table_list_rows_selected; shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace(); ids <- vapply(shown$tables, `[[`, "", "id"); if (length(i) && i[[1L]] <= length(ids)) updateSelectInput(session, "table", selected = ids[[i[[1L]]]]) })
+  observeEvent(input$template_list_rows_selected, { i <- input$template_list_rows_selected; shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace(); ids <- vapply(shown$templates, `[[`, "", "id"); if (length(i) && i[[1L]] <= length(ids)) updateSelectInput(session, "template", selected = ids[[i[[1L]]]]) })
   output$chunk_cards <- renderUI({
     shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
     item <- Filter(function(value) identical(value$id, input$template), shown$templates)
@@ -664,7 +696,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$header, {
     if (isTRUE(session_state$suppress_selection)) return()
-    if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "header", id = input$header))) { request_switch("header", input$header, "header"); return() }
+    if (has_dirty_draft() && !identical(draft_identity(), list(type = "header", id = input$header))) { request_switch("header", input$header, "header"); return() }
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
       updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
@@ -673,7 +705,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$table, {
     if (isTRUE(session_state$suppress_selection)) return()
-    if (!is.null(draft_target()) && !identical(selected_target(), input$table)) {
+    if (has_dirty_draft() && !identical(selected_target(), input$table)) {
       request_switch("table", input$table, "table")
       return()
     }
@@ -834,7 +866,7 @@ server <- function(input, output, session) {
   observeEvent(input$template, {
     if (isTRUE(session_state$suppress_selection)) return()
     if (is.null(input$template) || !nzchar(input$template)) return()
-    if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "template", id = input$template))) { request_switch("template", input$template, "template"); return() }
+    if (has_dirty_draft() && !identical(draft_identity(), list(type = "template", id = input$template))) { request_switch("template", input$template, "template"); return() }
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) == 1L && is.null(draft_target())) {
       body <- item[[1L]]$body %||% list()
@@ -943,7 +975,7 @@ server <- function(input, output, session) {
 
   observeEvent(list(input$population, workspace()), {
     if (isTRUE(session_state$suppress_selection)) return()
-    if (!is.null(draft_target()) && !identical(draft_identity(), list(type = "population", id = input$population))) { request_switch("population", input$population, "population"); return() }
+    if (has_dirty_draft() && !identical(draft_identity(), list(type = "population", id = input$population))) { request_switch("population", input$population, "population"); return() }
     id <- input$population
     if (is.null(id) || !nzchar(id)) return()
     item <- Filter(function(value) identical(value$id, id), workspace()$populations)
