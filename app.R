@@ -217,6 +217,18 @@ server <- function(input, output, session) {
     session_state$ui_sync_expected[[id]] <- NULL
     identical(expected, if (is.null(value)) "" else as.character(value))
   }
+  sync_text_input <- function(id, value) {
+    mark_ui_sync(id, value)
+    updateTextInput(session, id, value = value %||% "")
+  }
+  sync_text_area <- function(id, value) {
+    mark_ui_sync(id, value)
+    updateTextAreaInput(session, id, value = value %||% "")
+  }
+  sync_numeric_input <- function(id, value) {
+    mark_ui_sync(id, value)
+    updateNumericInput(session, id, value = value)
+  }
   request_switch <- function(type, id, input_id) {
     pending_switch(list(type=type, id=id, input_id=input_id))
     showModal(modalDialog(title="Unsaved changes", "Save or discard the active draft before switching?",
@@ -717,7 +729,7 @@ server <- function(input, output, session) {
     if (has_dirty_draft() && !identical(draft_identity(), list(type = "header", id = input$header))) { request_switch("header", input$header, "header"); return() }
     item <- Filter(function(value) identical(value$id, input$header), session_state$workspace$headers)
     if (length(item) == 1L && is.null(draft_target())) {
-      updateTextInput(session, "header_source_data", value = item[[1L]]$source_data)
+      sync_text_input("header_source_data", item[[1L]]$source_data)
     }
   }, ignoreInit = FALSE)
 
@@ -731,16 +743,17 @@ server <- function(input, output, session) {
     selected_target(input$table)
     item <- Filter(function(value) identical(value$id, input$table), session_state$workspace$tables)
     if (length(item) == 1L && is.null(draft_target())) {
-      updateTextInput(session, "table_population_id", value = item[[1L]]$population_id)
-      updateTextInput(session, "table_header_id", value = item[[1L]]$header_id)
-      updateTextInput(session, "table_template_id", value = item[[1L]]$template_id)
+      sync_text_input("table_population_id", item[[1L]]$population_id)
+      sync_text_input("table_header_id", item[[1L]]$header_id)
+      sync_text_input("table_template_id", item[[1L]]$template_id)
       custom_code <- item[[1L]]$custom_code %||% list()
-      updateTextAreaInput(session, "table_custom_before", value = custom_code$before %||% "")
-      updateTextAreaInput(session, "table_custom_after", value = custom_code$after %||% "")
+      sync_text_area("table_custom_before", custom_code$before)
+      sync_text_area("table_custom_after", custom_code$after)
     }
   }, ignoreInit = FALSE)
   observeEvent(input$table_population_id, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("table_population_id", input$table_population_id)) return()
     current <- Filter(function(value) identical(value$id, input$table), workspace()$tables)
     if (length(current) == 1L && identical(current[[1L]]$population_id, input$table_population_id)) return()
     begin_edit("table", input$table)
@@ -750,17 +763,20 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = TRUE)
   observeEvent(input$table_header_id, {
+    if (consume_ui_sync("table_header_id", input$table_header_id)) return()
     if (is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace()); draft$header_id <- input$table_header_id
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
   observeEvent(input$table_template_id, {
+    if (consume_ui_sync("table_template_id", input$table_template_id)) return()
     if (is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace()); draft$template_id <- input$table_template_id
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   }, ignoreInit = TRUE)
   observeEvent(input$table_custom_before, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("table_custom_before", input$table_custom_before)) return()
     begin_edit("table", input$table)
     if (is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace()); draft$custom_code <- draft$custom_code %||% list(); draft$custom_code$before <- if (nzchar(input$table_custom_before)) input$table_custom_before else NULL
@@ -768,6 +784,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   observeEvent(input$table_custom_after, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("table_custom_after", input$table_custom_after)) return()
     begin_edit("table", input$table)
     if (is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace()); draft$custom_code <- draft$custom_code %||% list(); draft$custom_code$after <- if (nzchar(input$table_custom_after)) input$table_custom_after else NULL
@@ -775,6 +792,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   observeEvent(input$header_source_data, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("header_source_data", input$header_source_data)) return()
     current <- Filter(function(value) identical(value$id, input$header), workspace()$headers)
     if (length(current) == 1L && identical(current[[1L]]$source_data, input$header_source_data)) return()
     begin_edit("header", input$header)
@@ -907,11 +925,12 @@ server <- function(input, output, session) {
     item <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(item) == 1L && is.null(draft_target())) {
       body <- item[[1L]]$body %||% list()
-      updateTextInput(session, "template_stub_header", value = body$stub_header %||% "")
+      sync_text_input("template_stub_header", body$stub_header)
     }
   }, ignoreInit = FALSE)
   observeEvent(input$template_stub_header, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("template_stub_header", input$template_stub_header)) return()
     current <- Filter(function(value) identical(value$id, input$template), workspace()$templates)
     if (length(current) == 1L && identical(current[[1L]]$body$stub_header %||% "", input$template_stub_header)) return()
     begin_edit("template", input$template)
@@ -929,25 +948,26 @@ server <- function(input, output, session) {
     if (is.null(input$chunk) || !nzchar(input$chunk)) return()
     item <- find_chunk(workspace(), input$chunk)
     if (length(item) == 1L && is.null(draft_target())) {
-      updateTextInput(session, "chunk_source_data", value = item[[1L]]$source_data)
-      updateTextInput(session, "chunk_filter", value = item[[1L]]$filter %||% "")
+      sync_text_input("chunk_source_data", item[[1L]]$source_data)
+      sync_text_input("chunk_filter", item[[1L]]$filter)
       rows <- item[[1L]]$rows %||% list()
       if (length(rows) == 0L) {
-        updateTextInput(session, "chunk_row_label", value = "")
-        updateTextInput(session, "chunk_statistic_id", value = "")
-        updateNumericInput(session, "chunk_statistic_digits", value = NA)
+        sync_text_input("chunk_row_label", "")
+        sync_text_input("chunk_statistic_id", "")
+        sync_numeric_input("chunk_statistic_digits", NA)
         return()
       }
       row <- rows[[1L]]
-      updateTextInput(session, "chunk_row_label", value = row$label %||% "")
+      sync_text_input("chunk_row_label", row$label)
       statistics <- row$statistics %||% list()
       statistic <- if (length(statistics) > 0L) statistics[[1L]] else list()
-      updateTextInput(session, "chunk_statistic_id", value = statistic$id %||% "")
-      updateNumericInput(session, "chunk_statistic_digits", value = statistic$digits %||% NA)
+      sync_text_input("chunk_statistic_id", statistic$id)
+      sync_numeric_input("chunk_statistic_digits", statistic$digits %||% NA)
     }
   }, ignoreInit = FALSE)
   observeEvent(input$chunk_source_data, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("chunk_source_data", input$chunk_source_data)) return()
     begin_edit("chunk", input$chunk)
     if (!is.null(draft_target())) {
       draft <- workspace_draft_value(workspace()); draft$source_data <- input$chunk_source_data
@@ -1004,6 +1024,7 @@ server <- function(input, output, session) {
   observeEvent(input$chunk_up, chunk_operation("up"))
   observeEvent(input$chunk_down, chunk_operation("down"))
   observeEvent(input$chunk_filter, {
+    if (consume_ui_sync("chunk_filter", input$chunk_filter)) return()
     if (is.null(input$chunk) || !nzchar(input$chunk) || is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace())
     draft$filter <- if (nzchar(input$chunk_filter)) input$chunk_filter else NULL
@@ -1018,13 +1039,14 @@ server <- function(input, output, session) {
     if (is.null(id) || !nzchar(id)) return()
     item <- Filter(function(value) identical(value$id, id), workspace()$populations)
     if (length(item) == 1L && is.null(draft_target())) {
-      updateTextInput(session, "population_label", value = item[[1L]]$label)
-      updateTextInput(session, "population_expression", value = item[[1L]]$expression)
+      sync_text_input("population_label", item[[1L]]$label)
+      sync_text_input("population_expression", item[[1L]]$expression)
     }
   }, ignoreInit = FALSE)
 
   observeEvent(input$population_label, {
     if (isTRUE(session_state$suppress_selection)) return()
+    if (consume_ui_sync("population_label", input$population_label)) return()
     current <- Filter(function(value) identical(value$id, input$population), workspace()$populations)
     if (length(current) == 1L && identical(current[[1L]]$label, input$population_label)) return()
     if (is.null(input$population) || !nzchar(input$population)) return()
@@ -1041,6 +1063,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$population_expression, {
+    if (consume_ui_sync("population_expression", input$population_expression)) return()
     if (is.null(input$population) || !nzchar(input$population) || is.null(draft_target())) return()
     draft <- workspace_draft_value(workspace())
     draft$expression <- input$population_expression
