@@ -671,7 +671,7 @@ server <- function(input, output, session) {
   })
 
   update_template_chunk_field <- function(index, field, value) {
-    if (isTRUE(session_state$suppress_selection) || is.null(input$template)) return()
+    if (isTRUE(session_state$suppress_selection) || is.null(input$template) || is.null(value)) return()
     if (is.null(value)) return()
     shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
     item <- Filter(function(x) identical(x$id, input$template), shown$templates)
@@ -1091,7 +1091,7 @@ server <- function(input, output, session) {
   }, ignoreInit = FALSE)
 
   observeEvent(input$population_label, {
-    if (isTRUE(session_state$suppress_selection)) return()
+    if (isTRUE(session_state$suppress_selection) || is.null(input$population_label)) return()
     if (consume_ui_sync("population_label", input$population_label)) return()
     current <- Filter(function(value) identical(value$id, input$population), workspace()$populations)
     if (is.null(input$population) || !nzchar(input$population)) return()
@@ -1111,6 +1111,7 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
 
   observeEvent(input$population_expression, {
+    if (is.null(input$population_expression)) return()
     if (consume_ui_sync("population_expression", input$population_expression)) return()
     if (is.null(input$population) || !nzchar(input$population) || is.null(workspace()$active_draft)) return()
     set_draft_path_if_changed(list("expression"), as.character(input$population_expression %||% ""), as.character)
