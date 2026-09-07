@@ -506,7 +506,7 @@ server <- function(input, output, session) {
         d <- workspace_draft_value(workspace()); if (info$row > length(d$body$chunks[[i]]$rows %||% list())) return()
         if (info$col == 3L) d$body$chunks[[i]]$rows[[info$row]]$label <- as.character(info$value)
         if (info$col == 4L) d$body$chunks[[i]]$rows[[info$row]]$indent_level <- as.integer(info$value)
-        workspace(workspace_set_draft(workspace(), d)$workspace)
+        if (info$col %in% c(3L, 4L)) set_draft_path_if_changed(list("body", "chunks", i, "rows"), d$body$chunks[[i]]$rows)
       }, ignoreInit = TRUE)
       for (r in seq_along(chunks[[i]]$rows %||% list())) {
         local_r <- r
@@ -517,7 +517,7 @@ server <- function(input, output, session) {
           if (info$row > length(st)) return()
           if (info$col == 2L) st[[info$row]]$digits <- suppressWarnings(as.numeric(info$value))
           d$body$chunks[[i]]$rows[[local_r]]$statistics <- st
-          workspace(workspace_set_draft(workspace(), d)$workspace)
+          if (info$col == 2L) set_draft_path_if_changed(list("body", "chunks", i, "rows", local_r, "statistics"), st)
         }, ignoreInit = TRUE)
       }
       if (identical(chunks[[i]]$type, "hierarchical_summary")) {
@@ -535,9 +535,13 @@ server <- function(input, output, session) {
           begin_edit("template", input$template); if (is.null(draft_target())) return()
           d <- workspace_draft_value(workspace()); lv <- d$body$chunks[[i]]$levels %||% list(); if (info$row > length(lv)) return()
           fields <- c("variable","label_variable","order_variable","order_direction","node_role","node_analysis_id","missing_policy","missing_label")
-          if (info$col >= 2L && info$col <= 9L) lv[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
-          if (info$col == 10L) lv[[info$row]]$parent_level <- as.character(info$value)
-          d$body$chunks[[i]]$levels <- lv; workspace(workspace_set_draft(workspace(), d)$workspace)
+          if (info$col >= 2L && info$col <= 9L) {
+            lv[[info$row]][[fields[[info$col - 1L]]]] <- as.character(info$value)
+          }
+          if (info$col == 10L) lv[[info$row]]$parent_level <- if (nzchar(as.character(info$value %||% ""))) as.character(info$value) else NULL
+          if (info$col >= 2L && info$col <= 10L) {
+            set_draft_path_if_changed(list("body", "chunks", i, "levels"), lv)
+          }
         }, ignoreInit = TRUE)
         observeEvent(input[[paste0(p, "blocks_cell_edit")]], {
           info <- input[[paste0(p, "blocks_cell_edit")]]; if (is.null(info)) return()
@@ -548,9 +552,10 @@ server <- function(input, output, session) {
           if (info$col >= 7L && info$col <= 10L) {
             bl[[info$row]]$denominator <- bl[[info$row]]$denominator %||% list()
             df <- c("scope", "unit", "variable", "expression")
-            bl[[info$row]]$denominator[[df[[info$col - 6L]]]] <- as.character(info$value)
+            value <- as.character(info$value %||% "")
+            bl[[info$row]]$denominator[[df[[info$col - 6L]]]] <- if (nzchar(value)) value else NULL
           }
-          d$body$chunks[[i]]$analysis_blocks <- bl; workspace(workspace_set_draft(workspace(), d)$workspace)
+          if (info$col >= 2L && info$col <= 10L) set_draft_path_if_changed(list("body", "chunks", i, "analysis_blocks"), bl)
         }, ignoreInit = TRUE)
         observeEvent(input[[paste0(p, "block_type")]], {
           sel <- input[[paste0(p, "blocks_rows_selected")]]
