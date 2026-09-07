@@ -269,6 +269,7 @@ server <- function(input, output, session) {
 
   refresh_tables <- function(value) {
     session_state$suppress_selection <- TRUE
+    session_state$initialized <- FALSE
     # Detail inputs are also refreshed below; keep them suppressed until the
     # next flush so stale browser values cannot start a draft.
     session_state$ui_sync_generation <- (session_state$ui_sync_generation %||% 0L) + 1L
