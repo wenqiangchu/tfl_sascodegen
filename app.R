@@ -1048,8 +1048,11 @@ server <- function(input, output, session) {
     if (isTRUE(session_state$suppress_selection)) return()
     if (consume_ui_sync("population_label", input$population_label)) return()
     current <- Filter(function(value) identical(value$id, input$population), workspace()$populations)
-    if (length(current) == 1L && identical(current[[1L]]$label, input$population_label)) return()
     if (is.null(input$population) || !nzchar(input$population)) return()
+    if (!is.null(draft_target())) {
+      draft_current <- workspace_draft_value(workspace())
+      if (identical(as.character(draft_current$label %||% ""), as.character(input$population_label %||% ""))) return()
+    } else if (length(current) == 1L && identical(as.character(current[[1L]]$label %||% ""), as.character(input$population_label %||% ""))) return()
     current <- workspace()
     if (is.null(draft_target())) {
       begun <- workspace_begin_draft(current, "population", input$population)

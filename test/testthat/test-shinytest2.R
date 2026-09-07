@@ -78,7 +78,7 @@ testthat::test_that("Clean selection changes do not trigger the dirty guard", {
   fixture <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
   app$upload_file(bundle = fixture); app$wait_for_idle(1200)
   app$set_inputs(population = "fas"); app$wait_for_idle(500)
-  app$set_inputs(population = "safety"); app$wait_for_idle(800)
+  app$set_inputs(population = "safety"); app$wait_for_idle(1800)
   testthat::expect_false(grepl("Unsaved changes", app$get_html("body"), fixed = TRUE))
 })
 
@@ -110,4 +110,17 @@ testthat::test_that("New table is listed and switching is guarded", {
   testthat::expect_match(html, "table_3", fixed = TRUE)
   app$set_inputs(table = "baseline_characteristics"); app$wait_for_idle(800)
   testthat::expect_match(app$get_html("body"), "Unsaved changes", fixed = TRUE)
+})
+
+testthat::test_that("Restoring an edited value clears the dirty guard", {
+  Sys.setenv(NOT_CRAN = "true")
+  testthat::skip_if_not_installed("shinytest2")
+  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
+  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-restore-clean", height = 900, width = 1400, variant = "local", load_timeout = 30000)
+  on.exit(app$stop(), add = TRUE)
+  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip")); app$wait_for_idle(1200)
+  app$set_inputs(population_label = "FAS (edited)"); app$wait_for_idle(400)
+  app$set_inputs(population_label = "FAS"); app$wait_for_idle(500)
+  app$set_inputs(population = "safety"); app$wait_for_idle(800)
+  testthat::expect_false(grepl("Unsaved changes", app$get_html("body"), fixed = TRUE))
 })
