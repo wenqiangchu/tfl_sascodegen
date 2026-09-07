@@ -683,6 +683,23 @@ server <- function(input, output, session) {
     draft <- workspace_draft_value(workspace()); draft$body$chunks[[index]][[field]] <- value
     workspace(workspace_set_draft(workspace(), draft)$workspace)
   }
+  update_template_chunk_path <- function(index, path, value, normalize = identity) {
+    if (isTRUE(session_state$suppress_selection) || is.null(input$template) || is.null(value)) return()
+    shown <- effective_workspace()
+    item <- Filter(function(x) identical(x$id, input$template), shown$templates)
+    if (length(item) != 1L) return()
+    chunks <- item[[1L]]$body$chunks %||% list()
+    if (index > length(chunks)) return()
+    old <- tryCatch(workspace_path_get(chunks[[index]], path), error = function(e) NULL)
+    new <- normalize(value)
+    if (workspace_canonical_equal(old, new)) return()
+    begin_edit("template", input$template)
+    if (is.null(workspace()$active_draft)) return()
+    draft <- workspace_draft_value(workspace())
+    updated <- workspace_path_replace(draft$body$chunks[[index]], path, new)
+    draft$body$chunks[[index]] <- updated
+    workspace(workspace_set_draft(workspace(), draft)$workspace)
+  }
   observe({
     req(input$template)
     shown <- if (!is.null(workspace()$active_draft)) workspace_overlay_active_draft(workspace()) else workspace()
@@ -693,6 +710,16 @@ server <- function(input, output, session) {
       update_template_chunk_field(i, "source_data", input[[paste0(p, "source_data")]])
       update_template_chunk_field(i, "filter", if (nzchar(input[[paste0(p, "filter")]] %||% "")) input[[paste0(p, "filter")]] else NULL)
       if (identical(ch$type, "continuous_summary")) update_template_chunk_field(i, "analysis_variable", input[[paste0(p, "analysis_variable")]])
+      if (identical(ch$type, "hierarchical_summary")) {
+        update_template_chunk_path(i, c("source_contract", "grain"), input[[paste0(p, "sc_grain")]])
+        update_template_chunk_path(i, c("source_contract", "subject_key"), input[[paste0(p, "sc_subject_key")]])
+        record_key_text <- as.character(input[[paste0(p, "sc_record_key")]] %||% "")
+        record_keys <- if (length(record_key_text) && nzchar(record_key_text)) strsplit(record_key_text, "\\s*,\\s*")[[1L]] else character()
+        update_template_chunk_path(i, c("source_contract", "record_key"),
+          record_keys,
+          function(x) { x <- x[nzchar(x)]; x })
+        update_template_chunk_path(i, c("source_contract", "duplicate_policy"), input[[paste0(p, "sc_duplicate_policy")]])
+      }
       if (ch$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
         den <- ch$denominator %||% list()
         vals <- list(scope = input[[paste0(p, "den_scope")]],
