@@ -45,6 +45,19 @@ workspace_is_dirty <- function(workspace) {
   !is.null(workspace$active_draft) && isTRUE(workspace$active_draft$dirty)
 }
 
+# Canonical draft state used by adapters to distinguish a real edit from an
+# update draft whose value was returned to its saved base.
+workspace_draft_status <- function(workspace) {
+  if (!is_workspace(workspace)) stop("workspace must be a MetadataWorkspace.", call. = FALSE)
+  draft <- workspace$active_draft
+  if (is.null(draft)) return("none")
+  if (identical(draft$operation, "create")) return("create_pending")
+  if (identical(draft$operation, "update") && !isTRUE(draft$dirty)) return("update_clean")
+  if (identical(draft$operation, "update")) return("update_dirty")
+  if (identical(draft$operation, "delete")) return("delete_pending")
+  "unknown"
+}
+
 workspace_same_target <- function(left, right) {
   fields <- c("document_type", "document_id", "template_id", "chunk_id",
               "level_id", "analysis_id", "row_id", "parent_id")

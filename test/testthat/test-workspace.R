@@ -214,6 +214,18 @@ testthat::test_that("referenced top-level objects cannot be deleted", {
   testthat::expect_identical(workspace_revision(deleted$workspace), 1L)
 })
 
+testthat::test_that("draft status distinguishes clean updates and pending creates", {
+  workspace <- new_metadata_workspace(workspace_fixture_bundle())
+  testthat::expect_identical(workspace_draft_status(workspace), "none")
+  begun <- workspace_begin_draft(workspace, "population", "p1")
+  testthat::expect_identical(workspace_draft_status(begun$workspace), "update_clean")
+  updated <- workspace_set_draft(begun$workspace, workspace_draft_value(begun$workspace))
+  testthat::expect_identical(workspace_draft_status(updated$workspace), "update_clean")
+  created <- workspace_begin_draft(workspace, "population", "p_new", operation = "create",
+                                    value = list(id = "p_new", label = "New", expression = "1"))
+  testthat::expect_identical(workspace_draft_status(created$workspace), "create_pending")
+})
+
 testthat::test_that("position IDs and hierarchical references are rebuilt together", {
   reindexed <- workspace_reindex_bundle_positions(workspace_fixture_bundle())
   chunks <- reindexed$templates[[1L]]$body$chunks
