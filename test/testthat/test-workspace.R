@@ -231,6 +231,9 @@ testthat::test_that("canonical equality ignores UI transport type differences", 
   testthat::expect_true(workspace_canonical_equal(1L, "1"))
   testthat::expect_true(workspace_canonical_equal(list(a = NULL), list(a = "")))
   testthat::expect_false(workspace_canonical_equal("001", "1"))
+  testthat::expect_true(workspace_canonical_equal(numeric(), numeric()))
+  testthat::expect_true(workspace_canonical_equal(NA_character_, ""))
+  testthat::expect_true(workspace_canonical_equal(list(a = numeric()), list(a = numeric())))
 })
 
 testthat::test_that("immediate delete does not leave a delete draft", {
