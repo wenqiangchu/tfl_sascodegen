@@ -22,7 +22,10 @@ Template UI caches assign session-local `ui_uid` values to chunks,
 hierarchical levels, and analysis blocks. These identities are retained across
 reordering and structural edits, are used as card/editor DOM identities, and
 are removed before canonical comparison or YAML/workspace save. Rows and
-statistics remain position-based until their DT editor migration.
+statistics remain position-based. Primitive chunk rows and statistics are
+rendered as editable DT tables; cell edits stay in session-local caches and
+are collected only at editor boundaries, then rebuilt as canonical nested
+rows/statistics metadata.
 
 ## Boundary behavior
 

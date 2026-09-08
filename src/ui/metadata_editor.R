@@ -205,6 +205,8 @@ metadata_editor_server <- function(input, output, session) {
   pending_seed <- reactiveVal(NULL)
   header_table <- reactiveVal(NULL)
   template_value <- reactiveVal(NULL)
+  row_table_cache <- reactiveVal(list())
+  statistic_table_cache <- reactiveVal(list())
   status <- reactiveVal("Ready.")
   source_text <- reactiveVal("")
   suppress_navigation <- reactiveVal(FALSE)
@@ -234,6 +236,30 @@ metadata_editor_server <- function(input, output, session) {
     if (grepl("^[+-][0-9]+$", x)) x else suppressWarnings(as.integer(x))
   }
   collect_rows <- function(rows, prefix) {
+    cache_key <- sub("_$", "", prefix)
+    cached <- row_table_cache()[[cache_key]]
+    if (!is.null(cached) && nrow(cached)) {
+      original_rows <- rows
+      rows <- lapply(seq_len(nrow(cached)), function(i) {
+        z <- as.list(cached[i, , drop = FALSE])
+        z$id <- as.character(z$id); z$type <- as.character(z$type)
+        z$label <- as.character(z$label)
+        z$indent_level <- suppressWarnings(as.integer(z$indent_level))
+        if (is.na(z$indent_level)) z$indent_level <- 0L
+        z$condition <- trim_optional(z$condition)
+        z$cell_format <- as.character(z$cell_format %||% "")
+        stats <- statistic_table_cache()[[paste0(cache_key, "_", z$id)]]
+        z$statistics <- if (!is.null(stats) && nrow(stats)) {
+          lapply(seq_len(nrow(stats)), function(j) {
+            s <- list(id = as.character(stats$statistic_id[[j]]))
+            d <- normalize_stat_digits(stats$digits[[j]])
+            if (!is.null(d)) s$digits <- d
+            s
+          })
+        } else original_rows[[i]]$statistics %||% list()
+        z
+      })
+    }
     lapply(seq_along(rows %||% list()), function(r) {
       old <- rows[[r]]; p <- paste0(prefix, "row_", r, "_")
       value <- list(id=old$id, type=old$type,
@@ -366,6 +392,7 @@ metadata_editor_server <- function(input, output, session) {
     }
     if (type=="template") {
       template_value(decorate_template_ui_ids(clone_metadata_value(value)))
+      row_table_cache(list()); statistic_table_cache(list())
       updateTextInput(session,"template_stub_header",value=value$body$stub_header %||% "")
     }
     select_list_row(type,id)
@@ -379,7 +406,7 @@ metadata_editor_server <- function(input, output, session) {
     pending_seed(if (identical(operation,"create")) clone_metadata_value(seed) else NULL)
     render_editor(type,id,seed)
   }
-  clear_editor <- function() { active_editor(NULL); active_draft(NULL); pending_seed(NULL); header_table(NULL); template_value(NULL) }
+  clear_editor <- function() { active_editor(NULL); active_draft(NULL); pending_seed(NULL); header_table(NULL); template_value(NULL); row_table_cache(list()); statistic_table_cache(list()) }
   refresh_lists <- function() {
     ids <- list_ids("table")
     selected <- isolate(input$generate_table) %||% ""
@@ -575,8 +602,12 @@ metadata_editor_server <- function(input, output, session) {
         },rownames=FALSE,selection="single",options=list(dom="t",ordering=FALSE))
       } else {
         output[[paste0(p,"rows")]] <- DT::renderDT({
-          data.frame(id=vapply(chunk$rows %||% list(),function(x)x$id,character(1)),stringsAsFactors=FALSE)
-        },rownames=FALSE,selection="single",options=list(dom="t",ordering=FALSE))
+          data.frame(id=vapply(chunk$rows %||% list(),function(x)x$id,character(1)),type=vapply(chunk$rows %||% list(),function(x)x$type %||% "analysis",character(1)),label=vapply(chunk$rows %||% list(),function(x)x$label %||% "",character(1)),indent_level=vapply(chunk$rows %||% list(),function(x)as.integer(x$indent_level %||% 0L),integer(1)),condition=vapply(chunk$rows %||% list(),function(x)x$condition %||% "",character(1)),cell_format=vapply(chunk$rows %||% list(),function(x)x$cell_format %||% "",character(1)),stringsAsFactors=FALSE)
+        },editable=TRUE,rownames=FALSE,selection="single",options=list(dom="t",ordering=FALSE))
+        output[[paste0(p,"statistics")]] <- DT::renderDT({
+          rows <- chunk$rows %||% list(); data <- do.call(rbind,lapply(rows,function(r) if(length(r$statistics %||% list())) data.frame(row_id=r$id,statistic_id=vapply(r$statistics, function(s)s$id,character(1)),digits=vapply(r$statistics,function(s)as.character(s$digits %||% ""),character(1)),stringsAsFactors=FALSE)))
+          if(is.null(data)) data <- data.frame(row_id=character(),statistic_id=character(),digits=character(),stringsAsFactors=FALSE); data
+        },editable=TRUE,rownames=FALSE,options=list(dom="t",ordering=FALSE))
       }
     }
   })
@@ -593,6 +624,18 @@ metadata_editor_server <- function(input, output, session) {
       register_once(paste0("chunk-",index,"-delete"),function() observeEvent(input[[paste0("chunk_",index,"_delete")]],mutate_template(function(x){x$body$chunks<-x$body$chunks[-index];x}),ignoreInit=TRUE))
       register_once(paste0("chunk-",index,"-up"),function() observeEvent(input[[paste0("chunk_",index,"_up")]],mutate_template(function(x){x$body$chunks<-move_item(x$body$chunks,index,"up");x}),ignoreInit=TRUE))
       register_once(paste0("chunk-",index,"-down"),function() observeEvent(input[[paste0("chunk_",index,"_down")]],mutate_template(function(x){x$body$chunks<-move_item(x$body$chunks,index,"down");x}),ignoreInit=TRUE))
+      register_once(paste0("chunk-", index, "-rows-edit"), function() observeEvent(input[[paste0("chunk_", index, "_rows_cell_edit")]], {
+        info <- input[[paste0("chunk_", index, "_rows_cell_edit")]]; value <- template_value(); chunk <- value$body$chunks[[index]]
+        rows <- chunk$rows %||% list(); data <- data.frame(id=vapply(rows,function(x)x$id,character(1)),type=vapply(rows,function(x)x$type %||% "analysis",character(1)),label=vapply(rows,function(x)x$label %||% "",character(1)),indent_level=vapply(rows,function(x)as.integer(x$indent_level %||% 0L),integer(1)),condition=vapply(rows,function(x)x$condition %||% "",character(1)),cell_format=vapply(rows,function(x)x$cell_format %||% "",character(1)),stringsAsFactors=FALSE)
+        row <- as.integer(info$row); col <- as.integer(info$col) + 1L; if(row >= 1L && row <= nrow(data) && col >= 2L && col <= ncol(data)) data[row,col] <- if(col == 4L) suppressWarnings(as.integer(info$value)) else as.character(info$value)
+        cache <- row_table_cache(); cache[[paste0("chunk_", index, "_rows")]] <- data; row_table_cache(cache)
+      }, ignoreInit=TRUE))
+      register_once(paste0("chunk-", index, "-statistics-edit"), function() observeEvent(input[[paste0("chunk_", index, "_statistics_cell_edit")]], {
+        info <- input[[paste0("chunk_", index, "_statistics_cell_edit")]]; value <- template_value(); chunk <- value$body$chunks[[index]]; rows <- chunk$rows %||% list()
+        data <- do.call(rbind,lapply(rows,function(r) if(length(r$statistics %||% list())) data.frame(row_id=r$id,statistic_id=vapply(r$statistics,function(s)s$id,character(1)),digits=vapply(r$statistics,function(s)as.character(s$digits %||% ""),character(1)),stringsAsFactors=FALSE))); if(is.null(data)) return()
+        row <- as.integer(info$row); col <- as.integer(info$col)+1L; if(row>=1L&&row<=nrow(data)&&col==3L)data[row,col]<-as.character(info$value)
+        cache<-statistic_table_cache(); for (rid in unique(data$row_id)) cache[[paste0("chunk_",index,"_rows_",rid)]] <- data[data$row_id == rid,,drop=FALSE]; statistic_table_cache(cache)
+      }, ignoreInit=TRUE))
       for(kind in c("row","level","block")) for(action in c("new","delete","up","down")) local({k<-kind;a<-action
         register_once(paste0("chunk-",index,"-",k,"-",a),function() observeEvent(input[[paste0("chunk_",index,"_",k,"_",a)]],{
           mutate_template(function(x){ch<-x$body$chunks[[index]]; field<-switch(k,row="rows",level="levels",block="analysis_blocks");items<-ch[[field]] %||% list(); selected<-input[[paste0("chunk_",index,"_",field,"_rows_selected")]]; pos<-if(length(selected))selected[[1L]] else length(items)
@@ -631,8 +674,8 @@ chunk_row_ui <- function(row,prefix,index) {
   chunk_card_ui <- function(chunk,index) {
   p<-paste0("chunk_",index,"_"); uid <- chunk$ui_uid %||% sprintf("chunk_%06d", index)
   common<-tagList(readonly_editor_input(paste0(p,"id"),"ID",chunk$id),readonly_editor_input(paste0(p,"type"),"Type",chunk$type),tags$small(class="text-muted",paste("UI identity:",uid)),textInput(paste0(p,"source_data"),"Source data",chunk$source_data %||% ""),textInput(paste0(p,"filter"),"Filter",chunk$filter %||% ""),actionButton(paste0(p,"delete"),"Delete chunk"),actionButton(paste0(p,"up"),"Move up"),actionButton(paste0(p,"down"),"Move down"))
-  if(chunk$type=="continuous_summary")specific<-tagList(textInput(paste0(p,"analysis_variable"),"Analysis variable",chunk$analysis_variable %||% ""),collection_buttons(p,"row","rows"),tagList(lapply(seq_along(chunk$rows %||% list()),function(r)chunk_row_ui(chunk$rows[[r]],p,r))))
-  else if(chunk$type%in%c("categorical_summary_nonexclusive","categorical_summary_exclusive"))specific<-tagList(selectInput(paste0(p,"den_type"),"Denominator type",c("header_population","non_missing","custom"),selected=chunk$denominator$type),textInput(paste0(p,"den_variable"),"Denominator variable",chunk$denominator$variable %||% ""),textInput(paste0(p,"den_expression"),"Denominator expression",chunk$denominator$expression %||% ""),collection_buttons(p,"row","rows"),tagList(lapply(seq_along(chunk$rows %||% list()),function(r)chunk_row_ui(chunk$rows[[r]],p,r))))
+  if(chunk$type=="continuous_summary")specific<-tagList(textInput(paste0(p,"analysis_variable"),"Analysis variable",chunk$analysis_variable %||% ""),collection_buttons(p,"row","rows"),DTOutput(paste0(p,"statistics")))
+  else if(chunk$type%in%c("categorical_summary_nonexclusive","categorical_summary_exclusive"))specific<-tagList(selectInput(paste0(p,"den_type"),"Denominator type",c("header_population","non_missing","custom"),selected=chunk$denominator$type),textInput(paste0(p,"den_variable"),"Denominator variable",chunk$denominator$variable %||% ""),textInput(paste0(p,"den_expression"),"Denominator expression",chunk$denominator$expression %||% ""),collection_buttons(p,"row","rows"),DTOutput(paste0(p,"statistics")))
   else { sc<-chunk$source_contract %||% list(); specific<-tagList(h4("Source contract"),selectInput(paste0(p,"grain"),"Grain",c("subject","record","observation"),selected=sc$grain),textInput(paste0(p,"subject_key"),"Subject key",sc$subject_key %||% ""),textInput(paste0(p,"record_key"),"Record key",paste(sc$record_key %||% character(),collapse=", ")),selectInput(paste0(p,"duplicate_policy"),"Duplicate policy",c("error","first","last"),selected=sc$duplicate_policy),h4("Levels"),collection_buttons(p,"level","levels"),tagList(lapply(seq_along(chunk$levels %||% list()),function(j)level_ui(chunk$levels[[j]],p,j,chunk))),h4("Analysis blocks"),collection_buttons(p,"block","analysis_blocks"),tagList(lapply(seq_along(chunk$analysis_blocks %||% list()),function(b)block_ui(chunk$analysis_blocks[[b]],p,b,chunk)))) }
   box(id=paste0("chunk-card-", uid), title=paste("Chunk",index,chunk$id),width=12,status="info",solidHeader=TRUE,common,specific)
 }
@@ -641,4 +684,4 @@ collection_buttons <- function(prefix,kind,table_name) tagList(actionButton(past
 
 level_ui <- function(level,prefix,index,chunk) { p<-paste0(prefix,"level_",index,"_"); ids<-vapply(chunk$levels %||% list(),function(x)x$id,character(1)); tags$div(class="well",tags$small(class="text-muted",paste("UI identity:",level$ui_uid %||% "")),readonly_editor_input(paste0(p,"id"),"Level ID",level$id),selectInput(paste0(p,"parent_level"),"Parent level",c("",ids),selected=level$parent_level %||% ""),textInput(paste0(p,"variable"),"Variable",level$variable),textInput(paste0(p,"label_variable"),"Label variable",level$label_variable %||% ""),textInput(paste0(p,"order_variable"),"Order variable",level$order_variable),selectInput(paste0(p,"order_direction"),"Order direction",c("asc","desc"),selected=level$order_direction),selectInput(paste0(p,"node_role"),"Node role",c("label","analysis"),selected=level$node_role),textInput(paste0(p,"node_analysis_id"),"Node analysis ID",level$node_analysis_id %||% ""),selectInput(paste0(p,"missing_policy"),"Missing policy",c("exclude","label","error"),selected=level$missing_policy),textInput(paste0(p,"missing_label"),"Missing label",level$missing_label %||% "")) }
 
-block_ui <- function(block,prefix,index,chunk) { p<-paste0(prefix,"block_",index,"_"); types<-c("continuous_summary","categorical_summary_nonexclusive","categorical_summary_exclusive"); levels<-vapply(chunk$levels %||% list(),function(x)x$id,character(1)); tags$div(class="well",tags$small(class="text-muted",paste("UI identity:",block$ui_uid %||% "")),readonly_editor_input(paste0(p,"id"),"Block ID",block$id),selectInput(paste0(p,"anchor_level"),"Anchor level",levels,selected=block$anchor_level),selectInput(paste0(p,"placement"),"Placement",c("same_row","below"),selected=block$placement),selectInput(paste0(p,"type"),"Type",types,selected=block$type),selectInput(paste0(p,"counting_unit"),"Counting unit",c("record","distinct_subject","distinct_key"),selected=block$counting_unit),textInput(paste0(p,"distinct_key"),"Distinct key",paste(block$distinct_key %||% character(),collapse=", ")),if(block$type=="continuous_summary")textInput(paste0(p,"analysis_variable"),"Analysis variable",block$analysis_variable %||% "") else tagList(selectInput(paste0(p,"den_scope"),"Denominator scope",c("header_population","current_group","non_missing","custom"),selected=block$denominator$scope),selectInput(paste0(p,"den_unit"),"Denominator unit",c("record","distinct_subject","distinct_key"),selected=block$denominator$unit),textInput(paste0(p,"den_variable"),"Denominator variable",block$denominator$variable %||% ""),textInput(paste0(p,"den_expression"),"Denominator expression",block$denominator$expression %||% "")),tagList(lapply(seq_along(block$rows %||% list()),function(r)chunk_row_ui(block$rows[[r]],p,r)))) }
+block_ui <- function(block,prefix,index,chunk) { p<-paste0(prefix,"block_",index,"_"); types<-c("continuous_summary","categorical_summary_nonexclusive","categorical_summary_exclusive"); levels<-vapply(chunk$levels %||% list(),function(x)x$id,character(1)); tags$div(class="well",tags$small(class="text-muted",paste("UI identity:",block$ui_uid %||% "")),readonly_editor_input(paste0(p,"id"),"Block ID",block$id),selectInput(paste0(p,"anchor_level"),"Anchor level",levels,selected=block$anchor_level),selectInput(paste0(p,"placement"),"Placement",c("same_row","below"),selected=block$placement),selectInput(paste0(p,"type"),"Type",types,selected=block$type),selectInput(paste0(p,"counting_unit"),"Counting unit",c("record","distinct_subject","distinct_key"),selected=block$counting_unit),textInput(paste0(p,"distinct_key"),"Distinct key",paste(block$distinct_key %||% character(),collapse=", ")),if(block$type=="continuous_summary")textInput(paste0(p,"analysis_variable"),"Analysis variable",block$analysis_variable %||% "") else tagList(selectInput(paste0(p,"den_scope"),"Denominator scope",c("header_population","current_group","non_missing","custom"),selected=block$denominator$scope),selectInput(paste0(p,"den_unit"),"Denominator unit",c("record","distinct_subject","distinct_key"),selected=block$denominator$unit),textInput(paste0(p,"den_variable"),"Denominator variable",block$denominator$variable %||% ""),textInput(paste0(p,"den_expression"),"Denominator expression",block$denominator$expression %||% "")),collection_buttons(p,"row","rows"),DTOutput(paste0(p,"statistics"))) }
