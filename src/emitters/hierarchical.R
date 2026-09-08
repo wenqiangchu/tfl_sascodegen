@@ -13,6 +13,23 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
   chunk$id <- paste0(plan$chunks[[1L]]$id, "_", block$id)
   chunk$source_data <- hierarchical_source_dataset(plan$batch_order)
   chunk$filter <- plan$chunks[[1L]]$filter %||% NULL
+  # Primitive categorical emitters use the primitive denominator discriminator
+  # (`type`), while hierarchical blocks declare a scoped denominator. Keep the
+  # translation local to the nested plan so the metadata contract remains
+  # unchanged. A current-group denominator is materialized from the node-scoped
+  # input and therefore uses the default header-population discriminator here.
+  if (!identical(block$type, "continuous_summary")) {
+    denominator <- block$denominator %||% list()
+    scope <- denominator$scope %||% "header_population"
+    denominator$type <- switch(scope,
+      header_population = "header_population",
+      current_group = "header_population",
+      non_missing = "non_missing",
+      custom = "custom",
+      "header_population"
+    )
+    chunk$denominator <- denominator
+  }
   structure(list(
     batch_order = as.integer(plan$batch_order * 100L + block_order),
     chunk_type = definition$type_id,
@@ -49,7 +66,8 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "data _null_;",
     paste0("  set _TFL_HGUARD_", sprintf("%03d", plan$batch_order), ";"),
     paste0("  by ", paste(record_key, collapse = " "), ";"),
-    "  if not first.", record_key[[1L]], " then put 'WARNING: [USER] duplicate_key';",
+    paste0("  if not first.", record_key[[1L]],
+           " then put 'WARNING: [USER] duplicate_key';"),
     "run;"
   ) else character()
   level_lines <- unlist(lapply(seq_along(chunk$levels), function(index) {
