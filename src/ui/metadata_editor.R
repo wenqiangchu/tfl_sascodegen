@@ -18,9 +18,6 @@ metadata_editor_ui <- function() {
       tags$hr(), fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
       downloadButton("download_bundle", "Download metadata")),
     dashboardBody(
-      tags$head(tags$style(HTML(
-        "#shiny-tab-metadata ~ .tab-pane:not(.active), #shiny-tab-table_metadata:not(.active), #shiny-tab-template_editor:not(.active), #shiny-tab-generate_sas:not(.active) { display: none !important; }"
-      ))),
       tabItems(
       tabItem(tabName = "metadata",
         tabsetPanel(id = "metadata_panel",
@@ -39,7 +36,7 @@ metadata_editor_ui <- function() {
               actionButton("header_column_new", "Add row"),
               actionButton("header_column_delete", "Delete selected row"),
               DTOutput("header_columns_table"), actionButton("header_save", "Save"),
-              actionButton("header_discard", "Discard changes"))))))),
+              actionButton("header_discard", "Discard changes")))))),
       tabItem(tabName = "table_metadata", fluidRow(
         object_list_box("Tables", "table"),
         box(title = "Table metadata", width = 8, status = "primary", solidHeader = TRUE,
@@ -63,6 +60,7 @@ metadata_editor_ui <- function() {
           verbatimTextOutput("status"), verbatimTextOutput("source")))
       )
     )
+  )
 }
 
 editor_error_text <- function(errors) {

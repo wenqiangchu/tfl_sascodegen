@@ -18,6 +18,32 @@ select_list_row <- function(app, type, row) {
   app$wait_for_idle(500)
 }
 
+visible_dashboard_panes <- function(app) {
+  app$get_js(paste0(
+    "Array.from(document.querySelectorAll('",
+    "#shiny-tab-metadata,#shiny-tab-table_metadata,",
+    "#shiny-tab-template_editor,#shiny-tab-generate_sas')).",
+    "filter(function(x) { return getComputedStyle(x).display !== 'none'; }).",
+    "map(function(x) { return x.id; })"
+  ))
+}
+
+testthat::test_that("dashboard navigation displays exactly one top-level pane", {
+  app <- new_editor_app("editor-navigation")
+  on.exit(app$stop(), add = TRUE)
+  import_demo(app)
+
+  panes <- c("metadata", "table_metadata", "template_editor", "generate_sas")
+  for (pane in panes) {
+    app$set_inputs(main_nav = pane)
+    app$wait_for_idle(500)
+    testthat::expect_identical(
+      unlist(visible_dashboard_panes(app), use.names = FALSE),
+      paste0("shiny-tab-", pane)
+    )
+  }
+})
+
 testthat::test_that("first import and clean switching do not show a dirty guard", {
   app<-new_editor_app("editor-clean");on.exit(app$stop(),add=TRUE);import_demo(app)
   testthat::expect_false(grepl("Unsaved changes",app$get_html("body"),fixed=TRUE))
