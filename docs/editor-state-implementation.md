@@ -27,6 +27,14 @@ rendered as editable DT tables; cell edits stay in session-local caches and
 are collected only at editor boundaries, then rebuilt as canonical nested
 rows/statistics metadata.
 
+Hierarchical analysis blocks use the same DT-backed rows/statistics path as
+primitive chunks. Each block has independent DT input IDs and caches, so edits
+and structural row/statistic actions cannot cross-contaminate sibling blocks.
+Structural actions clear stale DT caches before rerendering. Save-time
+reindexing regenerates positional chunk, level, analysis-block, and row IDs and
+rewrites hierarchical references, including parent levels, anchor levels,
+node-analysis links, and result-sort metrics.
+
 ## Boundary behavior
 
 Dirty state is computed by collecting the current editor value and comparing it
