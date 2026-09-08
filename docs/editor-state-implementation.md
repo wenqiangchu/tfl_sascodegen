@@ -18,6 +18,12 @@ the editor collector at Save, Discard, Switch, Delete, Import, or Generate
 boundaries. Input observers do not mirror ordinary field edits into the saved
 workspace.
 
+Template UI caches assign session-local `ui_uid` values to chunks,
+hierarchical levels, and analysis blocks. These identities are retained across
+reordering and structural edits, are used as card/editor DOM identities, and
+are removed before canonical comparison or YAML/workspace save. Rows and
+statistics remain position-based until their DT editor migration.
+
 ## Boundary behavior
 
 Dirty state is computed by collecting the current editor value and comparing it
