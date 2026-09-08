@@ -29,6 +29,14 @@ workspace. Delete is immediate after the reference check and confirmation.
 The only dirty-guard choices are `Discard changes` and `Cancel`. Programmatic
 UI synchronization only renders values and is not a dirty signal.
 
+Template chunk creation uses an explicit type-selection dialog. The dialog
+offers `continuous_summary`, `categorical_summary_nonexclusive`,
+`categorical_summary_exclusive`, and `hierarchical_summary`; confirmation
+inserts the corresponding minimal structural seed into the template UI cache.
+Cancel leaves the template unchanged. Chunk deletion remains an immediate
+edit to the unsaved template value and has no separate confirmation dialog;
+template-level Discard restores the last saved template as a whole.
+
 ## Editor collectors
 
 Population, header, table, and template collectors perform UI value reads,

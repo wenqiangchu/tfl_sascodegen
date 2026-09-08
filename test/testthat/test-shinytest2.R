@@ -104,6 +104,31 @@ testthat::test_that("header rows and template cards expose structural editing", 
   testthat::expect_match(app$get_value(input="chunk_1_subject_key"),"SUBJID",fixed=TRUE)
 })
 
+testthat::test_that("Add chunk selects each supported type before creation", {
+  app <- new_editor_app("editor-chunk-types")
+  on.exit(app$stop(), add = TRUE)
+  import_demo(app)
+  app$set_inputs(main_nav = "template_editor")
+  app$wait_for_idle(700)
+
+  types <- c(
+    continuous_summary = "continuous_summary",
+    categorical_summary_nonexclusive = "categorical_summary_nonexclusive",
+    categorical_summary_exclusive = "categorical_summary_exclusive",
+    hierarchical_summary = "hierarchical_summary"
+  )
+  for (type in unname(types)) {
+    app$click("chunk_add")
+    app$wait_for_idle(200)
+    testthat::expect_match(app$get_html("body"), "Add chunk", fixed = TRUE)
+    app$set_inputs(new_chunk_type = type)
+    app$click("confirm_new_chunk")
+    app$wait_for_idle(500)
+  }
+  html <- app$get_html("#chunk_cards")
+  for (type in unname(types)) testthat::expect_match(html, type, fixed = TRUE)
+})
+
 testthat::test_that("generate is guarded and produces a source preview", {
   app<-new_editor_app("editor-generate");on.exit(app$stop(),add=TRUE);import_demo(app)
   app$set_inputs(population_label="dirty");app$set_inputs(main_nav="generate_sas");app$wait_for_idle(400)

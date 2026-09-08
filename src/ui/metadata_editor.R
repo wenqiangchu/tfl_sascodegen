@@ -73,6 +73,40 @@ readonly_editor_input <- function(id, label, value) {
            tags$input(id = id, class = "form-control", value = value %||% "", readonly = "readonly"))
 }
 
+new_chunk_seed <- function(type) {
+  row <- list(
+    id = "row_001", type = "analysis", label = "New row",
+    statistics = list(list(id = "n")), cell_format = "{n}"
+  )
+  if (identical(type, "continuous_summary")) {
+    return(list(
+      id = "chunk_001", type = type, source_data = "adam.adsl",
+      analysis_variable = "AVAL", rows = list(row)
+    ))
+  }
+  if (type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
+    return(list(
+      id = "chunk_001", type = type, source_data = "adam.adsl",
+      denominator = list(type = "header_population"), rows = list(row)
+    ))
+  }
+  level <- list(
+    id = "level_001", variable = "SOC", order_variable = "SOC",
+    order_direction = "asc", node_role = "label", missing_policy = "exclude"
+  )
+  block <- list(
+    id = "analysis_001", anchor_level = level$id, placement = "below",
+    type = "continuous_summary", counting_unit = "record",
+    analysis_variable = "AVAL", rows = list(row)
+  )
+  list(
+    id = "chunk_001", type = "hierarchical_summary", source_data = "adam.adsl",
+    source_contract = list(
+      grain = "record", subject_key = "USUBJID", duplicate_policy = "error"
+    ), levels = list(level), analysis_blocks = list(block)
+  )
+}
+
 header_editor_data <- function(header) {
   columns <- header$columns %||% list()
   spans <- header$spanning_headers %||% list()
@@ -450,7 +484,37 @@ metadata_editor_server <- function(input, output, session) {
     value
   }
   mutate_template <- function(fun) { current<-collect_template_from_ui(); template_value(reindex_template(fun(current))) }
-  observeEvent(input$chunk_add,{mutate_template(function(x){n<-length(x$body$chunks)+1L;x$body$chunks[[n]]<-list(id=sprintf("chunk_%03d",n),type="continuous_summary",source_data="adam.adsl",analysis_variable="AVAL",rows=list(list(id="row_001",type="analysis",label="New row",statistics=list(list(id="n")),cell_format="{n}")));x})})
+  observeEvent(input$chunk_add, {
+    showModal(modalDialog(
+      title = "Add chunk",
+      selectInput(
+        "new_chunk_type", "Chunk type",
+        choices = c(
+          "Continuous summary" = "continuous_summary",
+          "Categorical summary (non-exclusive)" = "categorical_summary_nonexclusive",
+          "Categorical summary (exclusive)" = "categorical_summary_exclusive",
+          "Hierarchical summary" = "hierarchical_summary"
+        )
+      ),
+      footer = tagList(
+        actionButton("cancel_new_chunk", "Cancel"),
+        actionButton("confirm_new_chunk", "Add", class = "btn-primary")
+      ),
+      easyClose = FALSE
+    ))
+  })
+  observeEvent(input$cancel_new_chunk, removeModal())
+  observeEvent(input$confirm_new_chunk, {
+    type <- as.character(input$new_chunk_type %||% "")
+    if (!type %in% c("continuous_summary", "categorical_summary_nonexclusive",
+                     "categorical_summary_exclusive", "hierarchical_summary")) return()
+    removeModal()
+    mutate_template(function(x) {
+      n <- length(x$body$chunks %||% list()) + 1L
+      x$body$chunks[[n]] <- new_chunk_seed(type)
+      x
+    })
+  })
   output$chunk_cards <- renderUI({ value<-template_value(); if(is.null(value)||editor_type()!="template")return(NULL); chunks<-value$body$chunks %||% list(); tagList(lapply(seq_along(chunks),function(i) chunk_card_ui(chunks[[i]],i))) })
 
   observe({
