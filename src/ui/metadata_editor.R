@@ -17,7 +17,11 @@ metadata_editor_ui <- function() {
         menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))),
       tags$hr(), fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
       downloadButton("download_bundle", "Download metadata")),
-    dashboardBody(tabItems(
+    dashboardBody(
+      tags$head(tags$style(HTML(
+        "#shiny-tab-metadata ~ .tab-pane:not(.active), #shiny-tab-table_metadata:not(.active), #shiny-tab-template_editor:not(.active), #shiny-tab-generate_sas:not(.active) { display: none !important; }"
+      ))),
+      tabItems(
       tabItem(tabName = "metadata",
         tabsetPanel(id = "metadata_panel",
           tabPanel("Population", value = "population", fluidRow(
@@ -57,7 +61,8 @@ metadata_editor_ui <- function() {
           actionButton("generate", "Generate SAS", icon = icon("play")),
           downloadButton("download_sas", "Download SAS"),
           verbatimTextOutput("status"), verbatimTextOutput("source")))
-    ))
+      )
+    )
 }
 
 editor_error_text <- function(errors) {
