@@ -1,181 +1,90 @@
-testthat::test_that("Shiny shell exposes core actions and failure feedback", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::expect_true(requireNamespace("shinytest2", quietly = TRUE))
-  testthat::expect_true(requireNamespace("chromote", quietly = TRUE))
-  chromote::set_chrome_args(c(
-    "--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"
-  ))
-  app <- shinytest2::AppDriver$new(
-    app_dir = project_root,
-    name = "p7-shell",
-    height = 800,
-    width = 1200,
-    variant = "local",
-    load_timeout = 30000
-  )
-  on.exit(app$stop(), add = TRUE)
-  app$click("generate")
-  app$wait_for_idle(1000)
-  app$click("cancel")
+testthat::expect_true(requireNamespace("shinytest2", quietly = TRUE))
+testthat::expect_true(requireNamespace("chromote", quietly = TRUE))
+Sys.setenv(NOT_CRAN = "true")
+chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
+
+new_editor_app <- function(name) {
+  shinytest2::AppDriver$new(app_dir=project_root,name=name,height=900,width=1400,
+                            variant="local",load_timeout=30000)
+}
+
+import_demo <- function(app) {
+  app$upload_file(bundle=file.path(project_root,"test","fixtures","demo_metadata.zip"))
+  app$wait_for_idle(1200)
+}
+
+select_list_row <- function(app, type, row) {
+  app$click(selector=sprintf("#%s_list table tbody tr:nth-child(%d) td:first-child",type,row))
+  app$wait_for_idle(500)
+}
+
+testthat::test_that("first import and clean switching do not show a dirty guard", {
+  app<-new_editor_app("editor-clean");on.exit(app$stop(),add=TRUE);import_demo(app)
+  testthat::expect_false(grepl("Unsaved changes",app$get_html("body"),fixed=TRUE))
+  testthat::expect_match(app$get_value(input="population_label"),"FAS",fixed=TRUE)
+  select_list_row(app,"population",2)
+  testthat::expect_match(app$get_value(input="population_label"),"SAFETY",fixed=TRUE)
+  testthat::expect_false(grepl("Unsaved changes",app$get_html("body"),fixed=TRUE))
 })
 
-testthat::test_that("Metadata lists and dirty switch guard are browser-covered", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-selection", height = 800, width = 1200, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  testthat::expect_match(app$get_html("#population_list"), "population_list", fixed = TRUE)
-  testthat::expect_match(app$get_html("#header_list"), "header_list", fixed = TRUE)
-  testthat::expect_match(app$get_html("#table_list"), "table_list", fixed = TRUE)
-  testthat::expect_match(app$get_html("#template_list"), "template_list", fixed = TRUE)
+testthat::test_that("dirty switch supports cancel discard and restored-clean comparison", {
+  app<-new_editor_app("editor-guard");on.exit(app$stop(),add=TRUE);import_demo(app)
+  app$set_inputs(population_label="FAS edited");select_list_row(app,"population",2)
+  testthat::expect_match(app$get_html("body"),"Unsaved changes",fixed=TRUE)
+  app$click("guard_cancel");app$wait_for_idle(300)
+  testthat::expect_equal(app$get_value(input="population_label"),"FAS edited")
+  select_list_row(app,"population",2);app$click("guard_discard");app$wait_for_idle(500)
+  testthat::expect_equal(app$get_value(input="population_label"),"SAFETY")
+  select_list_row(app,"population",1);app$set_inputs(population_label="changed");app$set_inputs(population_label="FAS")
+  select_list_row(app,"population",2)
+  testthat::expect_false(grepl("Unsaved changes",app$get_html("body"),fixed=TRUE))
 })
 
-testthat::test_that("Template cards expose typed collection controls", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-template-cards", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  fixture <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
-  testthat::skip_if_not(file.exists(fixture))
-  app$upload_file(bundle = fixture)
-  app$wait_for_idle(1500)
-  app$set_inputs(main_nav = "template_editor")
-  app$wait_for_idle(1000)
-  html <- app$get_html("#chunk_cards")
-  testthat::expect_match(html, "chunk_cards", fixed = TRUE)
-  # ID and type are rendered as native read-only inputs; Shiny textInput does
-  # not support a readonly argument.
-  testthat::expect_match(html, 'readonly="readonly"', fixed = TRUE)
-  testthat::expect_false(grepl("Unsaved changes", app$get_html("body"), fixed = TRUE))
+testthat::test_that("new ID lifecycle supports cancel duplicate save and discard", {
+  app<-new_editor_app("editor-new");on.exit(app$stop(),add=TRUE);import_demo(app)
+  app$click("population_new");testthat::expect_match(app$get_html("body"),"New Population",fixed=TRUE)
+  app$click("cancel_new_object");testthat::expect_false(grepl("new_population",app$get_html("#population_list"),fixed=TRUE))
+  app$click("population_new");app$set_inputs(new_object_id="fas");app$click("confirm_new_object")
+  testthat::expect_match(app$get_html("body"),"ID already exists",fixed=TRUE)
+  app$set_inputs(new_object_id="new_population");app$click("confirm_new_object");app$wait_for_idle(500)
+  testthat::expect_match(app$get_html("#population_list"),"new_population",fixed=TRUE)
+  app$click("population_discard");app$wait_for_idle(400)
+  testthat::expect_false(grepl("new_population",app$get_html("#population_list"),fixed=TRUE))
+  app$click("population_new");app$set_inputs(new_object_id="saved_population");app$click("confirm_new_object")
+  app$set_inputs(population_label="Saved population");app$click("population_save");app$wait_for_idle(500)
+  testthat::expect_match(app$get_html("#population_list"),"saved_population",fixed=TRUE)
 })
 
-testthat::test_that("Template collection actions are clickable", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-template-actions", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  fixture <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
-  testthat::skip_if_not(file.exists(fixture))
-  app$upload_file(bundle = fixture); app$wait_for_idle(1200); app$set_inputs(main_nav = "template_editor"); app$wait_for_idle(700)
-  # The dynamic card may be empty until a template is selected; verify the
-  # action IDs are safely addressable and the app remains responsive.
-  app$set_inputs(template = "baseline_template"); app$wait_for_idle(700)
-  testthat::expect_match(app$get_html("body"), "Template", fixed = TRUE)
-  # Dynamic controls are exercised when a fixture template is rendered; this
-  # assertion keeps the browser regression resilient to deferred UI flushes.
-  testthat::expect_true(nchar(app$get_html("body")) > 0)
+testthat::test_that("delete is immediate after confirmation and referenced values are blocked", {
+  app<-new_editor_app("editor-delete");on.exit(app$stop(),add=TRUE);import_demo(app)
+  select_list_row(app,"population",3);app$click("population_delete");app$wait_for_idle(300)
+  testthat::expect_match(app$get_html("body"),"Confirm delete",fixed=TRUE)
+  app$click("confirm_delete");app$wait_for_idle(500)
+  testthat::expect_false(grepl("exploratory",app$get_html("#population_list"),fixed=TRUE))
+  select_list_row(app,"population",1);app$click("population_delete");app$wait_for_idle(300)
+  testthat::expect_match(app$get_html("body"),"referenced",ignore.case=TRUE)
 })
 
-testthat::test_that("Clean selection changes do not trigger the dirty guard", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-clean-switch", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  fixture <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
-  app$upload_file(bundle = fixture); app$wait_for_idle(1200)
-  app$set_inputs(population = "fas"); app$wait_for_idle(500)
-  app$set_inputs(population = "safety"); app$wait_for_idle(1800)
-  testthat::expect_false(grepl("Unsaved changes", app$get_html("body"), fixed = TRUE))
+testthat::test_that("header rows and template cards expose structural editing", {
+  app<-new_editor_app("editor-structures");on.exit(app$stop(),add=TRUE);import_demo(app)
+  app$set_inputs(metadata_panel="header");app$wait_for_idle(600)
+  app$click("header_column_new");app$wait_for_idle(300)
+  testthat::expect_match(app$get_html("#header_columns_table"),"column_002",fixed=TRUE)
+  app$click("header_discard");app$wait_for_idle(400)
+  app$set_inputs(main_nav="template_editor");app$wait_for_idle(700)
+  testthat::expect_match(app$get_html("#chunk_cards"),"hierarchical_summary",fixed=TRUE)
+  testthat::expect_match(app$get_html("#chunk_cards"),'readonly="readonly"',fixed=TRUE)
+  app$set_inputs(chunk_1_subject_key="SUBJID");app$click("template_save");app$wait_for_idle(500)
+  testthat::expect_match(app$get_value(input="chunk_1_subject_key"),"SUBJID",fixed=TRUE)
 })
 
-testthat::test_that("Dirty edits block switching until discarded", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-dirty-switch", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  fixture <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
-  app$upload_file(bundle = fixture); app$wait_for_idle(1200)
-  app$set_inputs(population_label = "FAS (edited)"); app$wait_for_idle(500)
-  app$set_inputs(population = "safety"); app$wait_for_idle(800)
-  testthat::expect_match(app$get_html("body"), "Unsaved changes", fixed = TRUE)
-  app$click("switch_cancel"); app$wait_for_idle(500)
-  testthat::expect_false(grepl("Unsaved changes", app$get_html("body"), fixed = TRUE))
-})
-
-testthat::test_that("New table is listed and switching is guarded", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-new-table", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  fixture <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
-  app$upload_file(bundle = fixture); app$wait_for_idle(1200)
-  app$click("table_new"); app$wait_for_idle(900)
-  html <- app$get_html("body")
-  testthat::expect_match(html, "table_3", fixed = TRUE)
-  app$set_inputs(table = "baseline_characteristics"); app$wait_for_idle(800)
-  testthat::expect_match(app$get_html("body"), "Unsaved changes", fixed = TRUE)
-})
-
-testthat::test_that("Restoring an edited value clears the dirty guard", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-restore-clean", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip")); app$wait_for_idle(1200)
-  app$set_inputs(population_label = "FAS (edited)"); app$wait_for_idle(400)
-  app$set_inputs(population_label = "FAS"); app$wait_for_idle(500)
-  app$set_inputs(population = "safety"); app$wait_for_idle(800)
-  testthat::expect_false(grepl("Unsaved changes", app$get_html("body"), fixed = TRUE))
-})
-
-testthat::test_that("Dirty draft can be cancelled before switching", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-dirty-cancel", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip")); app$wait_for_idle(1200)
-  app$set_inputs(population_label = "FAS (edited)"); app$wait_for_idle(400)
-  app$set_inputs(population = "exploratory"); app$wait_for_idle(700)
-  testthat::expect_match(app$get_html("body"), "Unsaved changes", fixed = TRUE)
-  app$click("switch_cancel"); app$wait_for_idle(500)
-  testthat::expect_match(app$get_html("body"), "FAS (edited)", fixed = TRUE)
-})
-
-testthat::test_that("Unreferenced metadata deletion is immediate", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-delete-immediate", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip")); app$wait_for_idle(1200)
-  app$set_inputs(population = "exploratory"); app$wait_for_idle(500)
-  app$click("population_delete"); app$wait_for_idle(400)
-  testthat::expect_match(app$get_html("body"), "Confirm delete", fixed = TRUE)
-  app$click("confirm_delete"); app$wait_for_idle(700)
-  testthat::expect_false(grepl("exploratory", app$get_html("body"), fixed = TRUE))
-})
-
-testthat::test_that("Pending create can be discarded by immediate delete", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-delete-create", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip")); app$wait_for_idle(1200)
-  app$click("population_new"); app$wait_for_idle(700)
-  testthat::expect_match(app$get_html("body"), "population_4", fixed = TRUE)
-  app$click("population_delete"); app$wait_for_idle(700)
-  testthat::expect_false(grepl("population_4", app$get_html("body"), fixed = TRUE))
-  testthat::expect_false(grepl("delete_pending", app$get_html("body"), fixed = TRUE))
-})
-
-testthat::test_that("Referenced metadata deletion is rejected", {
-  Sys.setenv(NOT_CRAN = "true")
-  testthat::skip_if_not_installed("shinytest2")
-  chromote::set_chrome_args(c("--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage"))
-  app <- shinytest2::AppDriver$new(app_dir = project_root, name = "p7-delete-referenced", height = 900, width = 1400, variant = "local", load_timeout = 30000)
-  on.exit(app$stop(), add = TRUE)
-  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip")); app$wait_for_idle(1200)
-  app$set_inputs(population = "fas"); app$wait_for_idle(400)
-  app$click("population_delete"); app$wait_for_idle(500)
-  testthat::expect_match(app$get_html("body"), "refer", ignore.case = TRUE)
-  testthat::expect_match(app$get_html("body"), "fas", ignore.case = TRUE)
+testthat::test_that("generate is guarded and produces a source preview", {
+  app<-new_editor_app("editor-generate");on.exit(app$stop(),add=TRUE);import_demo(app)
+  app$set_inputs(population_label="dirty");app$set_inputs(main_nav="generate_sas");app$wait_for_idle(400)
+  testthat::expect_match(app$get_html("body"),"Unsaved changes",fixed=TRUE)
+  app$click("guard_cancel");app$wait_for_idle(300)
+  app$set_inputs(population_label="FAS");app$set_inputs(main_nav="generate_sas");app$wait_for_idle(400)
+  app$set_inputs(generate_table="baseline_characteristics")
+  app$click("generate");app$wait_for_idle(800)
+  testthat::expect_match(app$get_html("#source"),"DATA",ignore.case=TRUE)
 })
