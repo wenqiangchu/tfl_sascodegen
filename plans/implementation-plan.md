@@ -383,6 +383,9 @@ Generate。浏览器测试在本地 Chrome/Chromote 环境实际执行，不允�
 registry、shinytest2、source-generator、workspace、yaml-codec 及三类 emitter 回归；
 demo ZIP 可导入并生成 baseline 与 AE hierarchical SAS source。启动脚本会自动选择
 3838 或下一个可用端口。剩余 UI 视觉优化不阻断当前交付，作为后续维护项处理。
+补充的 FDA 风格合成 fixture 覆盖 baseline、按 SOC/PT 的 AE 严重程度汇总，以及按
+PARAMCD/AVISIT（visit/timepoint）展开的生命体征汇总；其中 mean/sd 使用 relative
+digits `+1`，并通过导入和生成回归验证。
 
 ## 5. 变更与回滚规则
 
