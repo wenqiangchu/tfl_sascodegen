@@ -25,8 +25,11 @@ metadata_editor_ui <- function() {
     dashboardBody(
       tags$head(
         tags$meta(name="viewport", content="width=device-width, initial-scale=1, shrink-to-fit=no"),
-        tags$style(HTML("@media (max-width: 767px) { .content-wrapper, .right-side { overflow-x: hidden; } .box-header .box-title { white-space: normal; } .navbar-custom-menu > .navbar-nav > li { float: none; } }"))
+        tags$style(HTML("\n          /* Keep chunk title actions at the far right of the box header.\n             shinydashboard renders box(title=...) inside h3.box-title, whose\n             default float layout otherwise places nested controls at the left. */\n          .chunk-card .box-header .box-title,\n          [id^='chunk-card-'] .box-header .box-title {\n            display: flex !important;\n            align-items: center !important;\n            width: 100% !important;\n            float: none !important;\n            overflow: visible !important;\n          }\n          .chunk-titlebar {\n            display: flex !important;\n            align-items: center !important;\n            width: 100% !important;\n            min-width: 0;\n          }\n          .chunk-title-text {\n            flex: 0 1 auto !important;\n            min-width: 0;\n          }\n          .chunk-title-actions {\n            display: flex !important;\n            align-items: center !important;\n            gap: 4px !important;\n            margin-left: auto !important;\n            float: none !important;\n            flex: 0 0 auto !important;\n          }\n          .chunk-title-actions .btn {\n            float: none !important;\n            margin-top: 0 !important;\n          }\n          @media (max-width: 767px) {\n            .content-wrapper, .right-side { overflow-x: hidden; }\n            .box-header .box-title { white-space: normal; }\n            .navbar-custom-menu > .navbar-nav > li { float: none; }\n          }\n        "))
       ),
+      # A second, deliberately high-specificity rule handles the actual
+      # shinydashboard h3.box-title wrapper and pins actions to its right edge.
+      tags$style(HTML("[id^='chunk-card-'] .box-header .box-title{position:relative!important;display:block!important;width:100%!important;float:none!important;padding-right:260px!important;overflow:visible!important;}[id^='chunk-card-'] .chunk-titlebar{position:relative!important;display:block!important;width:100%!important;}[id^='chunk-card-'] .chunk-title-text{display:inline-block!important;}[id^='chunk-card-'] .chunk-title-actions{position:absolute!important;right:0!important;top:50%!important;transform:translateY(-50%)!important;display:flex!important;gap:4px!important;float:none!important;white-space:nowrap!important;}[id^='chunk-card-'] .chunk-title-actions .btn{float:none!important;margin-top:0!important;}@media(max-width:767px){[id^='chunk-card-'] .box-header .box-title{padding-right:0!important;padding-bottom:38px!important;}[id^='chunk-card-'] .chunk-title-actions{top:auto!important;bottom:0!important;transform:none!important;}}")),
       tags$div(style="display:none", textOutput("metadata_loaded_flag")),
       uiOutput("metadata_gate"),
       tags$div(id="metadata_content", tabItems(
@@ -890,8 +893,7 @@ chunk_row_ui <- function(row,prefix,index) {
   )
   # Controls live in the card title bar so they remain discoverable while
   # scrolling through a long template. IDs remain unchanged for observers.
-  common <- tagList(common, tags$style(HTML(sprintf("#chunk-card-%s .box-header .box-title { display:block !important; width:100%% !important; overflow:hidden; } #chunk-card-%s .chunk-titlebar { display:block !important; width:100%% !important; } #chunk-card-%s .chunk-title-text { display:inline-block !important; } #chunk-card-%s .chunk-title-actions { float:right !important; display:flex !important; gap:4px !important; margin-top:-2px; } #chunk-card-%s .chunk-title-actions .btn { float:none !important; }", uid, uid, uid, uid, uid))))
-  box(id=paste0("chunk-card-", uid), title=title_bar,width=12,status="info",solidHeader=TRUE,common,specific)
+  box(id=paste0("chunk-card-", uid), class = "chunk-card", title=title_bar,width=12,status="info",solidHeader=TRUE,common,specific)
 }
 
 collection_buttons <- function(prefix,kind,table_name) tagList(actionButton(paste0(prefix,kind,"_new"),paste("Add",kind)),actionButton(paste0(prefix,kind,"_delete"),paste("Delete",kind)),actionButton(paste0(prefix,kind,"_up"),"Move up"),actionButton(paste0(prefix,kind,"_down"),"Move down"),DTOutput(paste0(prefix,table_name)))
