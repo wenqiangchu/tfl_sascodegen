@@ -29,7 +29,7 @@ metadata_editor_ui <- function() {
       ),
       # A second, deliberately high-specificity rule handles the actual
       # shinydashboard h3.box-title wrapper and pins actions to its right edge.
-      tags$style(HTML("[id^='chunk-card-'] .box-header .box-title{position:relative!important;display:block!important;width:100%!important;float:none!important;padding-right:260px!important;overflow:visible!important;}[id^='chunk-card-'] .chunk-titlebar{position:relative!important;display:block!important;width:100%!important;}[id^='chunk-card-'] .chunk-title-text{display:inline-block!important;}[id^='chunk-card-'] .chunk-title-actions{position:absolute!important;right:0!important;top:50%!important;transform:translateY(-50%)!important;display:flex!important;gap:4px!important;float:none!important;white-space:nowrap!important;}[id^='chunk-card-'] .chunk-title-actions .btn{float:none!important;margin-top:0!important;}@media(max-width:767px){[id^='chunk-card-'] .box-header .box-title{padding-right:0!important;padding-bottom:38px!important;}[id^='chunk-card-'] .chunk-title-actions{top:auto!important;bottom:0!important;transform:none!important;}}")),
+      tags$style(HTML("/* box() does not expose id/class attributes on the outer .box.\n        Match the rendered title content itself instead. */\n        .box-header > .box-title { width: 100% !important; float: none !important; }\n        .box-header > .box-title:has(.chunk-titlebar) { position: relative !important; display: block !important; padding-right: 260px !important; overflow: visible !important; }\n        .box-title .chunk-titlebar { position: relative !important; display: block !important; width: 100% !important; }\n        .box-title .chunk-title-text { display: inline-block !important; }\n        .box-title .chunk-title-actions { position: absolute !important; right: 0 !important; top: 50% !important; transform: translateY(-50%) !important; display: flex !important; gap: 4px !important; float: none !important; white-space: nowrap !important; }\n        .box-title .chunk-title-actions .btn { float: none !important; margin-top: 0 !important; }\n        @media(max-width:767px) { .box-header > .box-title:has(.chunk-titlebar) { padding-right: 0 !important; padding-bottom: 38px !important; } .box-title .chunk-title-actions { top: auto !important; bottom: 0 !important; transform: none !important; } }")),
       tags$div(style="display:none", textOutput("metadata_loaded_flag")),
       uiOutput("metadata_gate"),
       tags$div(id="metadata_content", tabItems(
@@ -886,9 +886,9 @@ chunk_row_ui <- function(row,prefix,index) {
   title_bar <- tags$div(class="chunk-titlebar",
     tags$span(class="chunk-title-text", paste("Chunk", index, chunk$id)),
     tags$span(class="chunk-title-actions",
-      actionButton(paste0(p,"delete"),"Delete chunk", class="btn-default btn-sm"),
-      actionButton(paste0(p,"up"),"Move up", class="btn-default btn-sm"),
-      actionButton(paste0(p,"down"),"Move down", class="btn-default btn-sm")
+      actionButton(paste0(p,"delete"),"Delete chunk", class="btn-sm"),
+      actionButton(paste0(p,"up"),"Move up", class="btn-sm"),
+      actionButton(paste0(p,"down"),"Move down", class="btn-sm")
     )
   )
   # Controls live in the card title bar so they remain discoverable while
