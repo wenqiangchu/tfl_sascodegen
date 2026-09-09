@@ -23,6 +23,10 @@ metadata_editor_ui <- function() {
         menuItem("Template Editor", tabName = "template_editor", icon = icon("file")),
         menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code")))),
     dashboardBody(
+      tags$head(
+        tags$meta(name="viewport", content="width=device-width, initial-scale=1, shrink-to-fit=no"),
+        tags$style(HTML("@media (max-width: 767px) { .content-wrapper, .right-side { overflow-x: hidden; } .box-header .box-title { white-space: normal; } .navbar-custom-menu > .navbar-nav > li { float: none; } }"))
+      ),
       tags$div(style="display:none", textOutput("metadata_loaded_flag")),
       uiOutput("metadata_gate"),
       tags$div(id="metadata_content", tabItems(
@@ -876,7 +880,7 @@ chunk_row_ui <- function(row,prefix,index) {
     ), chunk_field_row(chunk_field(8, textInput(paste0(p,"record_key"),"Record key",paste(sc$record_key %||% character(),collapse=", ")))),
     h4("Levels"), collection_buttons(p,"level","levels"), tagList(lapply(seq_along(chunk$levels %||% list()),function(j)level_ui(chunk$levels[[j]],p,j,chunk))),
     h4("Analysis blocks"), collection_buttons(p,"block","analysis_blocks"), tagList(lapply(seq_along(chunk$analysis_blocks %||% list()),function(b)block_ui(chunk$analysis_blocks[[b]],p,b,chunk)))) }
-  title_bar <- tags$div(
+  title_bar <- tags$div(class="chunk-titlebar",
     style="display:flex;align-items:center;width:100%;",
     tags$span(paste("Chunk", index, chunk$id)),
     tags$span(
@@ -888,7 +892,7 @@ chunk_row_ui <- function(row,prefix,index) {
   )
   # Controls live in the card title bar so they remain discoverable while
   # scrolling through a long template. IDs remain unchanged for observers.
-  common <- tagList(common, tags$style(HTML(sprintf("#chunk-card-%s .box-title { padding-right: 8px; }", uid))))
+  common <- tagList(common, tags$style(HTML(sprintf("#chunk-card-%s .box-header .box-title { display:flex !important; align-items:center; width:100%%; padding-right:8px; } #chunk-card-%s .chunk-titlebar { display:flex; align-items:center; width:100%%; } #chunk-card-%s .chunk-titlebar > span:last-child { margin-left:auto; }", uid, uid, uid))))
   box(id=paste0("chunk-card-", uid), title=title_bar,width=12,status="info",solidHeader=TRUE,common,specific)
 }
 
