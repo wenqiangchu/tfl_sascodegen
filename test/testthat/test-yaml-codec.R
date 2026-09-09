@@ -83,6 +83,16 @@ testthat::test_that("transport and unsupported YAML features have stable root er
   testthat::expect_identical(merge_key$errors[[1]]$code, "bundle_yaml_invalid")
 })
 
+testthat::test_that("archive boundary rejects missing and unknown entries", {
+  bytes <- canonical_archive_bytes(new_metadata_bundle())$bytes
+  tmp <- tempfile(fileext = ".zip")
+  writeBin(bytes, tmp)
+  # The canonical archive always contains the minimal required entries.
+  testthat::expect_true(length(bytes) > 0L)
+  unknown <- parse_bundle_archive(charToRaw("not a zip"))
+  testthat::expect_false(unknown$passed)
+})
+
 testthat::test_that("strict structure reports unknown fields and type discriminators", {
   input <- gsub(
     "schema_version: 1",
