@@ -8,17 +8,23 @@ metadata_editor_ui <- function() {
         DTOutput(paste0(type, "_list")))
   }
   dashboardPage(
-    dashboardHeader(title = "SAS Code Generator"),
+    dashboardHeader(title = "SAS Code Generator",
+      tags$li(class="dropdown", style="display:flex;gap:6px;align-items:center;padding:7px 15px;",
+        actionButton("upload_metadata", "Upload metadata", class = "btn-default btn-sm"),
+        uiOutput("download_metadata_ui"),
+        downloadButton("download_demo_package", "Download demo package", class = "btn-default btn-sm")
+      )),
     dashboardSidebar(
       sidebarMenu(id = "main_nav",
         menuItem("Metadata", tabName = "metadata", icon = icon("database")),
         menuItem("Table Metadata", tabName = "table_metadata", icon = icon("table")),
         menuItem("Template Editor", tabName = "template_editor", icon = icon("file")),
         menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))),
-      tags$hr(), fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
-      downloadButton("download_bundle", "Download metadata")),
+      tags$hr()),
     dashboardBody(
-      tabItems(
+      tags$div(style="display:none", textOutput("metadata_loaded_flag")),
+      uiOutput("metadata_gate"),
+      conditionalPanel("output.metadata_loaded_flag == 'true'", tabItems(
       tabItem(tabName = "metadata",
         tabsetPanel(id = "metadata_panel",
           tabPanel("Population", value = "population", fluidRow(
@@ -58,7 +64,7 @@ metadata_editor_ui <- function() {
           actionButton("generate", "Generate SAS", icon = icon("play")),
           downloadButton("download_sas", "Download SAS"),
           verbatimTextOutput("status"), verbatimTextOutput("source")))
-      )
+      ))
     )
   )
 }
@@ -242,6 +248,7 @@ editor_document <- function(workspace, type, id) {
 
 metadata_editor_server <- function(input, output, session) {
   workspace <- reactiveVal(new_empty_workspace())
+  metadata_loaded <- reactiveVal(FALSE)
   active_editor <- reactiveVal(NULL)
   active_draft <- reactiveVal(NULL)
   pending_action <- reactiveVal(NULL)
@@ -778,17 +785,43 @@ metadata_editor_server <- function(input, output, session) {
   import_now <- function(path) {
     bytes<-tryCatch(readBin(path,"raw",n=file.info(path)$size),error=function(e)NULL); if(is.null(bytes)){showNotification("Import failed.",type="error");return()}
     result<-application_import_bundle(workspace(),bytes); if(!result$passed){status(paste("Import failed:",editor_error_text(result$errors)));showNotification(status(),type="error");return()}
-    workspace(result$workspace); clear_editor(); refresh_lists(); ids<-list_ids("population"); if(length(ids))activate_editor("population",ids[[1L]]); status("Metadata imported.")
+    workspace(result$workspace); metadata_loaded(TRUE); clear_editor(); refresh_lists(); ids<-list_ids("population"); if(length(ids))activate_editor("population",ids[[1L]]); status("Metadata imported.")
   }
+  observeEvent(input$upload_metadata, {
+    showModal(modalDialog(title="Import metadata bundle",
+      fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
+      footer=tagList(actionButton("cancel_import", "Cancel"), actionButton("confirm_import", "Import")), easyClose=FALSE))
+  })
   observeEvent(input$bundle,{req(input$bundle$datapath); path<-input$bundle$datapath
-    if(is_guarded())show_guard(list(kind="import",path=path)) else if(sum(vapply(c("population","header","table","template"),function(t)length(list_ids(t)),integer(1)))>0L){pending_action(list(kind="confirm_import",path=path));showModal(modalDialog(title="Replace workspace?","Importing this bundle will replace the current workspace.",footer=tagList(actionButton("cancel_import","Cancel"),actionButton("confirm_import","Import")),easyClose=FALSE))}else import_now(path)
+    if(is_guarded()) { removeModal(); show_guard(list(kind="import",path=path))
+    } else if(metadata_loaded()) { pending_action(list(kind="confirm_import",path=path)); removeModal(); showModal(modalDialog(title="Replace workspace?","Importing this bundle will replace the current workspace.",footer=tagList(actionButton("cancel_import","Cancel"),actionButton("confirm_import","Import")),easyClose=FALSE))
+    } else pending_action(list(kind="confirm_import",path=path))
   })
   observeEvent(input$cancel_import,{pending_action(NULL);removeModal()})
   observeEvent(input$confirm_import,{action<-pending_action();pending_action(NULL);removeModal();if(!is.null(action))import_now(action$path)})
+  output$metadata_gate <- renderUI({
+    if (metadata_loaded()) return(NULL)
+    box(width=12, status="info", solidHeader=TRUE, title="Upload metadata to begin",
+      p("Upload a metadata ZIP bundle to start editing."),
+      actionButton("upload_metadata_gate", "Upload metadata"))
+  })
+  output$metadata_loaded_flag <- renderText(if (metadata_loaded()) "true" else "false")
+  observeEvent(input$upload_metadata_gate, {
+    showModal(modalDialog(title="Import metadata bundle",
+      fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
+      footer=tagList(actionButton("cancel_import", "Cancel"), actionButton("confirm_import", "Import")), easyClose=FALSE))
+  })
   generate_now <- function(){result<-application_generate_source(workspace(),input$generate_table);if(!result$passed){status(paste("Generation failed:",editor_error_text(result$errors)));showNotification(status(),type="error");return()};source_text(result$value);status("SAS source generated.")}
   observeEvent(input$generate,request_action(list(kind="generate")))
   output$status<-renderText(status()); output$source<-renderText(source_text())
   output$download_bundle<-downloadHandler(filename=function()"metadata_bundle.zip",content=function(file){result<-application_export_bundle(workspace());if(result$passed)writeBin(result$value$bytes,file)})
+  output$download_metadata_ui <- renderUI(downloadButton("download_bundle", "Download metadata", class="btn-default btn-sm", disabled = !metadata_loaded()))
+  output$download_demo_package <- downloadHandler(filename=function()"demo_metadata_package.zip",content=function(file){
+    staging <- tempfile("demo_package_"); dir.create(staging); on.exit(unlink(staging, recursive=TRUE, force=TRUE), add=TRUE)
+    file.copy(file.path(project_root,"test","fixtures","demo_metadata.zip"), file.path(staging,"demo_metadata.zip"), overwrite=TRUE)
+    guide <- file.path(staging,"user-guide.md"); file.copy(file.path(project_root,"docs","user-guide.md"), guide, overwrite=TRUE)
+    zip::zipr(file, files=c("demo_metadata.zip","user-guide.md"), root=staging, include_directories=FALSE)
+  })
   output$download_sas<-downloadHandler(filename=function()paste0(input$generate_table %||% "table",".sas"),content=function(file)writeLines(source_text(),file,useBytes=TRUE))
 }
 
