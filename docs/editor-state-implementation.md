@@ -27,6 +27,14 @@ rendered as editable DT tables; cell edits stay in session-local caches and
 are collected only at editor boundaries, then rebuilt as canonical nested
 rows/statistics metadata.
 
+The row DT is the RTF-row editor: one DT row maps to one rendered RTF row.
+Visible columns are `type`, `label`, `indent_level`, `condition`,
+space-separated `statistics`, space-separated positional `digits`, and
+`cell_format`; the internal row ID is retained in a hidden column only for
+cache and collector identity. Statistic add/delete/reorder controls are not
+part of the UI; users edit statistic and digits text directly. Missing
+categorical `pct` digits default to `1`, while `n` has no digits field.
+
 Hierarchical analysis blocks use the same DT-backed rows/statistics path as
 primitive chunks. Each block has independent DT input IDs and caches, so edits
 and structural row/statistic actions cannot cross-contaminate sibling blocks.

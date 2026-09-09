@@ -345,12 +345,12 @@ payload contract。
 **完成 gate**：每个 session 的 workspace 隔离；dirty guard 和 saved-snapshot policy
 可通过 UI 测试验证；UI 只通过 P6 application boundary 操作 core。
 
-**当前状态（2026-09-06）**：已创建薄 `app.R` 和 session-owned workspace adapter，支持
-ZIP import、table selection、SAS generation、metadata/SAS download、discard draft 及
-English status/error feedback。`test/testthat/test-shinytest2.R` 覆盖初始状态、Generate
-失败反馈和截图断言；标准 runner 会在 CRAN 模式跳过浏览器测试。当前环境已确认
-`shinytest2` 安装，但 Chromote 无法启动 Chromium，因此实际浏览器回归需在可用浏览器
-运行环境重新执行。
+**当前状态（2026-09-09）**：P7 已完成。`app.R` 和 session-owned workspace adapter
+支持 ZIP import、table selection、SAS generation、metadata/SAS download、discard
+draft、English status/error feedback，以及 population/header/table/template/chunk 编辑。
+`test/testthat/test-shinytest2.R` 已覆盖 dashboard 隔离、Import、Save、Discard、Cancel、
+dirty guard、New/Delete、Header 行编辑、Template chunk/row DT、hierarchical block 和
+Generate。浏览器测试在本地 Chrome/Chromote 环境实际执行，不允许静默跳过。
 
 本次补充了 population label/expression 的最小编辑闭环，以及 Save/Cancel 按钮；编辑
 通过 P6 workspace draft API 进行，保存后提升 revision，取消后恢复 saved snapshot。
@@ -378,6 +378,11 @@ English status/error feedback。`test/testthat/test-shinytest2.R` 覆盖初始�
 
 **完成 gate**：所有批准范围的验收标准有自动化或明确的人工证据；工作区无意外
 生成物；计划、设计决策和实现状态一致。
+
+**当前状态（2026-09-09）**：P8 验证完成。`Rscript test/run_tests.R` 已通过 application、
+registry、shinytest2、source-generator、workspace、yaml-codec 及三类 emitter 回归；
+demo ZIP 可导入并生成 baseline 与 AE hierarchical SAS source。启动脚本会自动选择
+3838 或下一个可用端口。剩余 UI 视觉优化不阻断当前交付，作为后续维护项处理。
 
 ## 5. 变更与回滚规则
 

@@ -22,8 +22,8 @@ fixtures, not generated runtime output.
 
 ## Running
 
-The standard test runner executes under CRAN mode and skips browser tests.
-To run the browser test locally:
+The browser regression is required for this project and must not be silently
+skipped by CRAN-mode detection. Run it locally with:
 
 ```powershell
 $env:NOT_CRAN = "true"
