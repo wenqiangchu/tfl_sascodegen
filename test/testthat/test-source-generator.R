@@ -186,3 +186,18 @@ testthat::test_that("interleaved batch types retain template order in logical ma
   testthat::expect_identical(log$plans[[2L]]$logical_maps[[1L]]$chunk_id, "sex")
   testthat::expect_true(grepl("categorical batch", result$source, fixed = TRUE))
 })
+
+testthat::test_that("compatible continuous chunks share one MEANS procedure", {
+  bundle <- generator_fixture()
+  chunks <- bundle$templates[[1L]]$body$chunks
+  chunks[[2L]] <- chunks[[1L]]
+  chunks[[2L]]$id <- "weight"
+  chunks[[2L]]$analysis_variable <- "WEIGHT"
+  bundle$templates[[1L]]$body$chunks <- chunks
+  result <- generate_table_source(bundle, "t1")
+  testthat::expect_true(result$passed)
+  testthat::expect_length(regmatches(result$source, gregexpr("proc means", result$source, fixed=TRUE))[[1L]], 1L)
+  testthat::expect_match(result$source, "chunk_order column_order", fixed=TRUE)
+  testthat::expect_match(result$source, "'age'", fixed=TRUE)
+  testthat::expect_match(result$source, "weight", fixed=TRUE)
+})

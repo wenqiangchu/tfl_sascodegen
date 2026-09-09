@@ -16,3 +16,19 @@ testthat::test_that("FDA-style tables generate expected source sections", {
   testthat::expect_match(lab$value, "CHG", fixed=TRUE)
   testthat::expect_match(lab$value, "resolved_digits", fixed=TRUE)
 })
+
+testthat::test_that("FDA-style source preserves section ordering and batch identity", {
+  bytes <- readBin(file.path(project_root, "test", "fixtures", "demo_metadata.zip"), "raw",
+                   n = file.info(file.path(project_root, "test", "fixtures", "demo_metadata.zip"))$size)
+  ws <- application_import_bundle(new_empty_workspace(), bytes)$workspace
+  result <- application_generate_source(ws, "z_lab_change_over_time")
+  testthat::expect_true(result$passed)
+  source <- result$value
+  testthat::expect_lt(regexpr("Select the table population", source, fixed=TRUE),
+                      regexpr("Discover hierarchical level 1 nodes", source, fixed=TRUE))
+  testthat::expect_lt(regexpr("proc means", source, fixed=TRUE),
+                      regexpr("data _TFL_REND_001", source, fixed=TRUE))
+  testthat::expect_match(source, "data _TFL_HSTAT_001;", fixed=TRUE)
+  testthat::expect_match(source, "group_path", fixed=TRUE)
+  testthat::expect_match(source, "runtime_row_id", fixed=TRUE)
+})
