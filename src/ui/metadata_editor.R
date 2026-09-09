@@ -881,10 +881,8 @@ chunk_row_ui <- function(row,prefix,index) {
     h4("Levels"), collection_buttons(p,"level","levels"), tagList(lapply(seq_along(chunk$levels %||% list()),function(j)level_ui(chunk$levels[[j]],p,j,chunk))),
     h4("Analysis blocks"), collection_buttons(p,"block","analysis_blocks"), tagList(lapply(seq_along(chunk$analysis_blocks %||% list()),function(b)block_ui(chunk$analysis_blocks[[b]],p,b,chunk)))) }
   title_bar <- tags$div(class="chunk-titlebar",
-    style="display:flex;align-items:center;width:100%;",
-    tags$span(paste("Chunk", index, chunk$id)),
-    tags$span(
-      style="margin-left:auto;display:flex;gap:4px;",
+    tags$span(class="chunk-title-text", paste("Chunk", index, chunk$id)),
+    tags$span(class="chunk-title-actions",
       actionButton(paste0(p,"delete"),"Delete chunk", class="btn-default btn-sm"),
       actionButton(paste0(p,"up"),"Move up", class="btn-default btn-sm"),
       actionButton(paste0(p,"down"),"Move down", class="btn-default btn-sm")
@@ -892,7 +890,7 @@ chunk_row_ui <- function(row,prefix,index) {
   )
   # Controls live in the card title bar so they remain discoverable while
   # scrolling through a long template. IDs remain unchanged for observers.
-  common <- tagList(common, tags$style(HTML(sprintf("#chunk-card-%s .box-header .box-title { display:flex !important; align-items:center; width:100%%; padding-right:8px; } #chunk-card-%s .chunk-titlebar { display:flex; align-items:center; width:100%%; } #chunk-card-%s .chunk-titlebar > span:last-child { margin-left:auto; }", uid, uid, uid))))
+  common <- tagList(common, tags$style(HTML(sprintf("#chunk-card-%s .box-header { position:relative !important; } #chunk-card-%s .box-header .box-title { display:block !important; width:100%% !important; padding-right:250px !important; } #chunk-card-%s .chunk-titlebar { display:block !important; width:100%% !important; } #chunk-card-%s .chunk-title-actions { position:absolute !important; right:8px !important; top:6px !important; display:flex !important; gap:4px !important; z-index:2; }", uid, uid, uid, uid))))
   box(id=paste0("chunk-card-", uid), title=title_bar,width=12,status="info",solidHeader=TRUE,common,specific)
 }
 
