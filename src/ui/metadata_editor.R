@@ -890,7 +890,7 @@ chunk_row_ui <- function(row,prefix,index) {
   )
   # Controls live in the card title bar so they remain discoverable while
   # scrolling through a long template. IDs remain unchanged for observers.
-  common <- tagList(common, tags$style(HTML(sprintf("#chunk-card-%s .box-header { position:relative !important; } #chunk-card-%s .box-header .box-title { display:block !important; width:100%% !important; padding-right:250px !important; } #chunk-card-%s .chunk-titlebar { display:block !important; width:100%% !important; } #chunk-card-%s .chunk-title-actions { position:absolute !important; right:8px !important; top:6px !important; display:flex !important; gap:4px !important; z-index:2; }", uid, uid, uid, uid))))
+  common <- tagList(common, tags$style(HTML(sprintf("#chunk-card-%s .box-header .box-title { display:block !important; width:100%% !important; overflow:hidden; } #chunk-card-%s .chunk-titlebar { display:block !important; width:100%% !important; } #chunk-card-%s .chunk-title-text { display:inline-block !important; } #chunk-card-%s .chunk-title-actions { float:right !important; display:flex !important; gap:4px !important; margin-top:-2px; } #chunk-card-%s .chunk-title-actions .btn { float:none !important; }", uid, uid, uid, uid, uid))))
   box(id=paste0("chunk-card-", uid), title=title_bar,width=12,status="info",solidHeader=TRUE,common,specific)
 }
 
