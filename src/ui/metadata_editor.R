@@ -835,10 +835,11 @@ chunk_row_ui <- function(row,prefix,index) {
     h4("Levels"), collection_buttons(p,"level","levels"), tagList(lapply(seq_along(chunk$levels %||% list()),function(j)level_ui(chunk$levels[[j]],p,j,chunk))),
     h4("Analysis blocks"), collection_buttons(p,"block","analysis_blocks"), tagList(lapply(seq_along(chunk$analysis_blocks %||% list()),function(b)block_ui(chunk$analysis_blocks[[b]],p,b,chunk)))) }
   title_bar <- tags$div(
-    style="display:flex;align-items:center;justify-content:space-between;width:100%;",
+    style="display:flex;align-items:center;width:100%;",
     tags$span(paste("Chunk", index, chunk$id)),
     tags$span(
-      actionButton(paste0(p,"delete"),"Delete chunk", class="btn-danger btn-sm"),
+      style="margin-left:auto;display:flex;gap:4px;",
+      actionButton(paste0(p,"delete"),"Delete chunk", class="btn-default btn-sm"),
       actionButton(paste0(p,"up"),"Move up", class="btn-default btn-sm"),
       actionButton(paste0(p,"down"),"Move down", class="btn-default btn-sm")
     )
