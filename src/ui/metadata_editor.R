@@ -11,10 +11,10 @@ metadata_editor_ui <- function() {
     dashboardHeader(title = "SAS Code Generator",
       tags$li(class="dropdown", style="display:flex;gap:6px;align-items:center;padding:7px 15px;",
         actionButton("upload_metadata", "Upload metadata", class = "btn btn-default btn-sm",
-          style = "color:#333;background-color:#fff;border-color:#ccc;"),
+          style = "width:180px;height:30px;padding:5px 10px;line-height:18px;font-size:12px;color:#333;background-color:#fff;border-color:#ccc;"),
         uiOutput("download_metadata_ui"),
         downloadButton("download_demo_package", "Download demo package", class = "btn btn-default btn-sm",
-          style = "color:#333;background-color:#fff;border-color:#ccc;")
+          style = "width:180px;height:30px;padding:5px 10px;line-height:18px;font-size:12px;color:#333;background-color:#fff;border-color:#ccc;")
       )),
     dashboardSidebar(
       sidebarMenu(id = "main_nav",
@@ -820,8 +820,9 @@ metadata_editor_server <- function(input, output, session) {
   output$status<-renderText(status()); output$source<-renderText(source_text())
   output$download_bundle<-downloadHandler(filename=function()"metadata_bundle.zip",content=function(file){result<-application_export_bundle(workspace());if(result$passed)writeBin(result$value$bytes,file)})
   output$download_metadata_ui <- renderUI({
-    if (metadata_loaded()) downloadButton("download_bundle", "Download metadata", class="btn-default btn-sm")
-    else actionButton("download_metadata_disabled", "Download metadata", class="btn-default btn-sm disabled", disabled=TRUE)
+    button_style <- "width:180px;height:30px;padding:5px 10px;line-height:18px;font-size:12px;color:#333;background-color:#fff;border-color:#ccc;"
+    if (metadata_loaded()) downloadButton("download_bundle", "Download metadata", class="btn btn-default btn-sm", style=button_style)
+    else actionButton("download_metadata_disabled", "Download metadata", class="btn btn-default btn-sm disabled", style=button_style, disabled=TRUE)
   })
   output$download_demo_package <- downloadHandler(filename=function()"demo_metadata_package.zip",content=function(file){
     staging <- tempfile("demo_package_"); dir.create(staging); on.exit(unlink(staging, recursive=TRUE, force=TRUE), add=TRUE)
