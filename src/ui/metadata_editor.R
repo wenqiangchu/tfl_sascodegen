@@ -10,9 +10,11 @@ metadata_editor_ui <- function() {
   dashboardPage(
     dashboardHeader(title = "SAS Code Generator",
       tags$li(class="dropdown", style="display:flex;gap:6px;align-items:center;padding:7px 15px;",
-        actionButton("upload_metadata", "Upload metadata", class = "btn-default btn-sm"),
+        actionButton("upload_metadata", "Upload metadata", class = "btn btn-default btn-sm",
+          style = "color:#333;background-color:#fff;border-color:#ccc;"),
         uiOutput("download_metadata_ui"),
-        downloadButton("download_demo_package", "Download demo package", class = "btn-default btn-sm")
+        downloadButton("download_demo_package", "Download demo package", class = "btn btn-default btn-sm",
+          style = "color:#333;background-color:#fff;border-color:#ccc;")
       )),
     dashboardSidebar(
       sidebarMenu(id = "main_nav",
