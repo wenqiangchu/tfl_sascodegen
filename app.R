@@ -3,6 +3,7 @@ library(shinydashboard)
 library(DT)
 
 project_root <- normalizePath(getwd(), mustWork = FALSE)
+options(tfl_sascodegen_root = project_root)
 source_order <- c(
   "src/core/errors.R", "src/chunks/registry.R", "src/metadata/model.R",
   "src/metadata/yaml_codec.R", "src/metadata/workspace.R",

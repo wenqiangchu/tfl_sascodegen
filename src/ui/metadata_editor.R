@@ -19,12 +19,11 @@ metadata_editor_ui <- function() {
         menuItem("Metadata", tabName = "metadata", icon = icon("database")),
         menuItem("Table Metadata", tabName = "table_metadata", icon = icon("table")),
         menuItem("Template Editor", tabName = "template_editor", icon = icon("file")),
-        menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code"))),
-      tags$hr()),
+        menuItem("Generate SAS", tabName = "generate_sas", icon = icon("code")))),
     dashboardBody(
       tags$div(style="display:none", textOutput("metadata_loaded_flag")),
       uiOutput("metadata_gate"),
-      tabItems(
+      tags$div(id="metadata_content", tabItems(
       tabItem(tabName = "metadata",
         tabsetPanel(id = "metadata_panel",
           tabPanel("Population", value = "population", fluidRow(
@@ -64,7 +63,7 @@ metadata_editor_ui <- function() {
           actionButton("generate", "Generate SAS", icon = icon("play")),
           downloadButton("download_sas", "Download SAS"),
           verbatimTextOutput("status"), verbatimTextOutput("source")))
-      )
+      ))
     )
   )
 }
@@ -801,11 +800,14 @@ metadata_editor_server <- function(input, output, session) {
   observeEvent(input$confirm_import,{action<-pending_action();pending_action(NULL);removeModal();if(!is.null(action))import_now(action$path)})
   output$metadata_gate <- renderUI({
     if (metadata_loaded()) return(NULL)
-    box(width=12, status="info", solidHeader=TRUE, title="Upload metadata to begin",
+    tagList(tags$style(HTML("#metadata_content { display:none; }")), box(width=12, status="info", solidHeader=TRUE, title="Upload metadata to begin",
       p("Upload a metadata ZIP bundle to start editing."),
-      actionButton("upload_metadata_gate", "Upload metadata"))
+      actionButton("upload_metadata_gate", "Upload metadata")))
   })
   output$metadata_loaded_flag <- renderText(if (metadata_loaded()) "true" else "false")
+  observe({
+    session$sendCustomMessage("metadata-loaded", list(loaded=metadata_loaded()))
+  })
   observeEvent(input$upload_metadata_gate, {
     showModal(modalDialog(title="Import metadata bundle",
       fileInput("bundle", "Metadata bundle (ZIP)", accept = ".zip"),
@@ -815,11 +817,15 @@ metadata_editor_server <- function(input, output, session) {
   observeEvent(input$generate,request_action(list(kind="generate")))
   output$status<-renderText(status()); output$source<-renderText(source_text())
   output$download_bundle<-downloadHandler(filename=function()"metadata_bundle.zip",content=function(file){result<-application_export_bundle(workspace());if(result$passed)writeBin(result$value$bytes,file)})
-  output$download_metadata_ui <- renderUI(downloadButton("download_bundle", "Download metadata", class="btn-default btn-sm", disabled = !metadata_loaded()))
+  output$download_metadata_ui <- renderUI({
+    if (metadata_loaded()) downloadButton("download_bundle", "Download metadata", class="btn-default btn-sm")
+    else actionButton("download_metadata_disabled", "Download metadata", class="btn-default btn-sm disabled", disabled=TRUE)
+  })
   output$download_demo_package <- downloadHandler(filename=function()"demo_metadata_package.zip",content=function(file){
     staging <- tempfile("demo_package_"); dir.create(staging); on.exit(unlink(staging, recursive=TRUE, force=TRUE), add=TRUE)
-    file.copy(file.path(project_root,"test","fixtures","demo_metadata.zip"), file.path(staging,"demo_metadata.zip"), overwrite=TRUE)
-    guide <- file.path(staging,"user-guide.md"); file.copy(file.path(project_root,"docs","user-guide.md"), guide, overwrite=TRUE)
+    root <- getOption("tfl_sascodegen_root", normalizePath(getwd(), mustWork=FALSE))
+    file.copy(file.path(root,"test","fixtures","demo_metadata.zip"), file.path(staging,"demo_metadata.zip"), overwrite=TRUE)
+    guide <- file.path(staging,"user-guide.md"); file.copy(file.path(root,"docs","user-guide.md"), guide, overwrite=TRUE)
     zip::zipr(file, files=c("demo_metadata.zip","user-guide.md"), root=staging, include_directories=FALSE)
   })
   output$download_sas<-downloadHandler(filename=function()paste0(input$generate_table %||% "table",".sas"),content=function(file)writeLines(source_text(),file,useBytes=TRUE))
