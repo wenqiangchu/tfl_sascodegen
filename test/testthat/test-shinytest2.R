@@ -9,7 +9,10 @@ new_editor_app <- function(name) {
 }
 
 import_demo <- function(app) {
+  app$click("upload_metadata")
+  app$wait_for_idle(200)
   app$upload_file(bundle=file.path(project_root,"test","fixtures","demo_metadata.zip"))
+  app$click("confirm_import")
   app$wait_for_idle(1200)
 }
 
