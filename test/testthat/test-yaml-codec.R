@@ -271,3 +271,28 @@ testthat::test_that("ZIP metadata archive requires manifest and catalogs", {
   testthat::expect_false(result$passed)
   testthat::expect_identical(result$errors[[1L]]$code, "bundle_entry_missing")
 })
+
+testthat::test_that("ZIP structure rejects unknown entries and filename identity mismatches", {
+  bundle <- parse_bundle_yaml(valid_bundle_yaml())$workspace
+  texts <- encode_archive_texts(bundle)
+  staging <- tempfile("tfl_archive_structure_"); dir.create(staging)
+  on.exit(unlink(staging, recursive = TRUE, force = TRUE), add = TRUE)
+  for (name in names(texts)) {
+    path <- file.path(staging, name); dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+    writeLines(texts[[name]], path, useBytes = TRUE)
+  }
+  writeLines("unexpected", file.path(staging, "notes.txt"), useBytes = TRUE)
+  zip_path <- tempfile(fileext = ".zip"); on.exit(unlink(zip_path, force = TRUE), add = TRUE)
+  zip::zipr(zip_path, files = c("manifest.yaml", "populations.yaml", "headers.yaml", "tables", "templates", "notes.txt"), root = staging, include_directories = FALSE)
+  result <- parse_bundle_archive(readBin(zip_path, "raw", n = file.info(zip_path)$size))
+  testthat::expect_false(result$passed)
+  testthat::expect_identical(result$errors[[1L]]$code, "bundle_entry_invalid")
+
+  writeLines(gsub("demog", "renamed", texts[["templates/demog.yaml"]], fixed = TRUE),
+             file.path(staging, "templates", "demog.yaml"), useBytes = TRUE)
+  zip_path2 <- tempfile(fileext = ".zip"); on.exit(unlink(zip_path2, force = TRUE), add = TRUE)
+  zip::zipr(zip_path2, files = c("manifest.yaml", "populations.yaml", "headers.yaml", "tables", "templates"), root = staging, include_directories = FALSE)
+  result2 <- parse_bundle_archive(readBin(zip_path2, "raw", n = file.info(zip_path2)$size))
+  testthat::expect_false(result2$passed)
+  testthat::expect_true(any(vapply(result2$errors, function(x) identical(x$code, "bundle_file_identity_invalid"), logical(1))))
+})
