@@ -24,7 +24,7 @@ metadata_editor_ui <- function() {
     dashboardBody(
       tags$div(style="display:none", textOutput("metadata_loaded_flag")),
       uiOutput("metadata_gate"),
-      conditionalPanel("output.metadata_loaded_flag == 'true'", tabItems(
+      tabItems(
       tabItem(tabName = "metadata",
         tabsetPanel(id = "metadata_panel",
           tabPanel("Population", value = "population", fluidRow(
@@ -64,7 +64,7 @@ metadata_editor_ui <- function() {
           actionButton("generate", "Generate SAS", icon = icon("play")),
           downloadButton("download_sas", "Download SAS"),
           verbatimTextOutput("status"), verbatimTextOutput("source")))
-      ))
+      )
     )
   )
 }
