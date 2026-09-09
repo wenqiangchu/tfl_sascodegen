@@ -393,6 +393,25 @@ SAS source text 的边界。
    ZIP bytes 和 mock core 结果。P7/P8 还必须使用 `shinytest2` 验证按钮交互，包括
    Import、Save、Discard、Cancel、dirty guard、Delete/Confirm Delete、选择、
    Generate 以及 metadata/SAS 下载。
+8. 2026-09-09 确认 metadata 初始加载和全局工具栏行为：
+
+   - `dashboardHeader` 标题右侧提供 `Upload metadata`、`Download metadata` 和
+     `Download demo package`；sidebar 不再承载 bundle 上传和下载控件；
+   - 上传按钮打开包含 ZIP `fileInput` 的 modal，而不是把 file input 直接放进 header；
+   - UI ViewState 增加最小的 session-owned `metadata_loaded` 布尔状态，初始为 `FALSE`，
+     仅在 bundle 完整解析并成功替换 workspace 后设为 `TRUE`；它不通过 population、
+     header、table 或 template 的数量推导；
+   - 首次成功导入前，主页面显示必须上传 metadata ZIP 的 welcome/empty state；依赖
+     metadata 的编辑内容不渲染，Download metadata 禁用，但上传和 demo package 下载
+     始终可用；
+   - 成功导入后清空旧 active editor、draft、pending action 和动态 DT cache，刷新列表并
+     激活第一个可用对象；导入失败不修改现有 workspace、editor 或 loaded 状态；
+   - 已加载 workspace 的 clean re-import 需要 replacement confirmation；dirty re-import
+     先执行现有 Discard changes / Cancel guard，确认丢弃后再执行 replacement confirmation；
+   - Download metadata 只导出最近一次保存的 workspace snapshot，不隐式保存 draft；
+     Download demo package 与 workspace 无关，包含 synthetic demo metadata ZIP 和用户指南；
+   - 删除最后一个 metadata 对象不会把 `metadata_loaded` 改回 `FALSE`；该状态表示是否
+     成功完成过本 session 的 bundle import，而不是 workspace 是否非空。
 
 ### 被拒绝的替代方案
 
