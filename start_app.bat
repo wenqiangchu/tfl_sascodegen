@@ -14,10 +14,14 @@ if errorlevel 1 (
 set "DEFAULT_PORT=3838"
 set "PORT="
 
-rem Select the default port when available; otherwise use the next free port.
+echo Checking ports %DEFAULT_PORT%-3938...
+
+rem Check each candidate port using the native netstat command.
 for /L %%P in (%DEFAULT_PORT%,1,3938) do (
-  powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort %%P -State Listen -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }" >nul 2>nul
-  if not errorlevel 1 if not defined PORT set "PORT=%%P"
+  if not defined PORT (
+    netstat -ano | findstr /R /C:":%%P .*LISTENING" >nul 2>nul
+    if errorlevel 1 set "PORT=%%P"
+  )
 )
 
 if not defined PORT (
