@@ -11,11 +11,14 @@ coerce_bundle_bytes <- function(input) {
 
 normalize_yaml_text <- function(bytes) {
   if (length(bytes) == 0L) return("")
+  utf8_bom <- as.raw(c(0xef, 0xbb, 0xbf))
+  if (length(bytes) >= 3L && identical(bytes[seq_len(3L)], utf8_bom)) {
+    bytes <- bytes[-seq_len(3L)]
+  }
   text <- tryCatch(rawToChar(bytes), error = function(error) NULL)
   if (is.null(text) || !validUTF8(text)) return(NULL)
   # A UTF-8 BOM and CRLF/CR are accepted at the transport boundary but never
   # survive into the in-memory canonical representation.
-  if (startsWith(text, "\ufeff")) text <- substring(text, 2L)
   text <- gsub("\r\n", "\n", text, fixed = TRUE)
   gsub("\r", "\n", text, fixed = TRUE)
 }

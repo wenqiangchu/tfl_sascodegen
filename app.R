@@ -10,7 +10,12 @@ source_order <- c(
   "src/generator/source_generator.R", "src/emitters/continuous.R",
   "src/emitters/categorical.R", "src/emitters/hierarchical.R",
   "src/emitters/precision.R", "src/emitters/result_render.R",
-  "src/application/orchestration.R", "src/ui/metadata_editor.R"
+  "src/application/orchestration.R", "src/ui/metadata_editor_helpers.R",
+  "src/ui/metadata_editor_state.R", "src/ui/metadata_editor_ui.R", "src/ui/metadata_editor_template.R",
+  "src/ui/metadata_editor_collections.R", "src/ui/metadata_editor_header.R",
+  "src/ui/metadata_editor_template_server.R",
+  "src/ui/metadata_editor_import.R", "src/ui/metadata_editor_generation.R",
+  "src/ui/metadata_editor_runtime.R", "src/ui/metadata_editor.R"
 )
 invisible(lapply(file.path(project_root, source_order), source, local = FALSE))
 
