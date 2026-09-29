@@ -1,5 +1,11 @@
 # SAS 描述性分析代码生成：Metadata 模型、Chunk 契约与内存工作区
 
+生成边界更新（2026-09-13）：用户已确认支持 duplicate-check 选项，以及生成
+`PROC REPORT` 或 `PROC COMPARE` 源码。以
+[最新生成决定](docs/design-decisions.md#sas-生成选项与源码可读性) 为准；该决定替代下文
+关于“不生成 PROC REPORT/ODS”以及 GenerationRequest 仅含三个字段的早期限制。
+应用输出仍只有 SAS source text，不执行 SAS 或直接生成报告文件。
+
 本文是面向独立实现的可移植契约。它只描述用于生成 SAS 分析程序的
 population、header、table、template、chunk 以及内存态编辑工作区，不规定任何
 仓库、目录、物理路径或具体实现语言。
@@ -132,6 +138,7 @@ populations:
 headers:
   - id: treatment
     source_data: ADAM.ADSL
+    orientation: landscape
     spanning_headers:
       - id: analysis_population
         level: 1
@@ -316,6 +323,7 @@ SAS parser 校验。表达式中引用的变量、格式和数据集由调用方
 ~~~yaml
 id: treatment
 source_data: ADAM.ADSL
+orientation: landscape
 spanning_headers:
   - id: analysis_population
     level: 1
@@ -336,6 +344,7 @@ columns:
 | --- | --- | --- |
 | id | string | 工作区内唯一的 header ID。 |
 | source_data | non-empty string | 外部 SAS 数据集引用；原样保留，不表示上传文件或物理路径。可使用 `adsl`、`adam.adsl`、`&ADSL` 或 `&lib..&member` 等调用方提供的 SAS 文本。 |
+| orientation | enum，必填 | portrait 或 landscape；Header 编辑器与 canonical YAML 保存该值，Report 源码据此计算 Letter 页面可用宽度。导入不推断默认值；该字段不属于 Table。 |
 | spanning_headers | sequence，可选 | 跨列表头；每项有 id、level、label。 |
 | columns | sequence | 有序展示列。 |
 | columns[].id | string | header column 的逻辑 ID。 |
@@ -509,7 +518,9 @@ DATA step 仍不进入 metadata 契约。
 digits 支持绝对非负整数以及 `+n`/`-n` 相对精度字符串。continuous 的 relative
 digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`：数值先按最多
 15 位有效数字、非科学计数法、去除小数尾零的规则规范化，再计算
-`resolved_digits = base_digits + offset`；负 resolved digits 失败，不自动截断。
+`resolved_digits = base_digits + offset`；负 resolved digits 不自动截断。按 P0-13，
+生成的 SAS 写入 ERROR 诊断、设置该 statistic 为不可估计并显示 NE，继续后续步骤；
+它不执行 ABORT CANCEL，也不是应用根据分析数据返回的生成前置错误。
 `n` 不声明 digits，categorical `pct` 只接受非负绝对整数。这里的 15 位规范化是
 运行期 precision 语义的一部分，与 metadata numeric scalar 的 canonical 文件表示
 规则相容但彼此独立；`base_digits` 从实际分析数值推导，不依赖原始 SAS format，
@@ -557,6 +568,12 @@ hierarchical result 在公共 statistic 字段上增加 `analysis_id`、`group_p
 `node_key`；hierarchical render row 增加 `runtime_row_id`、`row_role`、动态 label、
 `indent_level` 和各 header column 的 `cell_text`。这些运行时值不写回 YAML，不替代
 metadata position ID。所有 statistic/render 对象均只存在于 SAS `WORK` 的生成期对象中。
+
+最终组装时，hierarchical render 的 `row_sequence` 是当前 container 按最终展示
+顺序生成的连续行号，不沿用 nested block 的局部行号。同一动态逻辑行的所有 Header
+columns 共享一个行号；不同节点或 block 的行即使 row_id/label 相同也不得合并。
+table assembly 以 `chunk_order` 和 `row_sequence` 限定一条宽表行；跨 chunk 的行号
+可以重新从 1 开始。该修复的责任边界与验收见当前项目 P0-12。
 
 ## 9. 四类 Chunk 模型
 
@@ -776,6 +793,22 @@ result_sort:
 | denominator | categorical block 的显式分母声明。 |
 | rows | block 内有序静态行。 |
 
+continuous block 的 `counting_unit` 固定按以下语义 materialize 分析输入：
+
+- `record`：每条 anchor node/header column 内的 source record 独立进入分析；numeric
+  missing 由 SAS continuous procedure 按缺失值处理，不执行去重；
+- `distinct_subject`：在每个 anchor node/header column/`USUBJID` 内至多保留一个
+  非缺失 `analysis_variable`。一个非缺失值加任意数量缺失值时使用该唯一非缺失值；
+  全部缺失时该 unit 贡献一个 missing analysis value；两个或更多非缺失记录是运行期
+  contract failure；
+- `distinct_key`：与 `distinct_subject` 相同，但 counting-unit identity 使用
+  `distinct_key` 声明的 typed SAS 字段序列。
+
+continuous unit 冲突不得通过 `FIRST.` 选择、最大值、最小值、平均值或其他隐式聚合
+解决。生成的 SAS 写入稳定的
+`ERROR: [USER] continuous_unit_multiple_values ...` 并终止当前 SAS 提交；调用方需要在
+`custom_code.before` 或外部数据准备中派生唯一分析记录。
+
 hierarchical categorical block 的 denominator 可声明：
 
 ~~~yaml
@@ -907,7 +940,7 @@ UI 使用 Shiny，保留现有编辑形式，但所有数据来自 MetadataWorks
 
 - 左侧 header 列表；
 - New/Delete；
-- id、source_data 表单；
+- id、source_data 表单及必选的 Page orientation（portrait/landscape）；
 - columns 表格编辑 id、label、condition、display_order、width、
   alignment；
 - spanning header label 可以继续通过相邻 column label 推导；
@@ -1105,8 +1138,14 @@ expected-cell skeleton 负责补回零计数；分母为零时 `n=0`、`pct` 为
 4. 一个 continuous batch 生成一次 `PROC MEANS`，一个 categorical batch 生成一次
    `PROC FREQ`。批处理只复用过程调用，不改变每个 chunk 自己的 denominator、row
    condition、counting unit、digits、`NE` 或 warning 契约；
-5. `hierarchical_summary` 首期不跨 container 合批。其动态节点发现、节点 scope 和
-   analysis block 遍历保持独立，block 在自身 scope 内调用已注册的 primitive emitter；
+5. `hierarchical_summary` 不跨 container 合批。其动态节点发现与 node scope 保持独立；
+   同 container、同 anchor level、sequence 相邻且 counting unit、typed distinct_key
+   与 continuous definition 兼容的 continuous blocks，按 P0-11 共用一次 PROC MEANS。
+   各 block 独立完成 counting-unit materialization、precision、expected-cell 和
+   raw/precision join；共享分析使用 analysis_order/node_key/column_order 身份，
+   raw 仍拆回原 block namespace。P0-13 仅将完成关联后的 value/digits 转换共用
+   一次 DATA step，通过输入 IN 标志输出到各 block 原有 STAT。随后继续逐 block
+   render 与布局映射；不增加共享结果表或 SAS 宏。其他 blocks 独立调用 primitive；
 6. 分析完成后将 long-form logical result 转为 render rows，并继续按原 template/chunk/
    row/header sequence 组装最终 table；批次的执行顺序不得改变可见输出顺序；
 7. 最后插入 `custom_code.after`。

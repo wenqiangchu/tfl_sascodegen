@@ -19,8 +19,26 @@ tmp/
 *.rtf
 *.pdf
 
+# Hand-authored SAS runtime fixtures; generated programs remain ignored.
+!test/fixtures/sas/
+!test/fixtures/sas/**/
+!test/fixtures/sas/**/*.sas
+test/fixtures/sas/**/generated/
+test/fixtures/sas/**/logs/
+
 # Test and tooling caches
 coverage/
 .pytest_cache/
 __pycache__/
 *.Rout
+study/sas_data/
+study/validation/*.rtf
+study/validation/*.log
+study/validation/*.lst
+study/validation/*.sas
+study/validation/*.zip
+study/validation_data/
+study/convert_xpt_to_sas.log
+study/validation_contents.log
+study/validation_explicit.log
+convert_xpt_to_sas.lst

@@ -23,12 +23,23 @@ metadata_editor_ui <- function() {
     dashboardBody(
       tags$head(
         tags$meta(name="viewport", content="width=device-width, initial-scale=1, shrink-to-fit=no"),
+        tags$script(HTML("
+          Shiny.addCustomMessageHandler('metadata-loaded', function(message) {
+            var loaded = message.loaded === true;
+            document.getElementById('metadata_gate').style.display = loaded ? 'none' : '';
+            document.getElementById('metadata_content').style.display = loaded ? '' : 'none';
+          });
+        ")),
         tags$style(HTML("\n          /* Keep chunk title actions at the far right of the box header.\n             shinydashboard renders box(title=...) inside h3.box-title, whose\n             default float layout otherwise places nested controls at the left. */\n          .chunk-card .box-header .box-title,\n          [id^='chunk-card-'] .box-header .box-title {\n            display: flex !important;\n            align-items: center !important;\n            width: 100% !important;\n            float: none !important;\n            overflow: visible !important;\n          }\n          .chunk-titlebar {\n            display: flex !important;\n            align-items: center !important;\n            width: 100% !important;\n            min-width: 0;\n          }\n          .chunk-title-text {\n            flex: 0 1 auto !important;\n            min-width: 0;\n          }\n          .chunk-title-actions {\n            display: flex !important;\n            align-items: center !important;\n            gap: 4px !important;\n            margin-left: auto !important;\n            float: none !important;\n            flex: 0 0 auto !important;\n          }\n          .chunk-title-actions .btn {\n            float: none !important;\n            margin-top: 0 !important;\n          }\n          @media (max-width: 767px) {\n            .content-wrapper, .right-side { overflow-x: hidden; }\n            .box-header .box-title { white-space: normal; }\n            .navbar-custom-menu > .navbar-nav > li { float: none; }\n          }\n        "))
       ),
       tags$style(HTML(".chunk-titlebar { position: relative !important; display: block !important; width: 100% !important; min-width: 0 !important; padding-right: 260px !important; } .chunk-title-text { display: block !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .chunk-title-actions { position: absolute !important; top: 50% !important; right: 0 !important; transform: translateY(-50%) !important; display: flex !important; align-items: center !important; gap: 4px !important; white-space: nowrap !important; } .chunk-title-actions .btn { float: none !important; margin-top: 0 !important; } @media (max-width: 767px) { .chunk-titlebar { padding-right: 0 !important; padding-bottom: 38px !important; } .chunk-title-text { white-space: normal !important; } .chunk-title-actions { top: auto !important; right: auto !important; left: 0 !important; bottom: 0 !important; transform: none !important; } }")),
-      tags$div(style="display:none", textOutput("metadata_loaded_flag")),
-      uiOutput("metadata_gate"),
-      tags$div(id="metadata_content", tabItems(
+      tags$div(id = "metadata_gate",
+        box(width = 12, status = "info", solidHeader = TRUE,
+          title = "Upload metadata to begin",
+          p("Upload a metadata ZIP bundle to start editing."),
+          actionButton("upload_metadata_gate", "Upload metadata"))),
+      # The initial HTML must be correct before any Shiny connection or output.
+      tags$div(id="metadata_content", style="display:none;", tabItems(
       tabItem(tabName = "metadata",
         tabsetPanel(id = "metadata_panel",
           tabPanel("Population", value = "population", fluidRow(
@@ -42,6 +53,9 @@ metadata_editor_ui <- function() {
             object_list_box("Headers", "header"),
             box(title = "Header metadata", width = 8, status = "primary", solidHeader = TRUE,
               uiOutput("header_id_ui"), textInput("header_source_data", "Source data"),
+              selectInput("header_orientation", "Page orientation",
+                          choices = c("Select orientation" = "", "Portrait" = "portrait",
+                                      "Landscape" = "landscape"), selected = ""),
               h4("Columns and spanning headers"),
               actionButton("header_column_new", "Add row"),
               actionButton("header_column_delete", "Delete selected row"),
@@ -65,6 +79,13 @@ metadata_editor_ui <- function() {
       tabItem(tabName = "generate_sas",
         box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
           selectInput("generate_table", "Table", character()),
+          checkboxInput("generate_duplicate_check", "Include duplicate record checks", value = TRUE),
+          radioButtons("generate_output_mode", "Output mode",
+                       choices = c("Source report (PROC REPORT)" = "report",
+                                    "QC compare (PROC COMPARE)" = "compare"),
+                       selected = "report", inline = TRUE),
+          conditionalPanel("input.generate_output_mode == 'compare'",
+            helpText("QC compares with tables.<table_id>. Prepare that source dataset before running the SAS program.")),
           actionButton("generate", "Generate SAS", icon = icon("play")),
           uiOutput("download_sas_ui"),
           verbatimTextOutput("status"), verbatimTextOutput("source")))

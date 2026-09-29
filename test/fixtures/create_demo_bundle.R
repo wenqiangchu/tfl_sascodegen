@@ -12,6 +12,25 @@ bundle <- new_metadata_bundle(
   headers=list(list(id="fas_header", source_data="adam.adsl", columns=list(list(id="overall", label="FAS", condition="1", display_order=1L, width=1, alignment="center"))), list(id="safety_header", source_data="adam.adsl", columns=list(list(id="overall", label="SAFETY", condition="1", display_order=1L, width=1, alignment="center")))),
   tables=list(list(id="baseline_characteristics", population_id="fas", header_id="fas_header", template_id="baseline_template"), list(id="ae_by_soc_pt", population_id="safety", header_id="safety_header", template_id="ae_template"), list(id="vitals_by_visit", population_id="safety", header_id="safety_header", template_id="vitals_by_visit_template"), list(id="z_ae_overview", population_id="safety", header_id="safety_header", template_id="z_ae_overview_template"), list(id="z_lab_change_over_time", population_id="safety", header_id="safety_header", template_id="z_lab_change_template")),
   templates=list(list(id="baseline_template", body=list(stub_header="Characteristic", chunks=list(baseline, sex))), list(id="ae_template", body=list(stub_header="System Organ Class", chunks=list(ae))), list(id="vitals_by_visit_template", body=list(stub_header="Parameter / Visit", chunks=list(vitals))), list(id="z_ae_overview_template", body=list(stub_header="Adverse Event Summary", chunks=list(ae_overview_chunk))), list(id="z_lab_change_template", body=list(stub_header="Laboratory Parameter / Visit", chunks=list(lab_change)))))
+for (index in seq_along(bundle$headers)) {
+  bundle$headers[[index]]$orientation <- if (bundle$headers[[index]]$id == "fas_header") "portrait" else "landscape"
+}
+for (index in seq_along(bundle$tables)) {
+  bundle$tables[[index]]$custom_code <- list(
+    before = paste(
+      "/* Project setup runs before population and header derivation. */",
+      "/* Bind the ADAM library in the clinical project before running this program. */",
+      sep = "\n"
+    ),
+    after = paste(
+      "/* Customize rows in place and preserve the fixed report input columns. */",
+      "data WORK._TFL_ASM_001;",
+      "  set WORK._TFL_ASM_001;",
+      "run;",
+      sep = "\n"
+    )
+  )
+}
 check <- parse_bundle_value(bundle)
 if (length(check$errors)) { print(check$errors); stop("invalid demo bundle") }
 bytes <- canonical_archive_bytes(bundle)

@@ -17,6 +17,12 @@ The Shiny dashboard now follows the approved metadata editing layout:
   welcome state. Metadata-dependent dashboards show an empty-state prompt,
   while `Download metadata` is disabled. `Upload metadata` and `Download demo
   package` remain available.
+- The upload prompt and its button are included in the initial HTML, and the
+  editor container starts hidden. The existing `metadata-loaded` session message
+  switches their visibility after successful import. Initial display does not
+  wait for a reactive output or briefly expose the Population editor. Cancelled
+  or failed initial imports retain the landing page; failed replacement imports
+  retain the loaded workspace and editor.
 - Re-importing while an editor is dirty first uses the existing Discard/Cancel
   guard and then requires workspace replacement confirmation. A clean
   re-import requires replacement confirmation only.

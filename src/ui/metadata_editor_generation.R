@@ -17,10 +17,28 @@ register_metadata_editor_generation <- function(ctx) {
   request_action <- ctx$request_action
   editor_error_text <- ctx$editor_error_text
   is_guarded <- ctx$is_guarded
+  generated_options <- reactiveVal(NULL)
+  generation_options <- reactive(list(
+    include_duplicate_check = isTRUE(input$generate_duplicate_check %||% TRUE),
+    output_mode = as.character(input$generate_output_mode %||% "report")
+  ))
+  source_is_current <- reactive({
+    isTRUE(sas_download_ready()) &&
+      identical(as.character(input$generate_table %||% ""), generated_table_id()) &&
+      identical(generation_options(), generated_options())
+  })
 
   observeEvent(input$generate_table, {
     if (!identical(as.character(input$generate_table %||% ""), generated_table_id())) {
       sas_download_ready(FALSE)
+    }
+  }, ignoreInit = TRUE)
+  observeEvent(generation_options(), {
+    if (!identical(generation_options(), generated_options())) {
+      sas_download_ready(FALSE)
+      if (nzchar(generated_table_id())) {
+        status("Generation options changed. Generate SAS again.")
+      }
     }
   }, ignoreInit = TRUE)
   observe({
@@ -29,7 +47,12 @@ register_metadata_editor_generation <- function(ctx) {
   })
   generate_now <- function() {
     sas_download_ready(FALSE)
-    result <- application_generate_source(workspace(), input$generate_table)
+    requested_options <- generation_options()
+    result <- application_generate_source(
+      workspace(), input$generate_table,
+      include_duplicate_check = requested_options$include_duplicate_check,
+      output_mode = requested_options$output_mode
+    )
     if (!result$passed) {
       source_text("")
       generated_table_id("")
@@ -39,6 +62,7 @@ register_metadata_editor_generation <- function(ctx) {
     }
     source_text(result$value)
     generated_table_id(as.character(input$generate_table))
+    generated_options(requested_options)
     sas_download_ready(TRUE)
     status("SAS source generated.")
     invisible(NULL)
@@ -46,7 +70,7 @@ register_metadata_editor_generation <- function(ctx) {
   ctx$generate_now <- generate_now
   observeEvent(input$generate, request_action(list(kind = "generate")))
   output$status <- renderText(status())
-  output$source <- renderText(source_text())
+  output$source <- renderText(if (source_is_current()) source_text() else "")
   output$download_bundle <- downloadHandler(
     filename = function() "metadata_bundle.zip",
     content = function(file) {
@@ -76,7 +100,7 @@ register_metadata_editor_generation <- function(ctx) {
     }
   )
   output$download_sas_ui <- renderUI({
-    if (isTRUE(sas_download_ready()) && identical(as.character(input$generate_table %||% ""), generated_table_id())) {
+    if (source_is_current()) {
       downloadButton("download_sas", "Download SAS")
     } else {
       actionButton("download_sas_disabled", "Download SAS", class = "disabled", disabled = TRUE)
@@ -85,7 +109,7 @@ register_metadata_editor_generation <- function(ctx) {
   output$download_sas <- downloadHandler(
     filename = function() generated_sas_filename(generated_table_id()),
     content = function(file) {
-      req(isTRUE(sas_download_ready()), nzchar(generated_table_id()), identical(as.character(input$generate_table %||% ""), generated_table_id()))
+      req(source_is_current(), nzchar(generated_table_id()))
       write_generated_sas(source_text(), file)
     }
   )

@@ -40,7 +40,7 @@ register_metadata_editor_id_outputs <- function(ctx) {
 metadata_editor_new_seed <- function(type, id, list_ids) {
   switch(type,
     population = list(id = id, label = "New population", expression = "1"),
-    header = list(id = id, source_data = "adam.adsl", columns = list(list(
+    header = list(id = id, source_data = "adam.adsl", orientation = "", columns = list(list(
       id = "column_001", label = "Overall", condition = "1",
       display_order = 1L, width = 1, alignment = "center"))),
     table = list(id = id, population_id = list_ids("population")[[1L]],

@@ -28,7 +28,7 @@ testthat::test_that("FDA-style source preserves section ordering and batch ident
                       regexpr("Discover hierarchical level 1 nodes", source, fixed=TRUE))
   testthat::expect_lt(regexpr("proc means", source, fixed=TRUE),
                       regexpr("data _TFL_REND_001", source, fixed=TRUE))
-  testthat::expect_match(source, "data _TFL_HSTAT_001;", fixed=TRUE)
+  testthat::expect_match(source, "data _TFL_STAT_001;", fixed=TRUE)
   testthat::expect_match(source, "group_path", fixed=TRUE)
   testthat::expect_match(source, "runtime_row_id", fixed=TRUE)
 })
@@ -40,7 +40,7 @@ testthat::test_that("generated source has a canonical section manifest", {
   result <- application_generate_source(ws, "baseline_characteristics")
   testthat::expect_true(result$passed)
   source <- result$value
-  markers <- c("/* Select the table population. */", "/* Derive header column membership. */",
+  markers <- c("/* Select the table population. */", "/* Derive header column membership in one DATA step. */",
                "/* Assemble header membership. */", "/* Filter continuous chunk source before merge. */",
                "/* Analyze compatible continuous chunks once. */", "/* Render long-form statistics into independent row/header cells. */",
                "/* Assemble table rows and cells in template order. */")

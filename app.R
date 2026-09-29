@@ -7,7 +7,8 @@ options(tfl_sascodegen_root = project_root)
 source_order <- c(
   "src/core/errors.R", "src/chunks/registry.R", "src/metadata/model.R",
   "src/metadata/yaml_codec.R", "src/metadata/workspace.R",
-  "src/generator/source_generator.R", "src/emitters/continuous.R",
+  "src/generator/source_generator.R", "src/generator/report_source.R",
+  "src/emitters/source_input.R", "src/emitters/continuous.R",
   "src/emitters/categorical.R", "src/emitters/hierarchical.R",
   "src/emitters/precision.R", "src/emitters/result_render.R",
   "src/application/orchestration.R", "src/ui/metadata_editor_helpers.R",

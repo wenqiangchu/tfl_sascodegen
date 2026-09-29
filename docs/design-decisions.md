@@ -788,7 +788,18 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
    同一个 source row 因多个 columns 重复时只保留一次，违反 subject grain 的不同
    source rows 不被静默合并。`base_digits` 使用已确认的 15 位有效数字、非科学
    计数法和去除小数尾零规则；所有 columns 共用该值，relative digits 按
-   `base_digits + offset` 解析，负结果作为 generation contract failure。
+   `base_digits + offset` 解析。P0-13 澄清负结果沿用生成 SAS 的 ERROR + NE，
+   不终止当前提交；应用不读取分析值，也不会据此返回 generation 前置错误。
+
+   hierarchical nested continuous block 在进入 precision 和 `PROC MEANS` 前显式
+   materialize `counting_unit`。`record` 保留每条 source record；`distinct_subject`
+   按 `node_key`、`column_order`、`USUBJID` 分组；`distinct_key` 将最后一个字段替换为
+   metadata 声明的 typed key sequence。后两者允许一个非缺失 analysis value 加任意
+   数量 missing records，并使用该唯一非缺失值；全部 missing 时保留一个 missing
+   unit。两个或更多非缺失 records 写入
+   `ERROR: [USER] continuous_unit_multiple_values ...` 后执行 `ABORT CANCEL`，不得隐式
+   选择 first、最大值、最小值、平均值或其他聚合。unit materialization 后的输入使用
+   `_TFL_CUNIT_<batch>`，仍由一次 `PROC MEANS` 按 node/header 计算统计量。
 
 6. categorical batch 固定使用以下步骤：
 
@@ -894,7 +905,8 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
    `digits`，categorical `pct` 只接受非负绝对整数。
 2. relative digits 使用当前 chunk 实际分析 subjects 的统一 `base_digits`，
    先按 ref 的 15 位有效数字、非科学计数法、去除小数尾零规则解析，再计算
-   `resolved_digits = base_digits + offset`；负结果失败，不静默截断。
+   `resolved_digits = base_digits + offset`；负结果按 P0-13 写入 ERROR 并将该
+   statistic 显示为 NE，继续后续步骤，不静默截断。
 ### 已确认的 ref 对齐语义
 
 1. 沿用 ref 的 precision、统计和显示语义：continuous 使用 sample SD、n=0/n=1
@@ -1009,3 +1021,329 @@ Discard 对已有对象重新渲染 original 并清除 draft；对新对象直�
 object。Save 只在点击时收集并写入 workspace；无变化时不产生新 revision。程序同步
 只负责重新渲染 UI，不改变 dirty 事实。删除在通过 dirty guard 和引用检查后即时生效，
 不创建新的用户可见 delete draft；删除 pending create 等同于丢弃该新对象。
+
+## SAS 生成选项与源码可读性
+
+状态：本轮用户已确认（2026-09-13）。要求为 Header membership 合并为一个 DATA step、
+生成界面提供 duplicate record check 和 Report/QC 选项，以及 key map 改用
+`INPUT + DATALINES`。本节替代早期“不生成 PROC REPORT/ODS”和生成请求仅包含
+snapshot/table/registry 的限制。应用仍只输出 SAS source text，不读取分析数据、
+运行 SAS、检查比较结果或直接生成报告文件。
+
+### 数据对象、所有权和生命周期
+
+`GenerationRequest` 的完整字段如下：
+
+| 字段 | 职责 |
+| --- | --- |
+| `workspace_snapshot` | 本次使用的已保存 metadata 值快照。 |
+| `table_id` | 本次生成入口的 table ID。 |
+| `registry` | 四类 chunk 的代码注册定义和 emitter。 |
+| `include_duplicate_check` | 单个非缺失 logical，默认 `TRUE`；控制 source duplicate-key guard 是否生成。 |
+| `output_mode` | `report` 或 `compare`，默认 `report`；选择最后的 SAS procedure。 |
+
+`GenerationResult` 仍只有 `passed`、`source`、`errors`：成功返回完整源码，失败返回
+有序错误且 `source = NULL`。选项不增加工作区、TableSpec、HeaderSpec 或 bundle 字段，
+不修改 revision、已保存 metadata、draft 或外部文件。
+
+Shiny 的当前控件值与最近一次生成时捕获的 `generated_options` 都归当前 session 所有。
+`generated_options` 只含 `include_duplicate_check` 和 `output_mode`，成功生成时更新；
+预览和下载还必须同时匹配当前 table 与成功状态。切换选项后旧预览隐藏、下载失效，
+重新生成成功才恢复。空 UI 输入使用相同默认值，不把未初始化 checkbox 当作关闭。
+
+### 已确认的源代码行为
+
+1. Header 的 `_TFL_MEM_001` 只通过一个 DATA step 读取 `_TFL_POP_001`。按已保存的
+   Header 列顺序输出独立的 `if (<condition>) then do; ... output; end;`，
+   保留各列的 `header_column_id` 和 `column_order`。条件仍为原样 SAS expression；
+   同一 subject 命中多个列时输出多条 membership，不使用互斥的 `ELSE IF`。
+   Header N 的独立计数和空列补零逻辑保持不变。
+2. duplicate check 默认开启。关闭时省略专用 guard 的排序副本、计数 DATA step 和
+   `WARNING: [USER] duplicate_key`，不删除记录、不改变 merge、counting unit、
+   denominator、层级发现或分类 overlap warning。primitive source 按 subject key 检查；
+   hierarchical source 按其 source contract 检查，nested analysis 不重复检查展开后的行。
+3. `report` 模式在 analysis、assembly 和 `custom_code.after` 后添加 `PROC REPORT`
+   与既有 ODS RTF 源码。`compare` 模式在同一位置添加：
+
+   ```sas
+   proc compare base=tables.<table_id> compare=WORK._TFL_ASM_001 listvar;
+   run;
+   ```
+
+   source 侧库和数据集由调用方准备，生成器不写入 `TABLES`。比较沿用 SAS 的观察序
+   对齐，不新增 metadata compare key、不自动排序。需要 name literal 的 ID 使用
+   `tables.'<table_id>'n`（内部单引号按 SAS 规则处理）并启用 `VALIDMEMNAME=EXTEND`。
+   QC 模式不添加系统报告语句，也不执行仅对 RTF 必需的页宽检查；用户的两个 custom
+   code 字段始终原样保留。
+4. 按后续确认，`_TFL_KEY_MAP_*` 的 `INPUT + DATALINES` 只保存一次
+   chunk/row/statistic metadata，不逐 Header 列重复写入。SAS 通过 `CROSS JOIN`
+   将其与完整 Header 列目录展开为 `_TFL_KEY_*`；最终 logical-cell schema 和业务顺序
+   保持不变。字符字段使用 DSD 引号规则，保留空值、空格、竖线、引号、
+   百分号和宏样式文本；包含分号时使用 `DATALINES4`，字符字段使用显式 informat。
+   按 2026-09-29 用户后续决定，生成器不再保存、修改或恢复 CARDIMAGE；沿用调用方
+   SAS 会话的选项，长 inline records 的读取受该设置影响。
+   实际 CR/LF 或四个连续分号不能直接进入 inline record，使用少量按记录定位的
+   hex 字符赋值还原；普通 key-map 行不恢复逐字段赋值形式。字符 informat 的
+   宏分隔点与格式结尾点分别保留，例如 `:$&_TFL_LABEL_LEN..`。
+
+### Key map 的 Header 维度展开
+
+状态：用户后续确认使用 `CROSS JOIN`，避免在 key-map 文本中重复列维度。
+
+| SAS 对象 | 字段与职责 |
+| --- | --- |
+| `_TFL_HCOLS_001` | 每个已声明 Header 列一条记录：`header_column_id` 为 metadata 列 ID，`column_order` 为展示位置。Header 阶段从 metadata 构造一次，供 Header N 和所有 batch 共用，不从实际 membership 推导。 |
+| `_TFL_KEY_MAP_<batch>` | 每个 chunk/row/statistic 一条记录。保存 `chunk_order`、`chunk_id`、`row_order`、`row_id`、`row_type`、`label`、`indent_level`、`statistic_id`、`statistic_order`、`digits_mode`、`digits_value`、`use_header_n`、`cell_format`；不包含 Header 维度。 |
+| `_TFL_KEY_<batch>` | 将 compact map 与 Header 列目录 `CROSS JOIN`，得到完整 expected-cell key。普通 chunk 的 `node_key`、`group_path`、`node_label`、`node_order_path` 为空，`hierarchy_level` 为 0；nested analysis 继续与其 scope 的节点表 `CROSS JOIN`，由节点提供这些字段。 |
+
+`PrimitiveBatchPlan.header_columns_dataset` 显式声明 `_TFL_HCOLS_001` 依赖，nested plan
+继承该引用。Header 列目录在分析前创建，存活于本次生成程序的 WORK 中，发射器只读取它。
+host-side `result_map` 保留完整 logical-cell 契约；序列化时仅取一份列间相同的行/统计量
+metadata。展开按 chunk、row、Header column、statistic 顺序排序，nested map 再使用
+node order path 确保顺序确定。没有受试者的 Header 列仍在目录中，继续参与空单元格补全。
+
+### 回归边界
+
+自动化测试使用 synthetic metadata，检查单步 Header、多列 membership、两种输出模式
+与 duplicate 开关的四种组合、custom-code 顺序、dotted table ID、key-map 文本往返、
+长记录、嵌入换行和 Shiny 预览/下载失效。Header 维度展开回归另外检查 key-map 文本不随
+列数重复、展开后与完整 logical map 一致、空列保留和 nested node 连接。
+测试不运行真实分析数据，也不声称验证
+SAS 统计结果或 source/QC 数据一致性。
+
+## P0-9：Continuous batch 的集中 source merge
+
+状态：已确认（2026-09-14）。本决定只优化 top-level continuous primitive batch，
+不采用 SAS runtime metadata、`CALL EXECUTE` 或跨类型通用 source 表。
+
+### 已批准
+
+1. 每个 continuous chunk 仍使用一个 DATA step 独立读取其 `source_data`、应用自己的
+   `filter` 并直接投影为 batch 共同的窄 schema：`chunk_order`、继承类型的 `USUBJID`、
+   `source_row`、numeric `analysis_value` 和可选的 `node_key`。chunk-specific
+   analysis variable 在该投影阶段解析；不得把原始 source 的 `s.*` 直接 append 到
+   共同表。
+2. 同一 continuous batch 的投影结果先按 template 顺序 append 到一个集中 source
+   对象（`_TFL_CPRE_<batch>`）。只有 data grain、merge key、SAS key 类型/长度由调用方
+   保证兼容的 chunk 才能进入同一集中对象；平台不读取 SAS 数据推断兼容性。
+3. duplicate check 在集中对象上执行一次，BY 顺序为 `chunk_order` 加 batch 的
+   declared subject key。检查只报告重复，不使用 `NODUPKEY`、first-record 选择、
+   去重或聚合；关闭 duplicate option 时整个 guard 均省略。
+4. Header membership merge 在 batch 级执行一次。生成一个 batch chunk-order 目录并
+   与 `_TFL_MEM_<seq>` 构造 scaffold，再 left join 集中 source；这样每个
+   `chunk_order × membership` 组合在缺少 filtered source record 时仍保留。后续
+   expected-cell skeleton、统计和 render 契约不变。
+5. 集中 merge 只适用于 top-level continuous batch。categorical 仍按其 counting-unit
+   和 typed key contract 独立设计；hierarchical 继续保持 container scope 和 nested
+   primitive 的独立 source/merge。
+6. 生成期物理对象继续位于 `WORK`，使用 `_TFL_` 固定命名；`_TFL_CIN_<batch>` 仍是
+   进入 `PROC MEANS` 的最终 normalized input，`_TFL_CPRE_<batch>` 和
+   `_TFL_CMERGE_<batch>` 仅作为集中 source/merge 中间对象。
+
+### 被拒绝的替代方案
+
+- 直接 `SET` 所有原始 `source_data`：会引入变量类型/长度冲突并改变 source contract。
+- 全 table 跨 continuous、categorical、hierarchical 共用一个 source 表：不同 grain、
+  counting unit、typed key 和动态节点边界无法保持统一。
+- 用字符化的通用 key 替代 typed key：可能改变 SAS 缺失值、前导零和排序语义。
+- 用集中 merge 省略 chunk scaffold：缺失 source 时可能改变 downstream expected-cell
+  和 denominator 语义。
+
+### P0-9 categorical extension
+
+状态：已确认（2026-09-14）。categorical batch 采用 counting-event 集中 merge，
+不把原始 categorical source 直接 append。
+
+1. 每个 top-level categorical chunk 使用一个 DATA step 读取 source 并执行 filter，
+   同时输出 filtered source key 表和 denominator/row-condition 事件窄表
+   `_TFL_KPRE_<batch>_<chunk>`，避免为两种投影重复读取 source。事件至少保留
+   `chunk_order`、`USUBJID`、`source_row`、`row_order`、`node_key` 和该 chunk
+   counting unit 所需的 typed key；`row_order=0` 表示 denominator，正数表示
+   numerator。
+2. 每个 chunk 同时投影一个只含 `chunk_order`、`USUBJID` 和 `source_row` 的 filtered
+   source key 表。同一 categorical batch 的事件表按 template 顺序 append 到
+   `_TFL_KPRE_<batch>`；key 表 append 后只执行一次 source duplicate guard（BY
+   `chunk_order USUBJID`）。guard 不在已展开的 event 表上运行，避免同一 subject 的
+   denominator/numerator events 被误报为重复。该 guard 仅报告重复，不去重、不聚合；
+   duplicate option 关闭时整个 key append/guard 均省略。
+3. Header membership expansion 在 batch 级执行一次。事件先与 `_TFL_MEM_<seq>`
+   inner join；同时为每个 batch chunk 与 membership 生成 header-population denominator
+   scaffold，再 union 到 `_TFL_KMERGE_<batch>`。后续 `_TFL_KIN_<batch>`、counting-unit
+   dedup、exclusive overlap guard、`PROC FREQ`、expected-cell skeleton 和 render
+   契约保持不变。
+4. hierarchical nested primitive 继续沿用独立 source/merge。不同 counting unit 或
+   typed key contract 的 categorical chunk 不应进入同一 batch；后续需要在 batch
+   planner 中增加显式 key-compatibility 分组，而不是把 key 字符化。
+
+## P0-10：Hierarchical 按 anchor level 集中 Header membership expansion
+
+状态：已确认（2026-09-16）。本决定只消除同一 hierarchical container、同一
+`anchor_level` 下多个 analysis block 重复执行的 Header membership join；不合并
+primitive analysis procedure，也不跨 container 或 level 共享运行期对象。
+
+### 数据对象与职责
+
+| 对象 | 字段与职责 |
+| --- | --- |
+| `_TFL_HLEVEL_<container>_<level>` | record-grain level source。保留 container filtered source 字段、`source_row`、`node_key`、`group_path`、`node_label`、`node_order_path`、`parent_node_key` 和 `hierarchy_level`；不含 Header column expansion。 |
+| `_TFL_HMEM_<container>` | subject-grain Header membership，至少包含 `USUBJID`、`header_column_id` 和 `column_order`。 |
+| `_TFL_HMERGE_<container>_<level>` | 该 level 的共享 expanded source。由 `_TFL_HMEM_*` 与 `_TFL_HLEVEL_*` 按声明的 subject key inner join，一条 level source record 对每个适用 Header column 输出一条记录，并保留原始 `source_row` 与 typed source fields。 |
+| nested primitive input | 每个 block 从共享 `_TFL_HMERGE_*` 独立投影自己的 `analysis_variable`、row events、counting-unit typed keys 和 denominator eligibility。 |
+
+### 生命周期和边界
+
+1. hierarchical container 完成所有 level discovery 后，收集被 analysis block 引用的
+   anchor levels，并按 level 首次出现顺序各生成一次 `_TFL_HMERGE_*`。
+2. 同一 level 的 continuous/categorical blocks 只读取共享 expanded source，不再重复
+   membership SQL，也不重新赋值 `source_row`。不同 level 必须使用不同对象。
+3. block 继续拥有独立的 nested batch namespace、expected-cell map、counting unit、
+   denominator、`PROC MEANS`/`PROC FREQ`、statistic 和 render 输出；本决定不合并过程调用。
+4. source duplicate guard 仍只在 container filtered source 上执行一次；expanded source
+   不重复检查。Header membership、node discovery、global denominator 和 failure 行为不变。
+5. `_TFL_HMERGE_*` 只存在于当前生成 SAS 的 `WORK` 生命周期，不写回 metadata、bundle
+   或 workspace，也不增加新的 YAML 字段。
+
+## P0-11：相邻兼容 Hierarchical continuous blocks 共用 PROC MEANS
+
+状态：已确认（2026-09-29）。用户批准按
+[完整设计](hierarchical-continuous-batching-proposal.md) 实施。该设计包含全部对象字段、
+兼容 key、所有权、生命周期和验收条件。本决定仅替代 P0-10 对以下 blocks 不合并
+procedure 的限制；不更改 YAML、workspace、UI、统计量或 categorical 契约。
+
+### 已批准的决定
+
+1. 仅合并同 container、同 anchor level、原 sequence 相邻、counting_unit 和 typed
+   distinct_key 字段及顺序一致、使用同一内置 continuous definition 的 blocks。
+   不同 analysis_variable、rows、digits 或 placement 不阻止合批。其他 blocks 与
+   替代注册 emitter 沿用独立执行路径；单 block 不创建共享对象。
+2. 每个 block 保留原 nested batch 编号，独立完成 counting-unit materialization
+   和 precision。共享输入 `_TFL_HCIN_<container>_<first-block>` 仅包含 numeric
+   `analysis_order`、`column_order`、`analysis_value` 及 character `node_key`；
+   analysis_order 是原 block 位置，typed keys 不进入共享表。
+3. 一次 PROC MEANS 按 analysis_order/column_order/node_key 分析，共享 raw
+   `_TFL_HCRAW_<container>_<first-block>` 保留上述身份及既有八项 numeric statistics。
+   按 analysis_order 拆回各 block 原有 raw dataset，移除 analysis_order，恢复
+   chunk_order=1；然后执行各自 expected-cell 与 raw/precision join。P0-13 仅共用
+   value/digits DATA step，输出各自 STAT，再逐块 render 和 hierarchical 映射。
+4. result_sort、same_row、below 继续消费原 block 独立结果，所有 namespace、
+   analysis_id 和 row/header identity 保持原责任边界。
+5. 全组 preparation 成功后才执行共享 MEANS。若后一个 block 出现多个非缺失记录，
+   原 guard 写入 continuous_unit_multiple_values 并 ABORT CANCEL，较早 block 的
+   statistic/render 也可能尚未产生。这一部分 WORK 表及诊断时序变化已确认；
+   单项错误内容、字段顺序和终止语义不变，duplicate-check 开关不关闭该 guard。
+
+### 未采用的替代方案
+
+- 跨 categorical、不兼容块、level 或 container 重排，以避免扩大执行时序变化。
+- 全面改为多 block primitive plan，合并 materialization 与 render；当前无此需要。
+- 字符化 typed keys、改变 counting unit、共享 base_digits 或增加 YAML 合批开关。
+
+减少 procedure 次数并不保证运行更快；新增窄表 append 和 raw 拆分的成本需要另行测量。
+
+2026-09-29 目标澄清与维护：用户明确优先减少生成代码量、提升可读性，接受无运行
+加速。现有契约内将单 nested continuous chunk 的两个同结构输入在同一 DATA step
+创建，并将 shared raw 的逐 block 拆分合为一个显式 OUTPUT DATA step。名称、字段、
+统计/布局身份及失败边界保持；范围和代码量记录见
+[源码精简维护](hierarchical-continuous-batching-proposal.md#7-源码精简维护2026-09-29)。
+
+## P0-12：Hierarchical 最终行身份与组装修复
+
+状态：已确认（2026-09-29）。用户在 session
+`01a0e8c4-3963-7960-8a3b-1656ace9dddc` 批准先修复最终行编号和组装，
+补充明确预期结果的 fixture，再开展性能测量。本项修复既有行语义，不新增 YAML
+字段、UI 行为或 SAS 执行功能。
+
+### 对象、字段与责任
+
+| 对象或字段 | 责任与边界 |
+| --- | --- |
+| nested render 的 `row_order` / `row_sequence` | primitive block 内的静态行位置；不同 block 和 node 可重复，不能直接作为 container 最终行号。 |
+| `node_key`、`runtime_row_id` | 动态节点及其逻辑行身份。相同 `row_id` 或相同 label 出现在不同节点、block 时仍须保留各自的行；跨 chunk 身份由 `chunk_id` 限定。 |
+| `_TFL_HFLAT_<container>.order_key` | 按最终 node display path、placement、block order 和 row order 排列的逻辑行键；同一行的所有 Header columns 共用一个键。 |
+| hierarchical render 的 `row_sequence` | container 独占的连续最终行号，从 1 开始；仅在 `first.order_key` 时递增。输入 `SET` 必须排除旧的 block-local `row_sequence`，避免覆盖 retained counter。 |
+| `chunk_order`、`column_order` | 分别限定 table 内 chunk 顺序和行内 Header column 位置；不同 container 可各自从 row_sequence=1 开始。 |
+| `_TFL_CELLS_001` / `_TFL_WIDE_001` | 按 chunk_order / row_sequence / column_order 排序，再按 chunk_order / row_sequence 将每行所有列组装为一条宽表记录。 |
+| `WORK._TFL_ASM_001` | 在宽表基础上按既有 chunk/level 边界插入 spacer；非 spacer 行必须完整保留宽表顺序、身份、label、indent 和 cells。 |
+
+`_TFL_HFLAT_*` 及 nested result 保持只读；新的 row_sequence 只写入 container
+render output，再由 table assembly 消费。上述对象仅存在于生成 SAS 的 WORK
+生命周期内，不修改 metadata、workspace 或各 block 的统计结果。
+
+### 已批准的修复与验收
+
+1. 在展平 DATA step 的输入 dataset option 中 `drop=row_sequence`，保留既有
+   `RETAIN row_sequence 0` 和 `first.order_key` 递增；仅使用 RETAIN 无法防止 SET
+   每条 observation 再次覆盖计数器。不得改成按 observation 编号，否则同一行
+   的各 Header columns 会被拆开。
+2. 保持既有顺序：当前节点行、当前 level 的 below 静态行、动态子节点。
+   result_sort 确定展示路径之后才编号；same_row 不额外添加重复 label 行。
+3. 源码回归覆盖相同 row ID 的多个 blocks、多层级、标签行、categorical 子节点、
+   多 container 与普通 chunk 混排、空输入，以及 report/compare 两条输出路径。
+4. 独立预期 fixture 固定最终行数、顺序、runtime identity、label、indent、所有列值
+   和 spacer 位置。基线为 2 nodes × 2 rows × 3 columns，即 12 cells、4 wide rows；
+   不能再仅以共享/独立统计路径相互一致作为最终组装正确性的证据。
+
+未采用按 row_id 或 label 合并的方式，因为它们可在不同节点及 block 重复；也未
+改变 table assembly 的既有分组键。R 自动化验收仍遵循 source-only 边界；手写
+synthetic SAS fixture 提供给外部 SAS 环境执行，构建 source 不代表运行期验证通过。
+
+2026-09-29 验证更新：用户随后批准继续外部 synthetic SAS 验证与性能测量。
+5 个行组装场景已在 SAS 9.4 通过；运行证据与测量边界见
+[验证记录](hierarchical-runtime-verification.md)。该授权不改变应用产品边界或
+常规 R 测试的 source-only 约定。
+
+## P0-13：兼容 continuous blocks 只共享 value/digits 转换
+
+状态：已确认（2026-09-29）。用户批准按
+[完整边界](hierarchical-result-sharing-proposal.md) 实施，并明确可读性优先、
+不增加共享中间表或宏封装。
+
+1. 仅对 P0-11 已形成且至少两个 members 的 continuous group，共用一次统计值
+   转换和 digits 解析 DATA step；group 范围、preparation、precision、MEANS、
+   raw 拆分、expected-cell、raw/precision join、render 和布局责任保持原契约。
+2. 先完成各 block 原有 `_TFL_CJOIN_*`，再按原 member 顺序通过 SET 读取；IN=
+   临时标志明确将每条记录 OUTPUT 到原 `_TFL_STAT_*`。保留全部 32 列及属性，
+   不增加共享编号、表或宏，不按局部 row ID 推断归属。
+3. 所有 block 的转换完成后，继续按原顺序执行各自 render/HSMAP。用户接受这项
+   创建时机变化及异常时部分 WORK 表可能不同；正常统计、cell 和布局结果不变。
+4. 负相对精度明确沿用当前源码的 ERROR + NE：每条受影响 statistic 写入原诊断、
+   设置 estimable=0 和 missing resolved_digits，继续运行，不去重、不新增 ABORT。
+   R 的显式精度解析 helper 仍可对非法参数抛错，不能据此称应用已检查实际数据精度。
+5. 原 KEY_MAP、KEY、CJOIN、STAT、RSTAT、REND 名称保留；单 block、不兼容块、
+   其他 primitive 和替代 emitter 沿用原路径。复杂逻辑保持展开；边界明确的短规则
+   按下述后续排版决定允许一条一行。
+
+未采用整组 expected-cell/join/render 流水线或生成 SAS 宏：本轮认为额外中间表、
+身份追踪和定义/调用跳转会增加阅读成本。
+
+2026-09-29 排版维护：compact map 的 INPUT 每个字段/informat 单独一行，使用
+清晰缩进，末尾单独结束分号。字段与 informat 原文及其顺序、inline data records、
+还原语句均保持。增加物理行数是为便于阅读，不改变共享边界。后续 CARDIMAGE
+处理以以下决定为准。
+
+### 后续维护：删除 CARDIMAGE 防御，短规则按边界合行
+
+2026-09-29，用户明确要求删除 CARDIMAGE 防御，并将 Header 派生等有明确边界的
+重复模式合为单行。已删除保存选项、OPTIONS NOCARDIMAGE、恢复选项和清理临时
+宏变量四条语句，不替换为程序全局选项或其他保护机制。
+
+采用“一条规则一行”，不把整个 DATA step 合为一行：
+
+- 每个 Header column 的独立 IF、两个身份赋值及 OUTPUT/END 在同一行；不同列
+  另起一行，仍为独立 IF，重叠 membership 不改为互斥 ELSE IF。
+- 每个 categorical numerator 条件、row_order 和 OUTPUT 在同一行；denominator
+  的 row_order=0 输出也是单独一行。外层 source_row 判断保持展开。
+- continuous/categorical chunk catalog 每个 chunk_order + OUTPUT 一行。
+- 层级标签展开时，每个 Header 的 column_order、header_column_id、OUTPUT 一行。
+
+原有 INPUT 按字段分行保持。复杂嵌套分支、计数单元冲突处理、精度解析及 cell_text
+累积不压成单行。metadata 表达式与字符串原样保留；其中原有换行不被强行删除。
+本次只调整上述源代码边界的排版，不引入通用压缩器、新状态或配置。
+
+### 收尾文档对齐：现有 Header orientation
+
+2026-09-29，核对已实现并写入用户指南的 Header 契约：orientation 必填，取值为
+portrait 或 landscape；canonical YAML 位于 source_data 之后。导入不推断默认值，
+Header editor 必须明确选择；Table 仍不含此字段。Report 使用它计算 Letter 页面
+可用宽度，QC 沿用同一 metadata 结构但不应用 Report 页宽检查。本次补齐便携契约
+中的遗漏，不修改 schema、生成器或 UI 行为。

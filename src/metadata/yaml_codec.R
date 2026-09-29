@@ -367,6 +367,7 @@ render_header_yaml <- function(value, indent) {
   context <- new_yaml_lines()
   yaml_emit_scalar(context, indent, "id", value$id)
   yaml_emit_scalar(context, indent, "source_data", value$source_data)
+  yaml_emit_scalar(context, indent, "orientation", value$orientation)
   if (!is.null(value$spanning_headers) && length(value$spanning_headers) > 0L) {
     yaml_emit_sequence(context, indent, "spanning_headers", value$spanning_headers,
                        render_spanning_header_yaml)

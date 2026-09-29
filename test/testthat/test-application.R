@@ -16,7 +16,7 @@ testthat::test_that("application orchestration delegates workspace boundaries", 
 testthat::test_that("application orchestration preserves boundary failures", {
   bundle <- new_metadata_bundle(
     populations = list(list(id = "p1", label = "Population", expression = "1")),
-    headers = list(list(id = "h1", source_data = "adam.adsl", columns = list(
+    headers = list(list(id = "h1", source_data = "adam.adsl", orientation = "landscape", columns = list(
       list(id = "all", label = "All", condition = "1", display_order = 1L,
            width = 1, alignment = "center")
     ))),
@@ -65,4 +65,40 @@ testthat::test_that("application orchestration preserves boundary failures", {
   emitter <- application_generate_source(workspace, "t1", unavailable_registry)
   testthat::expect_false(emitter$passed)
   testthat::expect_identical(emitter$errors[[1L]]$code, "generation_emitter_unavailable")
+})
+
+testthat::test_that("saved edits survive ZIP export and preserve Report and QC source", {
+  archive <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
+  imported <- application_import_bundle(new_empty_workspace(),
+    readBin(archive, "raw", n = file.info(archive)$size))
+  testthat::expect_true(imported$passed)
+  draft <- workspace_begin_draft(imported$workspace, "population", "fas")$workspace
+  value <- workspace_draft_value(draft)
+  value$expression <- "FASFL = 'Y' and not missing(USUBJID)"
+  draft <- workspace_set_draft(draft, value)$workspace
+  saved <- application_save_draft(draft)
+  testthat::expect_true(saved$passed)
+  testthat::expect_false(workspace_is_dirty(saved$workspace))
+
+  exported <- application_export_bundle(saved$workspace)
+  testthat::expect_true(exported$passed)
+  restored <- application_import_bundle(new_empty_workspace(), exported$value$bytes)
+  testthat::expect_true(restored$passed)
+  testthat::expect_identical(workspace_saved_snapshot(restored$workspace),
+                             workspace_saved_snapshot(saved$workspace))
+  repeated <- application_export_bundle(restored$workspace)
+  testthat::expect_identical(repeated$value$bytes, exported$value$bytes)
+
+  for (table in c("baseline_characteristics", "ae_by_soc_pt")) {
+    for (mode in c("report", "compare")) {
+      before <- application_generate_source(saved$workspace, table, output_mode = mode)
+      after <- application_generate_source(restored$workspace, table, output_mode = mode)
+      testthat::expect_true(before$passed)
+      testthat::expect_true(after$passed)
+      testthat::expect_identical(after$value, before$value)
+      if (table == "baseline_characteristics") {
+        testthat::expect_match(after$value, value$expression, fixed = TRUE)
+      }
+    }
+  }
 })

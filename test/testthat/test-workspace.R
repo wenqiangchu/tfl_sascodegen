@@ -62,7 +62,7 @@ workspace_fixture_bundle <- function() {
       list(id = "p2", label = "Intent-to-treat", expression = "ITTFL = 'Y'")
     ),
     headers = list(list(
-      id = "h1", source_data = "&lib..&adsl",
+      id = "h1", source_data = "&lib..&adsl", orientation = "landscape",
       columns = list(list(
         id = "overall", label = "Overall", condition = "1", display_order = 1L,
         width = 1.2, alignment = "center"

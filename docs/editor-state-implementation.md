@@ -54,6 +54,15 @@ workspace. Delete is immediate after the reference check and confirmation.
 The only dirty-guard choices are `Discard changes` and `Cancel`. Programmatic
 UI synchronization only renders values and is not a dirty signal.
 
+Header collection compares the original and current values through the same
+label-based editor reconstruction. If they match, it returns the original
+metadata object, preserving imported spanning-header IDs, references, and field
+order. This prevents clean navigation or a no-op Save from treating automatic
+span reconstruction as an edit or incrementing the saved revision. Real changes
+still use the reconstructed object and trigger the existing dirty guard;
+restoring the displayed values restores the clean state. Reconstructed objects
+place `spanning_headers` before `columns`, matching the metadata decoder.
+
 Template chunk creation uses an explicit type-selection dialog. The dialog
 offers `continuous_summary`, `categorical_summary_nonexclusive`,
 `categorical_summary_exclusive`, and `hierarchical_summary`; confirmation
@@ -77,3 +86,9 @@ parents, analysis block types, and structured denominators.
 flags and covers import, clean and dirty navigation, Cancel/Discard, ID-based
 New, Save, Delete, Header row editing, Template card editing, and Generate
 guard/source preview. Browser tests are not skipped by CRAN mode.
+
+`test-shinytest2-header-navigation.R` specifically covers an imported Header
+with a non-positional span ID, clean panel/dashboard and Header-list navigation,
+no-op Save, span edits and reversion, and source edits with Cancel/Discard.
+`test-ui-header-editor.R` checks ID/reference preservation, saved revision,
+two span levels, disjoint equal-label runs, and real field/row changes.

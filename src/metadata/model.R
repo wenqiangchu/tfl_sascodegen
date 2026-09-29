@@ -304,7 +304,7 @@ validate_header_spanning <- function(header, path, collector) {
                         sprintf("Spanning header '%s' is not declared.", reference))
         next
       }
-      expected_level <- if (identical(field, "spanning_header_1")) 1 else 2
+      expected_level <- if (identical(field, "spanning_header_1")) 1L else 2L
       if (!identical(as.integer(span_levels[[span_index]]), expected_level)) {
         add_value_error(collector, field_path,
                         sprintf("Spanning header '%s' has an incompatible level.", reference))
@@ -325,13 +325,21 @@ validate_header_spanning <- function(header, path, collector) {
 }
 
 parse_header_value <- function(value, path, collector) {
-  allowed <- c("id", "source_data", "spanning_headers", "columns")
-  required <- c("id", "source_data", "columns")
+  allowed <- c("id", "source_data", "orientation", "spanning_headers", "columns")
+  required <- c("id", "source_data", "orientation", "columns")
   if (!check_mapping(value, path, collector, allowed, required)) return(NULL)
   id <- parse_id_value(get_field(value, "id"), error_path_field(path, "id"), collector)
   source_data <- parse_string_value(get_field(value, "source_data"),
                                     error_path_field(path, "source_data"), collector,
                                     "source_data", non_empty = TRUE)
+  orientation <- parse_string_value(get_field(value, "orientation"),
+                                    error_path_field(path, "orientation"), collector,
+                                    "orientation")
+  if (!is.null(orientation) && !orientation %in% c("portrait", "landscape")) {
+    add_value_error(collector, error_path_field(path, "orientation"),
+                    "Header orientation must be 'portrait' or 'landscape'.")
+    orientation <- NULL
+  }
   spans_raw <- parse_sequence_raw(
     get_field(value, "spanning_headers"), error_path_field(path, "spanning_headers"),
     collector, "spanning_headers", required = FALSE, allow_empty = TRUE
@@ -362,7 +370,7 @@ parse_header_value <- function(value, path, collector) {
       if (!is.null(parsed)) columns[[length(columns) + 1L]] <- parsed
     }
   }
-  if (is.null(id) || is.null(source_data) || is.null(columns_raw) ||
+  if (is.null(id) || is.null(source_data) || is.null(orientation) || is.null(columns_raw) ||
       length(columns) != length(columns_raw$items)) return(NULL)
   check_unique_ids(columns,
                    lapply(seq_along(columns), function(i)
@@ -374,13 +382,13 @@ parse_header_value <- function(value, path, collector) {
     add_value_error(collector, error_path_field(path, "columns"),
                     "Column display_order values must be consecutive and match sequence order.")
   }
-  header <- list(id = id, source_data = source_data, columns = columns)
+  header <- list(id = id, source_data = source_data, orientation = orientation, columns = columns)
   if (length(spans) > 0L) {
     check_unique_ids(spans,
                      lapply(seq_along(spans), function(i)
                        error_path_index(error_path_field(path, "spanning_headers"), i - 1L)),
                      collector)
-    header <- list(id = id, source_data = source_data,
+    header <- list(id = id, source_data = source_data, orientation = orientation,
                    spanning_headers = spans, columns = columns)
   }
   validate_header_spanning(header, path, collector)

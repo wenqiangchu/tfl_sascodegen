@@ -1,0 +1,24 @@
+options errorabend;
+libname bench "generated";
+%macro compare_benchmark;
+  %local size blocks prefix records kind;
+  %do size=1 %to 2;
+    %let records=10000;
+    %if &size=2 %then %let records=30000;
+    %do blocks=2 %to 4 %by 2;
+      %do kind=1 %to 2;
+        %let prefix=w;
+        %if &kind=2 %then %let prefix=s;
+        proc compare base=bench.&prefix.&records._&blocks._independent
+          compare=bench.&prefix.&records._&blocks._shared criterion=0 method=absolute noprint;
+        run;
+        %if &sysinfo ne 0 %then %do;
+          %put ERROR: [BENCH] result_mismatch records=&records blocks=&blocks kind=&prefix sysinfo=&sysinfo;
+          %abort cancel;
+        %end;
+      %end;
+    %end;
+  %end;
+  %put NOTE: [BENCH] all shared and independent results match.;
+%mend;
+%compare_benchmark;

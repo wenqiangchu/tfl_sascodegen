@@ -1,9 +1,17 @@
 # Pure host-side SAS source assembly. Emitters provide chunk-specific source.
 
 new_generation_request <- function(workspace_snapshot, table_id,
-                                   registry = default_chunk_registry()) {
+                                   registry = default_chunk_registry(),
+                                   include_duplicate_check = TRUE,
+                                   output_mode = c("report", "compare")) {
+  output_mode <- match.arg(output_mode)
+  if (!is.logical(include_duplicate_check) || length(include_duplicate_check) != 1L ||
+      is.na(include_duplicate_check)) {
+    stop("include_duplicate_check must be a single non-missing logical value.", call. = FALSE)
+  }
   structure(
-    list(workspace_snapshot = workspace_snapshot, table_id = table_id, registry = registry),
+    list(workspace_snapshot = workspace_snapshot, table_id = table_id, registry = registry,
+         include_duplicate_check = isTRUE(include_duplicate_check), output_mode = output_mode),
     class = c("GenerationRequest", "list")
   )
 }
@@ -48,7 +56,11 @@ resolve_generation_request <- function(request) {
   if (!inherits(request, "GenerationRequest") ||
       !is.character(request$table_id) || length(request$table_id) != 1L ||
       is.na(request$table_id) || !nzchar(request$table_id) ||
-      !inherits(request$registry, "ChunkRegistry")) {
+      !inherits(request$registry, "ChunkRegistry") ||
+      !is.logical(request$include_duplicate_check) || length(request$include_duplicate_check) != 1L ||
+      is.na(request$include_duplicate_check) ||
+      !is.character(request$output_mode) || length(request$output_mode) != 1L ||
+      !request$output_mode %in% c("report", "compare")) {
     return(list(value = NULL, errors = list(generation_error(
       "generation_contract_invalid", "Generation request is invalid.", "$"
     ))))
@@ -99,7 +111,7 @@ resolve_generation_request <- function(request) {
   list(value = structure(
     list(snapshot = snapshot, table = table, population = resolved$population,
          header = resolved$header, template = resolved$template,
-         registry = request$registry),
+      registry = request$registry),
     class = c("ResolvedTableInput", "list")
   ), errors = list())
 }
@@ -111,6 +123,22 @@ batch_definition_signature <- function(definition) {
     merge_contract = definition$merge_contract,
     analysis_contract = definition$analysis_contract
   )
+}
+
+chunk_batch_signature <- function(definition, chunk) {
+  signature <- batch_definition_signature(definition)
+  if (definition$type_id %in% c("categorical_summary_nonexclusive",
+                                "categorical_summary_exclusive")) {
+    signature$chunk_key_contract <- list(
+      numerator_keys = primitive_counting_keys(chunk),
+      denominator_type = chunk$denominator$type,
+      denominator_unit = chunk$denominator$unit %||% "distinct_subject",
+      denominator_keys = primitive_counting_keys(
+        chunk, chunk$denominator$unit %||% "distinct_subject"
+      )
+    )
+  }
+  signature
 }
 
 batch_dataset_names <- function(definition, batch_order) {
@@ -163,13 +191,25 @@ build_logical_result_map <- function(chunk, chunk_order, header_columns,
     for (column_order in seq_along(header_columns)) {
       column <- header_columns[[column_order]]
       ids <- if (length(statistic_ids) > 0L) statistic_ids else ""
-      for (statistic_id in ids) {
+      for (statistic_order in seq_along(ids)) {
+        statistic_id <- ids[[statistic_order]]
+        statistic <- if (nzchar(statistic_id)) row$statistics[[statistic_order]] else NULL
+        digits <- statistic$digits %||% NULL
         result[[length(result) + 1L]] <- list(
           chunk_order = as.integer(chunk_order), chunk_id = chunk$id,
           analysis_id = analysis_id, row_order = as.integer(row_order),
           row_id = row$id, row_type = row$type, label = row$label %||% "",
           header_column_id = column$id, column_order = as.integer(column_order),
-          statistic_id = statistic_id, cell_format = row$cell_format %||% ""
+          statistic_id = statistic_id, statistic_order = as.integer(statistic_order),
+          indent_level = as.integer(row$indent_level %||% 0L),
+          digits_mode = if (is.null(digits)) "none" else if (is.character(digits)) "relative" else "absolute",
+          digits_value = if (is.null(digits)) 0 else as.numeric(digits),
+          use_header_n = as.integer(
+            identical(chunk$denominator$type, "header_population") &&
+              (chunk$denominator$scope %||% "header_population") == "header_population" &&
+              (chunk$denominator$unit %||% "distinct_subject") == "distinct_subject"
+          ),
+          cell_format = row$cell_format %||% ""
         )
       }
     }
@@ -177,7 +217,7 @@ build_logical_result_map <- function(chunk, chunk_order, header_columns,
   result
 }
 
-plan_primitive_batches <- function(resolved) {
+plan_primitive_batches <- function(resolved, include_duplicate_check = TRUE) {
   groups <- list()
   errors <- list()
   chunks <- resolved$template$body$chunks
@@ -193,7 +233,7 @@ plan_primitive_batches <- function(resolved) {
       )
       next
     }
-    signature <- batch_definition_signature(definition)
+    signature <- chunk_batch_signature(definition, chunk)
     group_index <- NULL
     if (isTRUE(definition$batch_contract$batchable)) {
       candidates <- which(vapply(groups, function(group) {
@@ -227,10 +267,19 @@ plan_primitive_batches <- function(resolved) {
         build_logical_result_map(entry$chunk, entry$chunk_order, resolved$header$columns)
       }), recursive = FALSE),
       header_columns = resolved$header$columns,
+      header_columns_dataset = "_TFL_HCOLS_001",
       membership_dataset = "_TFL_MEM_001",
+      include_duplicate_check = isTRUE(include_duplicate_check),
       definition = group$definition
     ), names), class = c("PrimitiveBatchPlan", "list"))
   })
+  nested_batch_start <- length(plans)
+  for (index in seq_along(plans)) {
+    if (identical(plans[[index]]$chunk_type, "hierarchical_summary")) {
+      plans[[index]]$nested_batch_start <- nested_batch_start
+      nested_batch_start <- nested_batch_start + length(plans[[index]]$chunks[[1L]]$analysis_blocks)
+    }
+  }
   list(value = plans, errors = list())
 }
 
@@ -248,26 +297,23 @@ population_header_sections <- function(resolved) {
   )
   columns <- resolved$header$columns
   id_length <- max(1L, nchar(vapply(columns, `[[`, "", "id"), type = "bytes"))
-  column_steps <- vapply(seq_along(columns), function(index) {
-    column <- columns[[index]]
-    paste(
-      "/* Derive header column membership. */",
-      paste0("data _TFL_HCOL_", sprintf("%03d", index), ";"),
-      paste0("  length header_column_id $", id_length, ";"),
-      "  set _TFL_POP_001;",
-      paste0("  if (", column$condition, ");"),
-      paste0("  header_column_id = ", sas_character_literal(column$id), ";"),
-      paste0("  column_order = ", index, ";"),
-      "  keep USUBJID header_column_id column_order;",
-      "run;", sep = "\n"
-    )
-  }, character(1L))
-  membership_text <- paste(
-    c(column_steps, "/* Assemble header membership. */", "data _TFL_MEM_001;",
-      paste0("  set ", paste0("_TFL_HCOL_", sprintf("%03d", seq_along(columns)),
-                                collapse = " "), ";"), "run;"),
-    collapse = "\n"
+  membership_lines <- c(
+    "/* Derive header column membership in one DATA step. */",
+    "data _TFL_MEM_001;",
+    paste0("  length header_column_id $", id_length, ";"),
+    "  set _TFL_POP_001;",
+    unlist(lapply(seq_along(columns), function(index) {
+      column <- columns[[index]]
+      paste0("  if (", column$condition, ") then do; header_column_id = ",
+             sas_character_literal(column$id), "; column_order = ", index,
+             "; output; end;")
+    }), use.names = FALSE),
+    "  keep USUBJID header_column_id column_order;",
+    "run;",
+    "/* Assemble header membership. */",
+    header_count_source(resolved$header)
   )
+  membership_text <- paste(membership_lines, collapse = "\n")
   list(
     new_source_section("population", "population", resolved$population$id, 20L,
                        population_text),
@@ -312,7 +358,16 @@ generate_sas_source <- function(request) {
     return(new_generation_result(FALSE, errors = resolved_result$errors))
   }
   resolved <- resolved_result$value
-  planned <- plan_primitive_batches(resolved)
+  layout <- NULL
+  if (identical(request$output_mode, "report")) {
+    layout <- tryCatch(report_page_layout(resolved$header), error = identity)
+    if (inherits(layout, "error")) {
+      return(new_generation_result(FALSE, errors = list(generation_error(
+        "generation_contract_invalid", conditionMessage(layout), "$.header.columns"
+      ))))
+    }
+  }
+  planned <- plan_primitive_batches(resolved, request$include_duplicate_check)
   if (length(planned$errors) > 0L) {
     return(new_generation_result(FALSE, errors = planned$errors))
   }
@@ -323,6 +378,10 @@ generate_sas_source <- function(request) {
       "custom_before", "custom", resolved$table$id, 10L, custom_code$before
     )
   }
+  sections[[length(sections) + 1L]] <- new_source_section(
+    "text_lengths", "assembly", resolved$table$id, 15L,
+    paste(report_text_lengths_source(resolved), collapse = "\n")
+  )
   sections <- c(sections, population_header_sections(resolved))
   outputs <- list()
   for (index in seq_along(planned$value)) {
@@ -341,13 +400,7 @@ generate_sas_source <- function(request) {
     sections <- c(sections, output$sections)
     outputs[[length(outputs) + 1L]] <- output
   }
-  assembly_text <- paste(
-    "/* Assemble table rows and cells in template order. */",
-    "/* Batch outputs are mapped back through chunk/row/header identities. */",
-    "data _TFL_ASM_001;",
-    paste0("  set ", paste(vapply(outputs, `[[`, "", "render_dataset"), collapse = " "), ";"),
-    "run;", sep = "\n"
-  )
+  assembly_text <- paste(table_assembly_source(outputs, resolved), collapse = "\n")
   sections[[length(sections) + 1L]] <- new_source_section(
     "table_assembly", "assembly", resolved$table$id, 100000L, assembly_text
   )
@@ -356,10 +409,23 @@ generate_sas_source <- function(request) {
       "custom_after", "custom", resolved$table$id, 100010L, custom_code$after
     )
   }
+  sections[[length(sections) + 1L]] <- new_source_section(
+    if (identical(request$output_mode, "report")) "rtf_report" else "qc_compare",
+    request$output_mode, resolved$table$id, 100020L,
+    paste(if (identical(request$output_mode, "report")) {
+      rtf_report_source(resolved, layout)
+    } else {
+      compare_source(resolved)
+    }, collapse = "\n")
+  )
   new_generation_result(TRUE, source = assemble_source_sections(sections), errors = list())
 }
 
 generate_table_source <- function(workspace_snapshot, table_id,
-                                  registry = default_chunk_registry()) {
-  generate_sas_source(new_generation_request(workspace_snapshot, table_id, registry))
+                                  registry = default_chunk_registry(),
+                                  include_duplicate_check = TRUE,
+                                  output_mode = c("report", "compare")) {
+  generate_sas_source(new_generation_request(
+    workspace_snapshot, table_id, registry, include_duplicate_check, output_mode
+  ))
 }

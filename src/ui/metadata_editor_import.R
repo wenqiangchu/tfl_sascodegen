@@ -1,6 +1,5 @@
 register_metadata_editor_import <- function(ctx) {
   input <- ctx$input
-  output <- ctx$output
   session <- ctx$session
   workspace <- ctx$workspace
   metadata_loaded <- ctx$metadata_loaded
@@ -89,19 +88,7 @@ register_metadata_editor_import <- function(ctx) {
     removeModal()
     if (!is.null(action)) import_now(action$path)
   })
-  output$metadata_gate <- renderUI({
-    if (metadata_loaded()) return(NULL)
-    tagList(
-      tags$style(HTML("#metadata_content { display:none; }")),
-      box(
-        width = 12, status = "info", solidHeader = TRUE,
-        title = "Upload metadata to begin",
-        p("Upload a metadata ZIP bundle to start editing."),
-        actionButton("upload_metadata_gate", "Upload metadata")
-      )
-    )
-  })
-  output$metadata_loaded_flag <- renderText(if (metadata_loaded()) "true" else "false")
+  # The landing page is static initial HTML; only successful import reveals the editor.
   observe({
     session$sendCustomMessage("metadata-loaded", list(loaded = metadata_loaded()))
   })

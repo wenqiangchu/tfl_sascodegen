@@ -21,7 +21,9 @@ application_discard_draft <- function(workspace) {
 }
 
 application_generate_source <- function(workspace, table_id,
-                                        registry = default_chunk_registry()) {
+                                        registry = default_chunk_registry(),
+                                        include_duplicate_check = TRUE,
+                                        output_mode = c("report", "compare")) {
   if (!is_workspace(workspace)) {
     stop("workspace must be a MetadataWorkspace.", call. = FALSE)
   }
@@ -33,7 +35,10 @@ application_generate_source <- function(workspace, table_id,
                                    "Table ID is required.", "$.table_id"))
     ))
   }
-  generated <- generate_table_source(workspace_saved_snapshot(workspace), table_id, registry)
+  generated <- generate_table_source(
+    workspace_saved_snapshot(workspace), table_id, registry,
+    include_duplicate_check = include_duplicate_check, output_mode = output_mode
+  )
   list(
     passed = isTRUE(generated$passed),
     value = if (isTRUE(generated$passed)) generated$source else NULL,

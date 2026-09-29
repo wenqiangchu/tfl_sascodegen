@@ -137,7 +137,8 @@ metadata_editor_server_impl <- function(input, output, session) {
   collect_header_from_ui <- function() {
     value <- current_base(); if (is.null(value)) return(NULL)
     data <- header_table() %||% header_editor_data(value)
-    header_from_editor_data(value$id, input$header_source_data, data)
+    header_from_editor_data(value$id, input$header_source_data, data,
+                            input$header_orientation %||% value$orientation, original = value)
   }
   collect_table_from_ui <- function() {
     value <- current_base(); if (is.null(value)) return(NULL)
@@ -181,7 +182,11 @@ metadata_editor_server_impl <- function(input, output, session) {
     value <- seed %||% editor_document(workspace(),type,id); if (is.null(value)) return()
     suppress_navigation(TRUE)
     if (type=="population") { updateTextInput(session,"population_label",value=value$label %||% ""); updateTextAreaInput(session,"population_expression",value=value$expression %||% "") }
-    if (type=="header") { updateTextInput(session,"header_source_data",value=value$source_data %||% ""); header_table(header_editor_data(value)) }
+    if (type=="header") {
+      updateTextInput(session,"header_source_data",value=value$source_data %||% "")
+      updateSelectInput(session,"header_orientation",selected=value$orientation %||% "")
+      header_table(header_editor_data(value))
+    }
     if (type=="table") {
       updateSelectInput(session,"table_population_id",choices=list_ids("population"),selected=value$population_id %||% "")
       updateSelectInput(session,"table_header_id",choices=list_ids("header"),selected=value$header_id %||% "")

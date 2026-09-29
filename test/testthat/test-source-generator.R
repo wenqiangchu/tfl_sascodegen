@@ -2,7 +2,7 @@ generator_fixture <- function() {
   new_metadata_bundle(
     populations = list(list(id = "safety", label = "Safety", expression = "SAFFL = 'Y'")),
     headers = list(list(
-      id = "treatment", source_data = "&lib..&member",
+      id = "treatment", source_data = "&lib..&member", orientation = "landscape",
       columns = list(
         list(id = "a", label = "A", condition = "TRT = 'A'", display_order = 1L,
              width = 1, alignment = "center"),
@@ -69,6 +69,7 @@ testthat::test_that("generator resolves references and batches compatible chunks
   )
   testthat::expect_true(length(log$plans[[1L]]$result_map) >= 2L)
   testthat::expect_identical(log$plans[[1L]]$result_map[[1L]]$header_column_id, "a")
+  testthat::expect_identical(log$plans[[1L]]$header_columns_dataset, "_TFL_HCOLS_001")
   testthat::expect_identical(lengths(regmatches(result$source,
     gregexpr("proc means", result$source, fixed = TRUE))), 1L)
 })
@@ -77,7 +78,9 @@ testthat::test_that("source sections preserve custom code and opaque SAS referen
   result <- generate_table_source(generator_fixture(), "t1", mock_generator_registry())
   testthat::expect_true(result$passed)
   testthat::expect_true(startsWith(result$source, "%let before=1;"))
-  testthat::expect_true(endsWith(result$source, "%put after;"))
+  testthat::expect_lt(regexpr("%put after;", result$source, fixed = TRUE)[[1L]],
+                      regexpr("proc report", result$source, fixed = TRUE)[[1L]])
+  testthat::expect_true(endsWith(result$source, "ods rtf close;"))
   testthat::expect_match(result$source, "set &lib..&member;", fixed = TRUE)
   testthat::expect_match(result$source, "SAFFL = 'Y'", fixed = TRUE)
   testthat::expect_match(result$source, "Derive header column membership", fixed = TRUE)
@@ -198,6 +201,6 @@ testthat::test_that("compatible continuous chunks share one MEANS procedure", {
   testthat::expect_true(result$passed)
   testthat::expect_length(regmatches(result$source, gregexpr("proc means", result$source, fixed=TRUE))[[1L]], 1L)
   testthat::expect_match(result$source, "chunk_order column_order", fixed=TRUE)
-  testthat::expect_match(result$source, "'age'", fixed=TRUE)
+  testthat::expect_match(result$source, "\"age\"", fixed=TRUE)
   testthat::expect_match(result$source, "weight", fixed=TRUE)
 })

@@ -8,6 +8,7 @@ valid_bundle_yaml <- function() {
     "headers:",
     "  - id: treatment",
     "    source_data: '&ADSL'",
+    "    orientation: landscape",
     "    columns:",
     "      - id: overall",
     "        label: Overall",
@@ -175,7 +176,7 @@ testthat::test_that("hierarchical source and result-sort fields round-trip", {
   )
   bundle <- new_metadata_bundle(
     headers = list(list(
-      id = "h", source_data = "ADAM.ADSL",
+      id = "h", source_data = "ADAM.ADSL", orientation = "landscape",
       columns = list(list(
         id = "c1", label = "Overall", condition = "1", display_order = 1L,
         width = 1, alignment = "center"

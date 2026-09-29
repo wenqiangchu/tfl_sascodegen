@@ -146,7 +146,7 @@ header_editor_data <- function(header) {
   as.data.frame(out, stringsAsFactors=FALSE)
 }
 
-header_from_editor_data <- function(id, source_data, data) {
+header_from_editor_data <- function(id, source_data, data, orientation, original = NULL) {
   text <- function(x) if (length(x) != 1L || is.na(x)) "" else as.character(x)
   columns <- lapply(seq_len(nrow(data)), function(i) {
     list(id=trimws(text(data$id[[i]])), label=text(data$label[[i]]),
@@ -165,8 +165,17 @@ header_from_editor_data <- function(id, source_data, data) {
       for (position in seq.int(starts[[run]], ends[[run]])) columns[[position]][[field]] <- span_id
     }
   }
-  result <- list(id=id, source_data=as.character(source_data %||% ""), columns=columns)
+  result <- list(id=id, source_data=as.character(source_data %||% ""),
+                 orientation=as.character(orientation %||% ""))
   if (length(spans)) result$spanning_headers <- spans
+  result$columns <- columns
+  if (!is.null(original)) {
+    # Compare both sides through the same label-based editor representation.
+    # Reconstructed span IDs and field order are not evidence of a user edit.
+    baseline <- header_from_editor_data(original$id, original$source_data,
+                                        header_editor_data(original), original$orientation)
+    if (workspace_canonical_equal(baseline, result)) return(clone_metadata_value(original))
+  }
   result
 }
 
