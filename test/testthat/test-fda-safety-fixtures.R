@@ -1,5 +1,5 @@
 testthat::test_that("FDA-style safety fixture covers relative digits and visit/timepoint hierarchy", {
-  zip_path <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
+  zip_path <- file.path(project_root, "assets", "demo_metadata.zip")
   bytes <- readBin(zip_path, "raw", n = file.info(zip_path)$size)
   imported <- application_import_bundle(new_empty_workspace(), bytes)
   testthat::expect_true(imported$passed)

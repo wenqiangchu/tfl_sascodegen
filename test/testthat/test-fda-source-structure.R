@@ -1,5 +1,5 @@
 testthat::test_that("FDA-style tables generate expected source sections", {
-  zip_path <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
+  zip_path <- file.path(project_root, "assets", "demo_metadata.zip")
   bytes <- readBin(zip_path, "raw", n = file.info(zip_path)$size)
   imported <- application_import_bundle(new_empty_workspace(), bytes)
   testthat::expect_true(imported$passed)
@@ -18,8 +18,8 @@ testthat::test_that("FDA-style tables generate expected source sections", {
 })
 
 testthat::test_that("FDA-style source preserves section ordering and batch identity", {
-  bytes <- readBin(file.path(project_root, "test", "fixtures", "demo_metadata.zip"), "raw",
-                   n = file.info(file.path(project_root, "test", "fixtures", "demo_metadata.zip"))$size)
+  bytes <- readBin(file.path(project_root, "assets", "demo_metadata.zip"), "raw",
+                   n = file.info(file.path(project_root, "assets", "demo_metadata.zip"))$size)
   ws <- application_import_bundle(new_empty_workspace(), bytes)$workspace
   result <- application_generate_source(ws, "z_lab_change_over_time")
   testthat::expect_true(result$passed)
@@ -34,8 +34,8 @@ testthat::test_that("FDA-style source preserves section ordering and batch ident
 })
 
 testthat::test_that("generated source has a canonical section manifest", {
-  bytes <- readBin(file.path(project_root, "test", "fixtures", "demo_metadata.zip"), "raw",
-                   n = file.info(file.path(project_root, "test", "fixtures", "demo_metadata.zip"))$size)
+  bytes <- readBin(file.path(project_root, "assets", "demo_metadata.zip"), "raw",
+                   n = file.info(file.path(project_root, "assets", "demo_metadata.zip"))$size)
   ws <- application_import_bundle(new_empty_workspace(), bytes)$workspace
   result <- application_generate_source(ws, "baseline_characteristics")
   testthat::expect_true(result$passed)

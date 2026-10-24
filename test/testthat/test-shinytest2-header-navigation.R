@@ -4,7 +4,7 @@ testthat::test_that("imported spanning headers navigate cleanly and retain real 
   app <- shinytest2::AppDriver$new(app_dir = project_root, name = "header-span-navigation",
                                   height = 900, width = 1400, variant = "local", load_timeout = 30000)
   on.exit(app$stop(), add = TRUE)
-  demo <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
+  demo <- file.path(project_root, "assets", "demo_metadata.zip")
   bundle <- parse_bundle_archive(readBin(demo, "raw", file.info(demo)$size))$workspace
   bundle$headers[[1L]]$spanning_headers <- list(list(id = "treatment", level = 1L, label = "Treatment"))
   bundle$headers[[1L]]$columns[[1L]]$spanning_header_1 <- "treatment"

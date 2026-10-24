@@ -35,7 +35,7 @@ The Shiny dashboard now follows the approved metadata editing layout:
   and rows/statistics DT editors retain wider or full-row layouts. Chunk move
   and delete actions are placed at the far right of each card header; internal
   session-local UI identities are not displayed.
-- `test/fixtures/demo_metadata.zip` is a synthetic bundle covering FAS/SAFETY,
+- `assets/demo_metadata.zip` is a synthetic bundle covering FAS/SAFETY,
   baseline AGE/SEX analyses, and a SOC/PT AE severity hierarchy.
 - Header columns and spanning headers are edited in one DT. Spanning fields are
   displayed as labels; on save, contiguous label runs are converted to

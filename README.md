@@ -25,7 +25,7 @@ In Generate SAS, choose whether to include duplicate record checks and whether
 to emit a source report (`PROC REPORT` / `ODS RTF`) or QC comparison
 (`PROC COMPARE` against `tables.<table_id>`). Defaults are report mode with
 duplicate checks enabled. Each Header declares `orientation`; the demo includes
-both orientations and custom-code examples. See `docs/user-guide.md` for the
+both orientations and custom-code examples. See `assets/user-guide.md` for the
 generation options, comparison input, and report layout conventions.
 
 ## Run tests

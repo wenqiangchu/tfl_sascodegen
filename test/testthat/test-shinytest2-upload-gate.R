@@ -46,7 +46,7 @@ testthat::test_that("upload landing page is present before Shiny connects and ga
   expect_landing()
 
   app$click("upload_metadata_gate")
-  app$upload_file(bundle = file.path(project_root, "test", "fixtures", "demo_metadata.zip"))
+  app$upload_file(bundle = file.path(project_root, "assets", "demo_metadata.zip"))
   app$click("confirm_import")
   app$wait_for_idle(700)
   expect_editor()

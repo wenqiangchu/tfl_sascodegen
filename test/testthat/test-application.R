@@ -68,7 +68,7 @@ testthat::test_that("application orchestration preserves boundary failures", {
 })
 
 testthat::test_that("saved edits survive ZIP export and preserve Report and QC source", {
-  archive <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
+  archive <- file.path(project_root, "assets", "demo_metadata.zip")
   imported <- application_import_bundle(new_empty_workspace(),
     readBin(archive, "raw", n = file.info(archive)$size))
   testthat::expect_true(imported$passed)

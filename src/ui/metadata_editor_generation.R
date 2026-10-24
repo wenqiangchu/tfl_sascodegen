@@ -93,9 +93,9 @@ register_metadata_editor_generation <- function(ctx) {
       dir.create(staging)
       on.exit(unlink(staging, recursive = TRUE, force = TRUE), add = TRUE)
       root <- getOption("tfl_sascodegen_root", normalizePath(getwd(), mustWork = FALSE))
-      file.copy(file.path(root, "test", "fixtures", "demo_metadata.zip"), file.path(staging, "demo_metadata.zip"), overwrite = TRUE)
+      file.copy(file.path(root, "assets", "demo_metadata.zip"), file.path(staging, "demo_metadata.zip"), overwrite = TRUE)
       guide <- file.path(staging, "user-guide.md")
-      file.copy(file.path(root, "docs", "user-guide.md"), guide, overwrite = TRUE)
+      file.copy(file.path(root, "assets", "user-guide.md"), guide, overwrite = TRUE)
       zip::zipr(file, files = c("demo_metadata.zip", "user-guide.md"), root = staging, include_directories = FALSE)
     }
   )

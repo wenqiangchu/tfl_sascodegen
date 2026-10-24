@@ -34,4 +34,4 @@ for (index in seq_along(bundle$tables)) {
 check <- parse_bundle_value(bundle)
 if (length(check$errors)) { print(check$errors); stop("invalid demo bundle") }
 bytes <- canonical_archive_bytes(bundle)
-writeBin(bytes$bytes, file.path(root, "test", "fixtures", "demo_metadata.zip"))
+writeBin(bytes$bytes, file.path(root, "assets", "demo_metadata.zip"))

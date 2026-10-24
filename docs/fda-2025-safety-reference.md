@@ -50,7 +50,7 @@ fixture.
 
 ## Current synthetic fixture coverage
 
-`test/fixtures/demo_metadata.zip` includes:
+`assets/demo_metadata.zip` includes:
 
 - baseline characteristics (Table 2 style);
 - AE by SOC/PT and severity (Tables 10/14 style);

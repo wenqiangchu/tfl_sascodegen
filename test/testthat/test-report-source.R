@@ -110,7 +110,7 @@ testthat::test_that("Header editor orientation survives save and archive export"
 })
 
 testthat::test_that("the downloadable demo explicitly includes orientation and both custom hooks", {
-  archive <- file.path(project_root, "test", "fixtures", "demo_metadata.zip")
+  archive <- file.path(project_root, "assets", "demo_metadata.zip")
   imported <- application_import_bundle(new_empty_workspace(), readBin(archive, "raw", file.info(archive)$size))
   testthat::expect_true(imported$passed)
   testthat::expect_setequal(vapply(imported$workspace$headers, function(header) header$orientation, ""),
