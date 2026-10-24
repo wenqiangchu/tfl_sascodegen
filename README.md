@@ -44,3 +44,7 @@ working Chrome installation discoverable by `shinytest2`/Chromote.
 See `docs/source-generation-closeout.md` for the final verification scope,
 including the distinction between R/browser tests and earlier external SAS
 runtime checks. The current generator leaves CARDIMAGE settings to the caller.
+
+## License
+
+Released under the [MIT License](LICENSE).
