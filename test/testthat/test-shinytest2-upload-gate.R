@@ -54,6 +54,7 @@ testthat::test_that("upload landing page is present before Shiny connects and ga
   testthat::expect_match(app$get_html("#download_metadata_ui"), "download_bundle", fixed = TRUE)
 
   app$click("upload_metadata")
+  app$wait_for_js("document.querySelector('#bundle.shiny-bound-input') !== null", timeout = 10000)
   app$upload_file(bundle = malformed)
   app$click("confirm_import")
   app$wait_for_idle(600)

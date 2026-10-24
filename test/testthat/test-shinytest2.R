@@ -8,9 +8,19 @@ new_editor_app <- function(name) {
                             variant="local",load_timeout=30000)
 }
 
+# Upload models render the file input inside a modal, so opening the modal and
+# selecting the file must wait for that render separately. Clicking and
+# uploading back to back races the modal render and intermittently fails with
+# "Cannot find HTML element with selector #bundle.shiny-bound-input".
+open_upload_dialog <- function(app, button = "upload_metadata") {
+  app$click(button)
+  app$wait_for_idle(300)
+  app$wait_for_js("document.querySelector('#bundle.shiny-bound-input') !== null", timeout = 10000)
+  invisible(app)
+}
+
 import_demo <- function(app) {
-  app$click("upload_metadata")
-  app$wait_for_idle(200)
+  open_upload_dialog(app)
   app$upload_file(bundle=file.path(project_root,"assets","demo_metadata.zip"))
   app$click("confirm_import")
   app$wait_for_idle(1200)

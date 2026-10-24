@@ -11,6 +11,7 @@ testthat::test_that("imported spanning headers navigate cleanly and retain real 
   archive <- withr::local_tempfile(fileext = ".zip")
   writeBin(canonical_archive_bytes(bundle)$bytes, archive)
   app$click("upload_metadata")
+  app$wait_for_js("document.querySelector('#bundle.shiny-bound-input') !== null", timeout = 10000)
   app$upload_file(bundle = archive)
   app$click("confirm_import")
   app$wait_for_idle(1000)
