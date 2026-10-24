@@ -31,6 +31,8 @@ coverage/
 .pytest_cache/
 __pycache__/
 *.Rout
+# Local research and dataset material; never shipped with the application.
+study/
 study/sas_data/
 study/validation/*.rtf
 study/validation/*.log
