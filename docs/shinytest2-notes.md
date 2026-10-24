@@ -36,6 +36,8 @@ process, rather than a Shiny server error.
 
 Use `test_dir` so `helper-source.R` establishes `project_root` and loads the
 shared application dependencies. The current browser tests use DOM/state
-assertions and do not call `expect_screenshot`; old screenshot files do not
-provide current UI verification. Download-button state is browser-tested;
-downloaded source content is covered by the separate writer test.
+assertions and do not call `expect_screenshot`; screenshot files were removed
+because no test consumed them and testthat reported them as unused snapshots on
+every run. Do not reintroduce `_snaps` files unless a test actually calls
+`expect_screenshot`, and review them as test fixtures rather than generated
+runtime output.

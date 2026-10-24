@@ -2,7 +2,34 @@ library(shiny)
 library(shinydashboard)
 library(DT)
 
-project_root <- normalizePath(getwd(), mustWork = FALSE)
+# Shiny evaluates app.R with the working directory set to the application
+# directory, but a direct `source()` call does not, and some hosts only set the
+# working directory after evaluating the file. Resolve the repository root from
+# the file that is being sourced, then from the working directory, and walk
+# upwards until the root markers are found so runtime asset paths stay correct.
+locate_project_root <- function(candidates) {
+  markers <- c("app.R", file.path("src", "core", "errors.R"))
+  for (candidate in candidates) {
+    directory <- if (dir.exists(candidate)) candidate else dirname(candidate)
+    repeat {
+      if (all(file.exists(file.path(directory, markers)))) {
+        return(normalizePath(directory, mustWork = TRUE))
+      }
+      parent <- dirname(directory)
+      if (identical(parent, directory)) {
+        break
+      }
+      directory <- parent
+    }
+  }
+  normalizePath(getwd(), mustWork = FALSE)
+}
+
+sourced_files <- Filter(
+  function(path) is.character(path) && length(path) == 1L && nzchar(path),
+  lapply(rev(sys.frames()), `[[`, "ofile")
+)
+project_root <- locate_project_root(c(sourced_files, getwd()))
 options(tfl_sascodegen_root = project_root)
 source_order <- c(
   "src/core/errors.R", "src/chunks/registry.R", "src/metadata/model.R",
