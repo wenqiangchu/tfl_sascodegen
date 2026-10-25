@@ -8,8 +8,8 @@ source_auto_dedup_guard <- function(input_dataset, keys, suffix) {
   list(
     dataset = sorted,
     source = c(
-      "/* Keep the first source record per key and drop later duplicates. */",
-      "/* The retained record is the first one encountered in input order. */",
+      "/* Keep one source record per key and drop the remaining duplicates. */",
+      "/* Which record survives is PROC SORT's sorted-first choice; see the user guide. */",
       paste0("proc sort data=", input_dataset, " out=", sorted, " nodupkey;"),
       paste0("  by ", paste(keys, collapse = " "), ";"),
       "run;"

@@ -108,13 +108,21 @@ In `Generate SAS`, select a table, choose the generation options, and click
   overlap warnings.
 - **Remove duplicate source records before analysis** is disabled by default.
   When enabled, the generated program sorts each filtered source by the same
-  keys the duplicate check uses and keeps only the **first** record per key
+  keys the duplicate check uses and keeps **one** record per key
   (`PROC SORT ... NODUPKEY`). Later records are dropped before merge, counting,
   denominators, and hierarchical node discovery, so counts change and the
-  duplicate check no longer reports the removed records. The retained record is
-  the first one in input order, so source ordering determines the result.
+  duplicate check no longer reports the removed records.
   This option is independent of the duplicate check; enabling both removes
   duplicates first and then checks the surviving records.
+
+  **Which record survives:** `NODUPKEY` keeps the first record of each key in
+  the *sorted* order that `PROC SORT` produces. SAS does not guarantee which
+  record that is when several records share the same key values, and the
+  generated program neither sets `EQUALS` nor controls the caller's sorting
+  thread options. When the surviving record matters, sort the source by the
+  deciding variables (for example a visit number or a date) **before** this
+  program runs, so that the retained record is the intended one. The generator
+  does not choose or reorder the deciding variables for you.
 - **Source report (PROC REPORT)** is the default output mode. It appends the
   report and ODS RTF statements described above.
 - **QC compare (PROC COMPARE)** appends

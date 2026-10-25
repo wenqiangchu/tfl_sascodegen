@@ -1,5 +1,5 @@
-# Auto-deduplication keeps the first source record per key when enabled and must
-# leave the generated source unchanged when disabled.
+# Auto-deduplication keeps one source record per key when enabled and must leave
+# the generated source unchanged when disabled.
 
 report_fixture <- function(orientation = "landscape") {
   new_metadata_bundle(
@@ -51,7 +51,7 @@ testthat::test_that("auto_dedup emits a first-record NODUPKEY before the duplica
   source <- result$source
 
   testthat::expect_match(source, "proc sort data=_TFL_CPRE_001 out=_TFL_DEDUP_001 nodupkey;", fixed = TRUE)
-  testthat::expect_match(source, "/* Keep the first source record per key and drop later duplicates. */",
+  testthat::expect_match(source, "/* Keep one source record per key and drop the remaining duplicates. */",
                          fixed = TRUE)
   # Primitive batches deduplicate by chunk and the batch subject key.
   testthat::expect_match(source, "  by chunk_order USUBJID;", fixed = TRUE)
@@ -162,4 +162,62 @@ testthat::test_that("auto_dedup rejects a non-logical option value", {
     new_generation_request(bundle, "t_demog", auto_dedup = NA),
     "auto_dedup must be a single non-missing logical value"
   )
+})
+
+testthat::test_that("generation planning rejects hierarchical contracts without usable dedup keys", {
+  # Import validation rejects these contracts, so this asserts the generation
+  # boundary directly: a plan must not silently emit a program without dedup.
+  bundle <- report_fixture()
+  bundle$templates[[1L]]$body$chunks <- list(list(
+    id = "c1", type = "hierarchical_summary", source_data = "adam.adae",
+    source_contract = list(grain = "subject", subject_key = "USUBJID",
+                           duplicate_policy = "error"),
+    levels = list(list(id = "l1", variable = "SOC", order_variable = "SOCN",
+                       order_direction = "asc", node_role = "label",
+                       missing_policy = "exclude")),
+    analysis_blocks = list(list(
+      id = "a1", anchor_level = "l1", placement = "below",
+      type = "categorical_summary_nonexclusive", counting_unit = "distinct_subject",
+      denominator = list(scope = "current_group", unit = "distinct_subject"),
+      rows = list(list(id = "r1", type = "analysis", label = "Mild",
+                       condition = "AESEV = 'MILD'",
+                       statistics = list(list(id = "n")), cell_format = "{n}"))
+    ))
+  ))
+  chunk <- bundle$templates[[1L]]$body$chunks[[1L]]
+  handled <- list(template = bundle$templates[[1L]], header = bundle$headers[[1L]],
+                  registry = default_chunk_registry())
+
+  valid <- plan_primitive_batches(handled, include_duplicate_check = TRUE, auto_dedup = TRUE)
+  testthat::expect_length(valid$errors, 0L)
+  testthat::expect_length(valid$value, 1L)
+
+  plan_for <- function(contract, auto_dedup) {
+    template <- bundle$templates[[1L]]
+    template$body$chunks[[1L]]$source_contract <- contract
+    plan_primitive_batches(
+      list(template = template, header = bundle$headers[[1L]],
+           registry = default_chunk_registry()),
+      include_duplicate_check = TRUE, auto_dedup = auto_dedup
+    )
+  }
+
+  empty_subject <- plan_for(
+    list(grain = "subject", subject_key = "", duplicate_policy = "error"), TRUE
+  )
+  testthat::expect_identical(empty_subject$errors[[1L]]$code,
+                             "generation_source_contract_invalid")
+  testthat::expect_match(empty_subject$errors[[1L]]$path, "source_contract$")
+
+  missing_record_key <- plan_for(
+    list(grain = "record", subject_key = "USUBJID", duplicate_policy = "error"), TRUE
+  )
+  testthat::expect_identical(missing_record_key$errors[[1L]]$code,
+                             "generation_source_contract_invalid")
+
+  # Disabling deduplication must not require the keys, so the same contract plans.
+  off <- plan_for(
+    list(grain = "record", subject_key = "USUBJID", duplicate_policy = "error"), FALSE
+  )
+  testthat::expect_length(off$errors, 0L)
 })

@@ -1065,11 +1065,14 @@ Shiny 的当前控件值与最近一次生成时捕获的 `generated_options` �
    denominator、层级发现或分类 overlap warning。primitive source 按 subject key 检查；
    hierarchical source 按其 source contract 检查，nested analysis 不重复检查展开后的行。
 3. auto dedup 默认关闭，与 duplicate check 为两个独立开关。开启时在 duplicate check
-   之前插入一次 `PROC SORT ... NODUPKEY`，保留重复键的**首条**记录（输入顺序），
+   之前插入一次 `PROC SORT ... NODUPKEY`，每个键只保留一条记录，
    后续 merge、counting unit、denominator、层级发现与 overlap warning 均基于保留记录。
-   去重键沿用 duplicate check 的键：primitive 与 categorical 使用 batch subject key，
-   hierarchical 使用 source contract 的 `subject_key` 或 `record_key`。两个开关的选择
-   顺序固定为先去重后检查；同时开启时检查针对保留记录，因此不再报告已删除的重复。
+   保留哪一条由 `PROC SORT` 在排序结果中的首条决定；SAS 不保证相同 BY 值记录
+   的相对顺序，生成器也不设置 `EQUALS`、不控制调用方的排序线程选项，因此结果依赖
+   调用方对 source 的预排序。去重键沿用 duplicate check 的键：primitive 与 categorical
+   使用 batch subject key，hierarchical 使用 source contract 的 `subject_key` 或 `record_key`。
+   两个开关的选择顺序固定为先去重后检查；同时开启时检查针对保留记录，因此不再
+   报告已删除的重复。
 4. `report` 模式在 analysis、assembly 和 `custom_code.after` 后添加 `PROC REPORT`
    与既有 ODS RTF 源码。`compare` 模式在同一位置添加：
 
@@ -1137,7 +1140,8 @@ SAS 统计结果或 source/QC 数据一致性。
 3. duplicate check 在集中对象上执行一次，BY 顺序为 `chunk_order` 加 batch 的
    declared subject key。检查只报告重复，不使用 `NODUPKEY`、first-record 选择、
    去重或聚合；关闭 duplicate option 时整个 guard 均省略。auto dedup（默认关闭）
-   是独立开关：开启时在检查之前对同一集中对象执行一次 `NODUPKEY` 并保留首条记录，
+   是独立开关：开启时在检查之前对同一集中对象执行一次 `NODUPKEY` 并每个键保留一条
+   记录（保留哪一条由 `PROC SORT` 决定，见生成选项一节），
    后续 scaffold 与 merge 读取去重后的对象。
 4. Header membership merge 在 batch 级执行一次。生成一个 batch chunk-order 目录并
    与 `_TFL_MEM_<seq>` 构造 scaffold，再 left join 集中 source；这样每个
@@ -1249,6 +1253,18 @@ procedure 的限制；不更改 YAML、workspace、UI、统计量或 categorical
 - 跨 categorical、不兼容块、level 或 container 重排，以避免扩大执行时序变化。
 - 全面改为多 block primitive plan，合并 materialization 与 render；当前无此需要。
 - 字符化 typed keys、改变 counting unit、共享 base_digits 或增加 YAML 合批开关。
+
+### 与 auto dedup 的层级约束
+
+auto dedup 必须发生在 P0-11 共享 MEANS 的上游，即在 hierarchical container
+filtered source（`_TFL_HSRC_<container>`）这一层完成，不得下沉到共享输入
+`_TFL_HCIN_<container>_<first-block>` 或 P0-11 的 counting-unit materialization
+之内。原因：`continuous_unit_multiple_values` 是全组 preparation 阶段的硬性
+ABORT（本决定第 5 条），若在 `_TFL_HCIN_*` 层去重，guard 会先于任何去重触发并
+ABORT CANCEL，去重选项在该路径上永久无效；同时该 guard 不受 duplicate-check
+开关控制，因此也不能靠开关组合绕过。当前实现把去重放在 `_TFL_HSRC_*` 之后、
+level discovery 之前，共享 MEANS 读取的是已经去重的层级来源，语义一致。
+后续若调整去重位置，必须先修改本约束并重新确认第 5 条的失败时序。
 
 减少 procedure 次数并不保证运行更快；新增窄表 append 和 raw 拆分的成本需要另行测量。
 

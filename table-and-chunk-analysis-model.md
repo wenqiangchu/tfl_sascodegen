@@ -741,6 +741,11 @@ analysis_blocks:
 数据、不检查 key 是否存在或重复；duplicate policy 由生成的 SAS 以非阻断 warning
 实现，调用方负责根据 log 判断结果。自动去重同样是生成选项，不是 metadata 字段。
 
+`auto_dedup` 开启时，generated SAS 对这些字段派生的键执行 `PROC SORT ... NODUPKEY`，
+每个键只保留一条记录。保留哪一条由 `PROC SORT` 在排序结果中的首条决定；SAS 不保证
+相同 BY 值记录的相对顺序，且生成器不设置 `EQUALS`、不控制调用方的排序线程选项。
+若保留记录会影响结果，调用方必须在本程序之前按决定变量预排序 source。
+
 #### Grouping level
 
 | 字段 | 语义 |

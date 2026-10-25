@@ -242,6 +242,29 @@ plan_primitive_batches <- function(resolved, include_duplicate_check = TRUE,
       next
     }
     signature <- chunk_batch_signature(definition, chunk)
+    # auto dedup consumes keys derived from the source contract. Import already
+    # rejects empty keys, but generation is its own boundary: a missing or empty
+    # key must fail here instead of silently emitting a program without dedup.
+    if (isTRUE(auto_dedup) && identical(chunk$type, "hierarchical_summary")) {
+      contract <- chunk$source_contract
+      dedup_keys <- if (!is.null(contract) && identical(contract$grain, "subject")) {
+        contract$subject_key
+      } else if (!is.null(contract)) {
+        contract$record_key
+      } else {
+        NULL
+      }
+      if (!is.character(dedup_keys) || length(dedup_keys) == 0L ||
+          anyNA(dedup_keys) || any(!nzchar(trimws(dedup_keys)))) {
+        errors[[length(errors) + 1L]] <- generation_error(
+          "generation_source_contract_invalid",
+          sprintf(paste("Chunk '%s' cannot be deduplicated because its source",
+                        "contract does not declare a usable key."), chunk$id),
+          paste0(path, ".source_contract")
+        )
+        next
+      }
+    }
     group_index <- NULL
     if (isTRUE(definition$batch_contract$batchable)) {
       candidates <- which(vapply(groups, function(group) {
