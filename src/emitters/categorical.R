@@ -70,13 +70,37 @@ categorical_chunk_source <- function(plan, entry) {
     "run;"
   ), collapse = "\n"))
   key_dataset <- categorical_chunk_key_dataset(plan$batch_order, entry$chunk_order)
+  source_dataset <- categorical_source_dataset(plan$batch_order, entry$chunk_order)
+  # Deduplication needs the filtered source before counting events are emitted, so
+  # the filter and the event projection are split when the option is enabled.
+  dedup <- if (isTRUE(plan$auto_dedup)) {
+    source_auto_dedup_guard(
+      source_dataset, plan$subject_key %||% "USUBJID",
+      sprintf("K%03d_%03d", plan$batch_order, entry$chunk_order)
+    )
+  } else {
+    list(source = character(), dataset = chunk$source_data)
+  }
   paste(c(
     "/* Filter categorical chunk source before merge. */",
+    if (isTRUE(plan$auto_dedup)) c(
+      paste0("data ", source_dataset, ";"),
+      paste0("  set ", chunk$source_data, ";"),
+      if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
+      "run;",
+      dedup$source
+    ) else character(),
     "/* Filter once and emit categorical source keys and counting events. */",
     paste0("data ", key_dataset, " ", pre_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
-    paste0("  set ", chunk$source_data, ";"),
-    if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
+    if (isTRUE(plan$auto_dedup)) {
+      paste0("  set ", dedup$dataset, ";")
+    } else {
+      paste0("  set ", chunk$source_data, ";")
+    },
+    if (!isTRUE(plan$auto_dedup) && !is.null(chunk$filter)) {
+      paste0("  if not (", chunk$filter, ") then delete;")
+    } else character(),
     "  source_row = _n_;",
     paste0("  chunk_order = ", entry$chunk_order, ";"),
     paste0("  output ", key_dataset, ";"),

@@ -1040,6 +1040,7 @@ snapshot/table/registry 的限制。应用仍只输出 SAS source text，不读�
 | `table_id` | 本次生成入口的 table ID。 |
 | `registry` | 四类 chunk 的代码注册定义和 emitter。 |
 | `include_duplicate_check` | 单个非缺失 logical，默认 `TRUE`；控制 source duplicate-key guard 是否生成。 |
+| `auto_dedup` | 单个非缺失 logical，默认 `FALSE`；控制是否在分析前删除重复 source 记录。 |
 | `output_mode` | `report` 或 `compare`，默认 `report`；选择最后的 SAS procedure。 |
 
 `GenerationResult` 仍只有 `passed`、`source`、`errors`：成功返回完整源码，失败返回
@@ -1047,7 +1048,8 @@ snapshot/table/registry 的限制。应用仍只输出 SAS source text，不读�
 不修改 revision、已保存 metadata、draft 或外部文件。
 
 Shiny 的当前控件值与最近一次生成时捕获的 `generated_options` 都归当前 session 所有。
-`generated_options` 只含 `include_duplicate_check` 和 `output_mode`，成功生成时更新；
+`generated_options` 只含 `include_duplicate_check`、`auto_dedup` 和 `output_mode`，
+成功生成时更新；
 预览和下载还必须同时匹配当前 table 与成功状态。切换选项后旧预览隐藏、下载失效，
 重新生成成功才恢复。空 UI 输入使用相同默认值，不把未初始化 checkbox 当作关闭。
 
@@ -1062,7 +1064,13 @@ Shiny 的当前控件值与最近一次生成时捕获的 `generated_options` �
    `WARNING: [USER] duplicate_key`，不删除记录、不改变 merge、counting unit、
    denominator、层级发现或分类 overlap warning。primitive source 按 subject key 检查；
    hierarchical source 按其 source contract 检查，nested analysis 不重复检查展开后的行。
-3. `report` 模式在 analysis、assembly 和 `custom_code.after` 后添加 `PROC REPORT`
+3. auto dedup 默认关闭，与 duplicate check 为两个独立开关。开启时在 duplicate check
+   之前插入一次 `PROC SORT ... NODUPKEY`，保留重复键的**首条**记录（输入顺序），
+   后续 merge、counting unit、denominator、层级发现与 overlap warning 均基于保留记录。
+   去重键沿用 duplicate check 的键：primitive 与 categorical 使用 batch subject key，
+   hierarchical 使用 source contract 的 `subject_key` 或 `record_key`。两个开关的选择
+   顺序固定为先去重后检查；同时开启时检查针对保留记录，因此不再报告已删除的重复。
+4. `report` 模式在 analysis、assembly 和 `custom_code.after` 后添加 `PROC REPORT`
    与既有 ODS RTF 源码。`compare` 模式在同一位置添加：
 
    ```sas
@@ -1075,7 +1083,7 @@ Shiny 的当前控件值与最近一次生成时捕获的 `generated_options` �
    `tables.'<table_id>'n`（内部单引号按 SAS 规则处理）并启用 `VALIDMEMNAME=EXTEND`。
    QC 模式不添加系统报告语句，也不执行仅对 RTF 必需的页宽检查；用户的两个 custom
    code 字段始终原样保留。
-4. 按后续确认，`_TFL_KEY_MAP_*` 的 `INPUT + DATALINES` 只保存一次
+5. 按后续确认，`_TFL_KEY_MAP_*` 的 `INPUT + DATALINES` 只保存一次
    chunk/row/statistic metadata，不逐 Header 列重复写入。SAS 通过 `CROSS JOIN`
    将其与完整 Header 列目录展开为 `_TFL_KEY_*`；最终 logical-cell schema 和业务顺序
    保持不变。字符字段使用 DSD 引号规则，保留空值、空格、竖线、引号、
@@ -1128,7 +1136,9 @@ SAS 统计结果或 source/QC 数据一致性。
    保证兼容的 chunk 才能进入同一集中对象；平台不读取 SAS 数据推断兼容性。
 3. duplicate check 在集中对象上执行一次，BY 顺序为 `chunk_order` 加 batch 的
    declared subject key。检查只报告重复，不使用 `NODUPKEY`、first-record 选择、
-   去重或聚合；关闭 duplicate option 时整个 guard 均省略。
+   去重或聚合；关闭 duplicate option 时整个 guard 均省略。auto dedup（默认关闭）
+   是独立开关：开启时在检查之前对同一集中对象执行一次 `NODUPKEY` 并保留首条记录，
+   后续 scaffold 与 merge 读取去重后的对象。
 4. Header membership merge 在 batch 级执行一次。生成一个 batch chunk-order 目录并
    与 `_TFL_MEM_<seq>` 构造 scaffold，再 left join 集中 source；这样每个
    `chunk_order × membership` 组合在缺少 filtered source record 时仍保留。后续
@@ -1165,7 +1175,9 @@ SAS 统计结果或 source/QC 数据一致性。
    `_TFL_KPRE_<batch>`；key 表 append 后只执行一次 source duplicate guard（BY
    `chunk_order USUBJID`）。guard 不在已展开的 event 表上运行，避免同一 subject 的
    denominator/numerator events 被误报为重复。该 guard 仅报告重复，不去重、不聚合；
-   duplicate option 关闭时整个 key append/guard 均省略。
+   duplicate option 关闭时整个 key append/guard 均省略。auto dedup 开启时在事件投影
+   之前对 filter 后的 source 执行一次 `NODUPKEY`，事件表与 key 表都从去重后的 source
+   生成，因此 `source_row` 重新按保留记录编号。
 3. Header membership expansion 在 batch 级执行一次。事件先与 `_TFL_MEM_<seq>`
    inner join；同时为每个 batch chunk 与 membership 生成 header-population denominator
    scaffold，再 union 到 `_TFL_KMERGE_<batch>`。后续 `_TFL_KIN_<batch>`、counting-unit

@@ -76,6 +76,12 @@ continuous_batch_source_input <- function(plan) {
     continuous_chunk_input_dataset(plan$batch_order, chunk_order)
   }, character(1L))
   subject_key <- plan$subject_key %||% "USUBJID"
+  dedup_keys <- c("chunk_order", subject_key)
+  dedup <- if (isTRUE(plan$auto_dedup)) {
+    source_auto_dedup_guard(combined, dedup_keys, suffix)
+  } else {
+    list(source = character(), dataset = combined)
+  }
   chunk_rows <- unlist(lapply(plan$chunk_orders, function(chunk_order) {
     paste0("  chunk_order = ", chunk_order, "; output;")
   }), use.names = FALSE)
@@ -84,8 +90,10 @@ continuous_batch_source_input <- function(plan) {
     paste0("data ", combined, ";"),
     paste0("  set ", paste(chunk_inputs, collapse = " "), ";"),
     "run;",
+    # Deduplication runs first so the optional check reports the retained source.
+    dedup$source,
     if (isTRUE(plan$include_duplicate_check)) {
-      source_duplicate_guard(combined, c("chunk_order", subject_key), suffix,
+      source_duplicate_guard(dedup$dataset, dedup_keys, suffix,
                              scope_field = "chunk_order")
     } else character(),
     "/* Preserve one scaffold row for every batch chunk and membership row. */",
@@ -99,7 +107,7 @@ continuous_batch_source_input <- function(plan) {
     "  select b.chunk_order, m.USUBJID, m.header_column_id, m.column_order,",
     "         s.source_row, s.analysis_value, '' as node_key length=&_TFL_NODE_LEN",
     paste0("  from ", chunks, " as b cross join ", plan$membership_dataset, " as m"),
-    paste0("  left join ", combined, " as s"),
+    paste0("  left join ", dedup$dataset, " as s"),
     paste0("    on s.chunk_order = b.chunk_order and s.", subject_key, " = m.USUBJID;"),
     "quit;",
     paste0("data ", plan$input_dataset, ";"),

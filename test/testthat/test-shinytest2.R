@@ -233,8 +233,10 @@ testthat::test_that("SAS download is only enabled for the current successful gen
   app$wait_for_idle(800)
   testthat::expect_false(grepl("download_sas_disabled", app$get_html("#download_sas_ui"), fixed = TRUE))
   testthat::expect_true(app$get_value(input = "generate_duplicate_check"))
+  testthat::expect_false(app$get_value(input = "generate_auto_dedup"))
   testthat::expect_identical(app$get_value(input = "generate_output_mode"), "report")
   testthat::expect_match(app$get_text("#source"), "WARNING: [USER] duplicate_key", fixed = TRUE)
+  testthat::expect_false(grepl("_TFL_DEDUP_", app$get_text("#source"), fixed = TRUE))
 
   app$set_inputs(generate_duplicate_check = FALSE)
   app$wait_for_idle(300)
@@ -254,6 +256,16 @@ testthat::test_that("SAS download is only enabled for the current successful gen
                          "proc compare base=tables.baseline_characteristics compare=WORK._TFL_ASM_001 listvar;",
                          fixed = TRUE)
   testthat::expect_false(grepl("proc report|ods rtf", app$get_text("#source"), ignore.case = TRUE))
+  testthat::expect_false(grepl("download_sas_disabled", app$get_html("#download_sas_ui"), fixed = TRUE))
+
+  # The deduplication option regenerates independently and invalidates the preview.
+  app$set_inputs(generate_auto_dedup = TRUE)
+  app$wait_for_idle(300)
+  testthat::expect_match(app$get_html("#download_sas_ui"), "download_sas_disabled", fixed = TRUE)
+  testthat::expect_identical(app$get_text("#source"), "")
+  app$click("generate")
+  app$wait_for_idle(600)
+  testthat::expect_match(app$get_text("#source"), "out=_TFL_DEDUP_001 nodupkey", fixed = TRUE)
   testthat::expect_false(grepl("download_sas_disabled", app$get_html("#download_sas_ui"), fixed = TRUE))
 
   app$set_inputs(generate_table = "ae_by_soc_pt")

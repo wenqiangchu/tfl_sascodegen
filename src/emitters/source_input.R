@@ -1,5 +1,22 @@
 # Shared source preparation keeps membership expansion explicit in SAS.
 
+source_auto_dedup_guard <- function(input_dataset, keys, suffix) {
+  if (!length(keys)) {
+    return(list(source = character(), dataset = input_dataset))
+  }
+  sorted <- paste0("_TFL_DEDUP_", suffix)
+  list(
+    dataset = sorted,
+    source = c(
+      "/* Keep the first source record per key and drop later duplicates. */",
+      "/* The retained record is the first one encountered in input order. */",
+      paste0("proc sort data=", input_dataset, " out=", sorted, " nodupkey;"),
+      paste0("  by ", paste(keys, collapse = " "), ";"),
+      "run;"
+    )
+  )
+}
+
 source_duplicate_guard <- function(dataset, keys, suffix, scope_field = NULL) {
   if (!length(keys)) return(character())
   last_key <- tail(keys, 1L)

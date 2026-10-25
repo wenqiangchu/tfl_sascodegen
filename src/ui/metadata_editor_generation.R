@@ -20,6 +20,7 @@ register_metadata_editor_generation <- function(ctx) {
   generated_options <- reactiveVal(NULL)
   generation_options <- reactive(list(
     include_duplicate_check = isTRUE(input$generate_duplicate_check %||% TRUE),
+    auto_dedup = isTRUE(input$generate_auto_dedup %||% FALSE),
     output_mode = as.character(input$generate_output_mode %||% "report")
   ))
   source_is_current <- reactive({
@@ -51,6 +52,7 @@ register_metadata_editor_generation <- function(ctx) {
     result <- application_generate_source(
       workspace(), input$generate_table,
       include_duplicate_check = requested_options$include_duplicate_check,
+      auto_dedup = requested_options$auto_dedup,
       output_mode = requested_options$output_mode
     )
     if (!result$passed) {

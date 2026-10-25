@@ -106,6 +106,15 @@ In `Generate SAS`, select a table, choose the generation options, and click
   messages. This applies to primitive chunks and hierarchical source records;
   it does not change analysis counts, merge rules, or exclusive-category
   overlap warnings.
+- **Remove duplicate source records before analysis** is disabled by default.
+  When enabled, the generated program sorts each filtered source by the same
+  keys the duplicate check uses and keeps only the **first** record per key
+  (`PROC SORT ... NODUPKEY`). Later records are dropped before merge, counting,
+  denominators, and hierarchical node discovery, so counts change and the
+  duplicate check no longer reports the removed records. The retained record is
+  the first one in input order, so source ordering determines the result.
+  This option is independent of the duplicate check; enabling both removes
+  duplicates first and then checks the surviving records.
 - **Source report (PROC REPORT)** is the default output mode. It appends the
   report and ODS RTF statements described above.
 - **QC compare (PROC COMPARE)** appends

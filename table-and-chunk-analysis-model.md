@@ -734,11 +734,12 @@ analysis_blocks:
 | subject_key | 通常为 USUBJID。 |
 | record_key | record/observation grain 的逻辑 key 字段序列。 |
 | duplicate_policy | 重复 key 违反 contract；当前 contract 固定为 `error`，但生成的 SAS 以
-  `WARNING: [USER] ...` 记录，不自动去重或聚合。 |
+  `WARNING: [USER] ...` 记录。metadata 本身不去重；是否删除重复记录只由生成选项
+  `auto_dedup` 决定，见下文生成选项一节。 |
 
 这些字段告诉 SAS emitter 应按何种粒度生成排序、连接和计数代码。平台不读取
 数据、不检查 key 是否存在或重复；duplicate policy 由生成的 SAS 以非阻断 warning
-实现，调用方负责根据 log 判断结果。
+实现，调用方负责根据 log 判断结果。自动去重同样是生成选项，不是 metadata 字段。
 
 #### Grouping level
 

@@ -470,8 +470,20 @@ hierarchical_summary_emitter <- function(plan, resolved) {
   suffix <- sprintf("%03d", batch)
   source <- paste0("_TFL_HSRC_", suffix)
   keys <- if (chunk$source_contract$grain == "subject") chunk$source_contract$subject_key else chunk$source_contract$record_key
+  hierarchical_dedup <- if (isTRUE(plan$auto_dedup)) {
+    source_auto_dedup_guard(source, keys, paste0("H", suffix))
+  } else {
+    list(source = character(), dataset = source)
+  }
   nested_plans <- lapply(seq_along(chunk$analysis_blocks), function(index) {
-    hierarchical_nested_plan(plan, chunk$analysis_blocks[[index]], index, resolved)
+    nested <- hierarchical_nested_plan(plan, chunk$analysis_blocks[[index]], index, resolved)
+    # A global denominator must be read from the deduplicated container source so
+    # it matches the records that drive nodes and rows.
+    if (isTRUE(plan$auto_dedup) &&
+        identical(nested$global_denominator_source, source)) {
+      nested$global_denominator_source <- hierarchical_dedup$dataset
+    }
+    nested
   })
   nested_analysis <- hierarchical_nested_analysis(plan, nested_plans, resolved)
   nested_outputs <- nested_analysis$outputs
@@ -508,11 +520,15 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "  source_row = _n_;",
     "run;",
     hierarchical_text_lengths_source(plan),
-    if (isTRUE(plan$include_duplicate_check)) source_duplicate_guard(source, keys, paste0("H", suffix)),
+    # Deduplication runs before the guard and before level discovery so the
+    # retained source is what drives nodes, rows, and counting units.
+    hierarchical_dedup$source,
+    if (isTRUE(plan$include_duplicate_check))
+      source_duplicate_guard(hierarchical_dedup$dataset, keys, paste0("H", suffix)),
     "/* Discover nodes across the union of the displayed population columns. */",
     "proc sql noprint;",
     paste0("  create table ", hierarchical_source_dataset(batch), " as"),
-    paste0("  select s.* from ", source, " as s where exists"),
+    paste0("  select s.* from ", hierarchical_dedup$dataset, " as s where exists"),
     paste0("    (select 1 from _TFL_MEM_001 as m where m.USUBJID = s.",
            chunk$source_contract$subject_key, ");"),
     "quit;",

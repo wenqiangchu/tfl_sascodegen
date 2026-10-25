@@ -80,6 +80,8 @@ metadata_editor_ui <- function() {
         box(title = "Generate SAS", width = 12, status = "success", solidHeader = TRUE,
           selectInput("generate_table", "Table", character()),
           checkboxInput("generate_duplicate_check", "Include duplicate record checks", value = TRUE),
+          checkboxInput("generate_auto_dedup", "Remove duplicate source records before analysis",
+                        value = FALSE),
           radioButtons("generate_output_mode", "Output mode",
                        choices = c("Source report (PROC REPORT)" = "report",
                                     "QC compare (PROC COMPARE)" = "compare"),

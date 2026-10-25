@@ -21,10 +21,12 @@ The application emits SAS source text only. Dataset references and SAS
 expressions in metadata are preserved as user-provided source and are not
 executed or validated by the application.
 
-In Generate SAS, choose whether to include duplicate record checks and whether
+In Generate SAS, choose whether to include duplicate record checks, whether to
+remove duplicate source records before analysis, and whether
 to emit a source report (`PROC REPORT` / `ODS RTF`) or QC comparison
 (`PROC COMPARE` against `tables.<table_id>`). Defaults are report mode with
-duplicate checks enabled. Each Header declares `orientation`; the demo includes
+duplicate checks enabled and automatic deduplication disabled. Each Header
+declares `orientation`; the demo includes
 both orientations and custom-code examples. See `assets/user-guide.md` for the
 generation options, comparison input, and report layout conventions.
 

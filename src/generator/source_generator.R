@@ -3,15 +3,20 @@
 new_generation_request <- function(workspace_snapshot, table_id,
                                    registry = default_chunk_registry(),
                                    include_duplicate_check = TRUE,
+                                   auto_dedup = FALSE,
                                    output_mode = c("report", "compare")) {
   output_mode <- match.arg(output_mode)
   if (!is.logical(include_duplicate_check) || length(include_duplicate_check) != 1L ||
       is.na(include_duplicate_check)) {
     stop("include_duplicate_check must be a single non-missing logical value.", call. = FALSE)
   }
+  if (!is.logical(auto_dedup) || length(auto_dedup) != 1L || is.na(auto_dedup)) {
+    stop("auto_dedup must be a single non-missing logical value.", call. = FALSE)
+  }
   structure(
     list(workspace_snapshot = workspace_snapshot, table_id = table_id, registry = registry,
-         include_duplicate_check = isTRUE(include_duplicate_check), output_mode = output_mode),
+         include_duplicate_check = isTRUE(include_duplicate_check),
+         auto_dedup = isTRUE(auto_dedup), output_mode = output_mode),
     class = c("GenerationRequest", "list")
   )
 }
@@ -59,6 +64,8 @@ resolve_generation_request <- function(request) {
       !inherits(request$registry, "ChunkRegistry") ||
       !is.logical(request$include_duplicate_check) || length(request$include_duplicate_check) != 1L ||
       is.na(request$include_duplicate_check) ||
+      !is.logical(request$auto_dedup) || length(request$auto_dedup) != 1L ||
+      is.na(request$auto_dedup) ||
       !is.character(request$output_mode) || length(request$output_mode) != 1L ||
       !request$output_mode %in% c("report", "compare")) {
     return(list(value = NULL, errors = list(generation_error(
@@ -217,7 +224,8 @@ build_logical_result_map <- function(chunk, chunk_order, header_columns,
   result
 }
 
-plan_primitive_batches <- function(resolved, include_duplicate_check = TRUE) {
+plan_primitive_batches <- function(resolved, include_duplicate_check = TRUE,
+                                   auto_dedup = FALSE) {
   groups <- list()
   errors <- list()
   chunks <- resolved$template$body$chunks
@@ -270,6 +278,7 @@ plan_primitive_batches <- function(resolved, include_duplicate_check = TRUE) {
       header_columns_dataset = "_TFL_HCOLS_001",
       membership_dataset = "_TFL_MEM_001",
       include_duplicate_check = isTRUE(include_duplicate_check),
+      auto_dedup = isTRUE(auto_dedup),
       definition = group$definition
     ), names), class = c("PrimitiveBatchPlan", "list"))
   })
@@ -367,7 +376,8 @@ generate_sas_source <- function(request) {
       ))))
     }
   }
-  planned <- plan_primitive_batches(resolved, request$include_duplicate_check)
+  planned <- plan_primitive_batches(resolved, request$include_duplicate_check,
+                                    request$auto_dedup)
   if (length(planned$errors) > 0L) {
     return(new_generation_result(FALSE, errors = planned$errors))
   }
@@ -424,8 +434,9 @@ generate_sas_source <- function(request) {
 generate_table_source <- function(workspace_snapshot, table_id,
                                   registry = default_chunk_registry(),
                                   include_duplicate_check = TRUE,
+                                  auto_dedup = FALSE,
                                   output_mode = c("report", "compare")) {
   generate_sas_source(new_generation_request(
-    workspace_snapshot, table_id, registry, include_duplicate_check, output_mode
+    workspace_snapshot, table_id, registry, include_duplicate_check, auto_dedup, output_mode
   ))
 }
