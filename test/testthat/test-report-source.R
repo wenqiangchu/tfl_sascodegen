@@ -19,7 +19,7 @@ report_fixture <- function(orientation = "landscape") {
       )
     )),
     templates = list(list(id = "demog", body = list(stub_header = "Characteristic", chunks = list(
-      list(id = "age", type = "continuous_summary", source_data = "adam.adsl", analysis_variable = "AGE",
+      list(id = "age", type = "continuous_summary", source_data = "adam.adsl", counting_unit = "distinct_subject", analysis_variable = "AGE",
            rows = list(
              list(id = "heading", type = "label", label = "Age\\line (years)"),
              list(id = "mean_sd", type = "analysis", label = "Mean (SD)", indent_level = 1L,

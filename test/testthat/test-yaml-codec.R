@@ -32,6 +32,7 @@ valid_bundle_yaml <- function() {
     "        - id: c1",
     "          type: continuous_summary",
     "          source_data: adam.adsl",
+    "          counting_unit: distinct_subject",
     "          analysis_variable: AGE",
     "          rows:",
     "            - id: r1",

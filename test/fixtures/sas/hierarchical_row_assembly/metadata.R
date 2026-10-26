@@ -51,6 +51,7 @@ row_assembly_fixture <- function(case = "basic") {
     second$id <- "hier2"
     chunks <- list(chunk, list(
       id = "overall", type = "continuous_summary", source_data = "work.ra_adsl",
+      counting_unit = "distinct_subject",
       analysis_variable = "VALUE1", rows = list(mean_row("Overall"))
     ), second)
   }

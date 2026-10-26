@@ -122,14 +122,17 @@ make_primitive_definition <- function(type_id, analysis_contract, statistic_ids,
                                       required_fields, optional_fields,
                                       require_condition = FALSE,
                                       batch_type = type_id) {
+  # Counting semantics are declared per chunk so the emitter never infers a
+  # deduplication key; distinct_key is only valid for the distinct_key unit.
   new_chunk_type_definition(
     type_id = type_id,
     capability = "primitive",
-    required_fields = required_fields,
-    optional_fields = optional_fields,
+    required_fields = c(required_fields, "counting_unit"),
+    optional_fields = c(optional_fields, "distinct_key"),
     field_types = c(
       list(id = "string", type = "string", source_data = "non_empty_string",
-           rows = "sequence", filter = "optional_string"),
+           rows = "sequence", filter = "optional_string",
+           counting_unit = "string", distinct_key = "sequence"),
       if (identical(type_id, "continuous_summary")) {
         list(analysis_variable = "string")
       } else {

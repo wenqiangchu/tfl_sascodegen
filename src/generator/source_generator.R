@@ -127,6 +127,13 @@ batch_definition_signature <- function(definition) {
 
 chunk_batch_signature <- function(definition, chunk) {
   signature <- batch_definition_signature(definition)
+  # Counting keys change the emitted deduplication and guard BY clauses, so
+  # chunks with different counting contracts must not share a batch.
+  if (identical(definition$type_id, "continuous_summary")) {
+    signature$chunk_key_contract <- list(
+      numerator_keys = primitive_counting_keys(chunk)
+    )
+  }
   if (definition$type_id %in% c("categorical_summary_nonexclusive",
                                 "categorical_summary_exclusive")) {
     signature$chunk_key_contract <- list(

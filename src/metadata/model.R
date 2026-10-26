@@ -890,6 +890,55 @@ parse_level_value <- function(value, path, collector) {
   result
 }
 
+# Counting semantics are shared by hierarchical analysis blocks and primitive
+# chunks so both hosts validate the same field pair with identical messages.
+parse_counting_unit_value <- function(raw, path, collector) {
+  unit <- parse_string_value(raw, path, collector, "counting_unit")
+  if (!is.null(unit) && !unit %in% registry_allowed_counting_units) {
+    add_value_error(collector, path,
+                    sprintf("Counting unit '%s' is not supported.", unit))
+    unit <- NULL
+  }
+  unit
+}
+
+parse_distinct_key_value <- function(value, path, collector, counting_unit) {
+  if (!has_field(value, "distinct_key")) return(NULL)
+  # R callers may pass a character vector while YAML decodes a sequence as a
+  # list; normalize both before validating individual entries.
+  raw_key_value <- get_field(value, "distinct_key")
+  if (is.character(raw_key_value)) raw_key_value <- as.list(raw_key_value)
+  raw_key <- parse_sequence_raw(raw_key_value,
+                                error_path_field(path, "distinct_key"), collector,
+                                "distinct_key", required = TRUE, allow_empty = FALSE)
+  if (is.null(raw_key)) return(NULL)
+  distinct_key <- character()
+  for (i in seq_along(raw_key$items)) {
+    parsed <- parse_string_value(raw_key$items[[i]],
+                                 error_path_index(error_path_field(path, "distinct_key"), i - 1L),
+                                 collector, "distinct_key", non_empty = TRUE)
+    if (!is.null(parsed)) distinct_key <- c(distinct_key, parsed)
+  }
+  if (anyDuplicated(distinct_key)) {
+    add_value_error(collector, error_path_field(path, "distinct_key"),
+                    "Distinct key fields must be unique.")
+    return(NULL)
+  }
+  distinct_key
+}
+
+validate_counting_unit_pair <- function(collector, path, counting_unit, distinct_key) {
+  if (identical(counting_unit, "distinct_key") && is.null(distinct_key)) {
+    add_required_error(collector, path, "distinct_key")
+  }
+  if (!is.null(counting_unit) && !identical(counting_unit, "distinct_key") &&
+      !is.null(distinct_key)) {
+    add_value_error(collector, error_path_field(path, "distinct_key"),
+                    "Distinct key is only allowed for the distinct_key counting unit.")
+  }
+  invisible(NULL)
+}
+
 parse_analysis_block_value <- function(value, path, collector, registry) {
   allowed <- c("id", "anchor_level", "placement", "type", "counting_unit", "distinct_key",
                "analysis_variable", "denominator", "rows")
@@ -918,39 +967,13 @@ parse_analysis_block_value <- function(value, path, collector, registry) {
       definition <- NULL
     }
   }
-  counting_unit <- parse_string_value(get_field(value, "counting_unit"),
-                                      error_path_field(path, "counting_unit"), collector,
-                                      "counting_unit")
-  if (!is.null(counting_unit) && !counting_unit %in% registry_allowed_counting_units) {
-    add_value_error(collector, error_path_field(path, "counting_unit"),
-                    sprintf("Counting unit '%s' is not supported.", counting_unit))
-    counting_unit <- NULL
-  }
-  distinct_key <- NULL
-  if (has_field(value, "distinct_key")) {
-    raw_key_value <- get_field(value, "distinct_key")
-    if (is.character(raw_key_value)) raw_key_value <- as.list(raw_key_value)
-    raw_key <- parse_sequence_raw(raw_key_value,
-                                  error_path_field(path, "distinct_key"), collector,
-                                  "distinct_key", required = TRUE, allow_empty = FALSE)
-    if (!is.null(raw_key)) {
-      distinct_key <- character()
-      for (i in seq_along(raw_key$items)) {
-        parsed <- parse_string_value(raw_key$items[[i]],
-                                     error_path_index(error_path_field(path, "distinct_key"), i - 1L),
-                                     collector, "distinct_key", non_empty = TRUE)
-        if (!is.null(parsed)) distinct_key <- c(distinct_key, parsed)
-      }
-    }
-  }
-  if (identical(counting_unit, "distinct_key") && is.null(distinct_key)) {
-    add_required_error(collector, path, "distinct_key")
-  }
-  if (!is.null(counting_unit) && !identical(counting_unit, "distinct_key") &&
-      !is.null(distinct_key)) {
-    add_value_error(collector, error_path_field(path, "distinct_key"),
-                    "Distinct key is only allowed for the distinct_key counting unit.")
-  }
+  counting_unit <- parse_counting_unit_value(
+    get_field(value, "counting_unit"), error_path_field(path, "counting_unit"), collector
+  )
+  distinct_key <- parse_distinct_key_value(
+    value, path, collector, counting_unit
+  )
+  validate_counting_unit_pair(collector, path, counting_unit, distinct_key)
   analysis_variable <- NULL
   denominator <- NULL
   if (!is.null(definition)) {
@@ -1150,6 +1173,19 @@ parse_chunk_value <- function(value, path, collector, registry) {
   }
   result <- list(id = id, type = type, source_data = source_data)
   if (!is.null(filter)) result$filter <- filter
+
+  # Primitive chunks declare their own counting unit; hierarchical chunks
+  # declare it per analysis block instead.
+  if (identical(definition$capability, "primitive")) {
+    counting_unit <- parse_counting_unit_value(
+      get_field(value, "counting_unit"), error_path_field(path, "counting_unit"), collector
+    )
+    distinct_key <- parse_distinct_key_value(value, path, collector, counting_unit)
+    validate_counting_unit_pair(collector, path, counting_unit, distinct_key)
+    result$counting_unit <- counting_unit
+    if (!is.null(distinct_key)) result$distinct_key <- distinct_key
+    if (is.null(counting_unit)) return(NULL)
+  }
 
   if (identical(type, "continuous_summary")) {
     analysis_variable <- parse_string_value(

@@ -54,6 +54,7 @@ workspace_fixture_bundle <- function() {
   )
   continuous <- list(
     id = "old_continuous", type = "continuous_summary", source_data = "adam.adsl",
+    counting_unit = "distinct_subject",
     analysis_variable = "AGE", rows = continuous_rows
   )
   new_metadata_bundle(

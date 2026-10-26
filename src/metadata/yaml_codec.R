@@ -502,9 +502,17 @@ render_chunk_yaml <- function(value, indent) {
   yaml_emit_scalar(context, indent, "source_data", value$source_data)
   if (!is.null(value$filter)) yaml_emit_scalar(context, indent, "filter", value$filter)
   if (identical(value$type, "continuous_summary")) {
+    yaml_emit_scalar(context, indent, "counting_unit", value$counting_unit)
+    if (!is.null(value$distinct_key)) {
+      yaml_emit_scalar_sequence(context, indent, "distinct_key", value$distinct_key, "string")
+    }
     yaml_emit_scalar(context, indent, "analysis_variable", value$analysis_variable)
     yaml_emit_sequence(context, indent, "rows", value$rows, render_row_yaml)
   } else if (value$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
+    yaml_emit_scalar(context, indent, "counting_unit", value$counting_unit)
+    if (!is.null(value$distinct_key)) {
+      yaml_emit_scalar_sequence(context, indent, "distinct_key", value$distinct_key, "string")
+    }
     yaml_emit_mapping(context, indent, "denominator", value$denominator,
                       render_primitive_denominator_yaml)
     yaml_emit_sequence(context, indent, "rows", value$rows, render_row_yaml)

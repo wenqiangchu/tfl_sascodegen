@@ -24,6 +24,7 @@ testthat::test_that("application orchestration preserves boundary failures", {
                        template_id = "t1")),
     templates = list(list(id = "t1", body = list(chunks = list(list(
       id = "c1", type = "continuous_summary", source_data = "adam.adsl",
+      counting_unit = "distinct_subject",
       analysis_variable = "AGE", rows = list(list(
         id = "r1", type = "analysis", label = "Mean",
         statistics = list(list(id = "mean", digits = 1L)), cell_format = "{mean}"

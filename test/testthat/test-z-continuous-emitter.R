@@ -8,6 +8,7 @@ testthat::test_that("default continuous emitter generates one MEANS batch and lo
     tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
     templates = list(list(id = "t", body = list(chunks = list(
       list(id = "age", type = "continuous_summary", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            analysis_variable = "AGE", rows = list(list(
              id = "r", type = "analysis", label = "Mean",
              statistics = list(list(id = "mean", digits = 1L)), cell_format = "{mean}"
@@ -61,11 +62,13 @@ testthat::test_that("compatible continuous chunks share one duplicate guard and 
     tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
     templates = list(list(id = "t", body = list(chunks = list(
       list(id = "age", type = "continuous_summary", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            analysis_variable = "AGE", rows = list(list(
              id = "r1", type = "analysis", label = "Age", statistics = list(list(id = "mean", digits = 1L)),
              cell_format = "{mean}"
            ))),
       list(id = "weight", type = "continuous_summary", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            analysis_variable = "WEIGHT", rows = list(list(
              id = "r2", type = "analysis", label = "Weight", statistics = list(list(id = "mean", digits = 1L)),
              cell_format = "{mean}"

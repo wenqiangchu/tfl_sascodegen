@@ -8,6 +8,7 @@ testthat::test_that("default categorical emitter generates event input and one F
     tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
     templates = list(list(id = "t", body = list(chunks = list(
       list(id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            denominator = list(type = "header_population"), rows = list(list(
              id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
              statistics = list(list(id = "n"), list(id = "pct", digits = 1L)),
@@ -51,11 +52,13 @@ testthat::test_that("compatible categorical chunks share one source guard and me
     tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
     templates = list(list(id = "t", body = list(chunks = list(
       list(id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            denominator = list(type = "header_population"), rows = list(list(
              id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
              statistics = list(list(id = "n")), cell_format = "{n}"
            ))),
       list(id = "race", type = "categorical_summary_nonexclusive", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            denominator = list(type = "header_population"), rows = list(list(
              id = "white", type = "analysis", label = "White", condition = "RACE = 'W'",
              statistics = list(list(id = "n")), cell_format = "{n}"
@@ -83,6 +86,7 @@ testthat::test_that("categorical scaffold is limited to header-population denomi
     tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
     templates = list(list(id = "t", body = list(chunks = list(
       list(id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            denominator = list(type = "non_missing", variable = "SEX"), rows = list(list(
              id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
              statistics = list(list(id = "n")), cell_format = "{n}"
@@ -104,6 +108,7 @@ testthat::test_that("exclusive categorical emitter adds a nonblocking overlap gu
     tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
     templates = list(list(id = "t", body = list(chunks = list(
       list(id = "sex", type = "categorical_summary_exclusive", source_data = "adam.adsl",
+           counting_unit = "distinct_subject",
            denominator = list(type = "header_population"), rows = list(list(
              id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
              statistics = list(list(id = "n")), cell_format = "{n}"

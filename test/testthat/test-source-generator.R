@@ -16,12 +16,12 @@ generator_fixture <- function() {
       custom_code = list(before = "%let before=1;", after = "%put after;")
     )),
     templates = list(list(id = "demog", body = list(chunks = list(
-      list(id = "age", type = "continuous_summary", source_data = "adam.adsl",
+      list(id = "age", type = "continuous_summary", source_data = "adam.adsl", counting_unit = "distinct_subject",
            analysis_variable = "AGE", rows = list(
              list(id = "r1", type = "analysis", label = "Mean",
                   statistics = list(list(id = "mean", digits = 1L)), cell_format = "{mean}")
            )),
-      list(id = "weight", type = "continuous_summary", source_data = "&ADSL",
+      list(id = "weight", type = "continuous_summary", source_data = "&ADSL", counting_unit = "distinct_subject",
            analysis_variable = "WEIGHT", rows = list(
              list(id = "r1", type = "analysis", label = "N",
                   statistics = list(list(id = "n")), cell_format = "{n}")
@@ -156,7 +156,7 @@ testthat::test_that("interleaved batch types retain template order in logical ma
   bundle <- generator_fixture()
   chunks <- bundle$templates[[1L]]$body$chunks
   categorical <- list(
-    id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl",
+    id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl", counting_unit = "distinct_subject",
     denominator = list(type = "header_population"),
     rows = list(list(
       id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
