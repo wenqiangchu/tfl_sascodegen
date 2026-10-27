@@ -804,10 +804,12 @@ continuous block 的 `counting_unit` 固定按以下语义 materialize 分析输
 - `distinct_key`：与 `distinct_subject` 相同，但 counting-unit identity 使用
   `distinct_key` 声明的 typed SAS 字段序列。
 
-continuous unit 冲突不得通过 `FIRST.` 选择、最大值、最小值、平均值或其他隐式聚合
-解决。生成的 SAS 写入稳定的
-`ERROR: [USER] continuous_unit_multiple_values ...` 并终止当前 SAS 提交；调用方需要在
-`custom_code.before` 或外部数据准备中派生唯一分析记录。
+continuous unit 冲突不得通过最大值、最小值、平均值或其他隐式聚合解决。
+生成的 SAS 写入稳定的
+`WARNING: [USER] continuous_unit_multiple_values ...`，保留输入顺序中
+`source_row` 最小的非缺失值继续执行，并每个 counting unit 最多报告一次。
+调用方需要根据 SAS log 判断结果是否可接受，或在 `custom_code.before` 或外部
+数据准备中派生唯一分析记录。
 
 hierarchical categorical block 的 denominator 可声明：
 

@@ -382,8 +382,11 @@ testthat::test_that("hierarchical continuous blocks implement all counting-unit 
     "by chunk_order column_order node_key USUBJID;",
     "if first.USUBJID then do;", "if last.USUBJID then do;",
     "counting_unit=distinct_subject", "continuous_unit_multiple_values",
-    "abort cancel;", "proc means data=_TFL_CUNIT_002 nway noprint;"
+    "WARNING: [USER] continuous_unit_multiple_values",
+    "proc means data=_TFL_CUNIT_002 nway noprint;"
   )) testthat::expect_match(subject_source$source, marker, fixed = TRUE)
+  # Multiple values for one counting unit are reported but no longer abort the run.
+  testthat::expect_false(grepl("abort cancel", subject_source$source, fixed = TRUE))
 
   key_bundle <- hierarchical_report_fixture()
   block <- key_bundle$templates[[1L]]$body$chunks[[1L]]$analysis_blocks[[1L]]

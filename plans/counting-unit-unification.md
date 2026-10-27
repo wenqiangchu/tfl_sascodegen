@@ -329,8 +329,8 @@ Rscript test/fixtures/sas/continuous_counting_units/build_sources.R
 - [x] P3：source 层 guard 完全移除（`_TFL_GKEY_*`、`_TFL_GUARD_H*`、`_TFL_KKEY_*` 不再生成）
 - [x] P2：`src/` 中 `source_contract`、`duplicate_policy`、`record_key` 零出现
 - [x] P2：P3→P2 生成的 SAS 逐字节一致
-- [ ] P4：`continuous.R` 中无 `abort cancel`
-- [ ] P4：多值场景生成 `WARNING` 且只报一次，取值来自最小 `source_row`
+- [x] P4：`continuous.R` 中无 `abort cancel`
+- [x] P4：多值场景生成 `WARNING` 且只报一次，取值来自最小 `source_row`
 - [ ] P5：UI 可编辑 primitive 的 `counting_unit` / `distinct_key`
 - [ ] P5：demo bundle 重建，两版 user-guide 同步
 - [ ] P5：`docs/open-questions.md` 记录 P-2a

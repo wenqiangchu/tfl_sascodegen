@@ -16,7 +16,8 @@ Covered behavior:
   consume one shared `_TFL_HMERGE` membership expansion while retaining
   independent analysis procedures and results;
 - conflicting nonmissing values for one `distinct_subject` unit write
-  `ERROR: [USER] continuous_unit_multiple_values` and execute `ABORT CANCEL`.
+  `WARNING: [USER] continuous_unit_multiple_values`, keep the nonmissing
+  value with the smallest `source_row`, and continue the submission.
 
 ## Build generated programs
 
@@ -44,20 +45,21 @@ sas.exe -sysin run_shared_level.sas
 Each successful log must contain its `[FIXTURE] ... passed` message and no SAS
 `ERROR:` messages.
 
-Run the expected-failure case in a separate SAS process:
+Run the warning case in a separate SAS process:
 
 ```text
 sas.exe -sysin run_distinct_subject_conflict.sas
 ```
 
-This run passes only when the log contains:
+This run passes when the log contains exactly one
 
 ```text
-ERROR: [USER] continuous_unit_multiple_values
+WARNING: [USER] continuous_unit_multiple_values
 ```
 
-and the SAS submission is cancelled before the fallback
-`fixture_expected_abort_missing` message can execute.
+and the submission runs to completion, which the log shows by reaching
+`NOTE: [FIXTURE] fixture_expected_warning_reached.` A cancelled run never
+prints that note, so its absence is the failure signal.
 
 Generated `.sas` programs, `.log`, `.lst`, and `.rtf` files are runtime
 artifacts and must not be committed.

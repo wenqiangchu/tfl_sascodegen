@@ -797,8 +797,9 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
    metadata 声明的 typed key sequence。后两者允许一个非缺失 analysis value 加任意
    数量 missing records，并使用该唯一非缺失值；全部 missing 时保留一个 missing
    unit。两个或更多非缺失 records 写入
-   `ERROR: [USER] continuous_unit_multiple_values ...` 后执行 `ABORT CANCEL`，不得隐式
-   选择 first、最大值、最小值、平均值或其他聚合。unit materialization 后的输入使用
+   `WARNING: [USER] continuous_unit_multiple_values ...` 并保留输入顺序中
+   `source_row` 最小的非缺失值继续执行，不中止 SAS 会话，也不隐式
+   选择最大值、最小值、平均值或其他聚合。unit materialization 后的输入使用
    `_TFL_CUNIT_<batch>`，仍由一次 `PROC MEANS` 按 node/header 计算统计量。
 
 6. categorical batch 固定使用以下步骤：
@@ -1060,8 +1061,11 @@ Shiny 的当前控件值与最近一次生成时捕获的 `generated_options` �
    Header N 的独立计数和空列补零逻辑保持不变。
 2. duplicate check 默认开启。关闭时省略专用 guard 的排序副本、计数 DATA step 和
    `WARNING: [USER] duplicate_key`，不删除记录、不改变 merge、counting unit、
-   denominator、层级发现或分类 overlap warning。primitive source 按 subject key 检查；
-   hierarchical source 按其 source contract 检查，nested analysis 不重复检查展开后的行。
+   denominator、层级发现或分类 overlap warning。检查在 per-block 层执行，键与
+   去重键一致：位置维度（`chunk_order`，nested 时加 `node_key`）加
+   `counting_unit` 键；刻意不含 `column_order`，因为 header 展开会把同一
+   source 重复按列广播。`counting_unit: record` 的键为 `source_row`（恒唯一），
+   因此既不生成检查也不生成去重代码。每个重复键最多报告一次。
 3. `report` 模式在 analysis、assembly 和 `custom_code.after` 后添加 `PROC REPORT`
    与既有 ODS RTF 源码。`compare` 模式在同一位置添加：
 
@@ -1228,9 +1232,9 @@ procedure 的限制；不更改 YAML、workspace、UI、统计量或 categorical
 4. result_sort、same_row、below 继续消费原 block 独立结果，所有 namespace、
    analysis_id 和 row/header identity 保持原责任边界。
 5. 全组 preparation 成功后才执行共享 MEANS。若后一个 block 出现多个非缺失记录，
-   原 guard 写入 continuous_unit_multiple_values 并 ABORT CANCEL，较早 block 的
-   statistic/render 也可能尚未产生。这一部分 WORK 表及诊断时序变化已确认；
-   单项错误内容、字段顺序和终止语义不变，duplicate-check 开关不关闭该 guard。
+   guard 写入 continuous_unit_multiple_values 并继续执行，较早 block 的
+   statistic/render 不受影响。该诊断不再是终止条件；字段顺序与
+   duplicate-check 开关的独立关系保持不变。
 
 ### 未采用的替代方案
 

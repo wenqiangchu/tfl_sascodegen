@@ -58,10 +58,11 @@ On the verified local SAS 9.4 installation this case exits 0 despite the explici
 ERROR messages, so exit status alone is not its oracle.
 
 Both conflict cases have a valid first block and two equal nonmissing records
-in the second block. They must exit with the expected SAS cancellation, report
-`continuous_unit_multiple_values`, and stop before the shared MEANS procedure
-or `expected_second_block_abort_missing` fallback executes. Duplicate source
-warnings are disabled to ensure this option never disables the unit guard.
+in the second block. They must report
+`WARNING: [USER] continuous_unit_multiple_values` and run to completion, so the
+log reaches `NOTE: [FIXTURE] expected_second_block_warning_reached.` instead of
+cancelling. Duplicate source warnings are disabled to show that this option
+never disables the counting-unit diagnostic.
 
 Generated source, logs, listings, and report files are ignored local artifacts.
 Only the hand-authored fixture inputs, assertions, and builder belong in Git.
