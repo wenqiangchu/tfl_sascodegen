@@ -187,6 +187,32 @@ P1 为纯新增；**P3 必须先于 P2**（见下方修订记录）；P2 在 P3 
 - `record` 时断言源层 key 表与 block guard 均不出现
 - categorical/continuous 的 guard BY 键与 hierarchical 同 unit 情形逐项一致
 
+**实际落地情况（已实施）**
+
+- `source_input.R`：新增 `source_block_duplicate_guard()`，`record` 时直接返回
+  `character()`，因此无需调用方分支
+- `source_input.R`：`primitive_source_input()` 的 source 层 guard 删除；
+  `plan$subject_key` 保留至 P2
+- `categorical.R`：`_TFL_KKEY_*` 数据集与 `categorical_chunk_key_dataset()` 一并
+  删除（删 guard 后它们无消费者）；per-block 检查插在
+  `/* Count declared units ... */` 之下的 `_TFL_KIN_*` 上
+- `continuous.R`：per-block 检查插在 `continuous_counting_unit_source()` 里，落在
+  `plan$input_dataset`（`_TFL_CIN_*`）上；`record` 默认值由 `"record"` 改为
+  `"distinct_subject"`，与 `primitive_counting_keys()` 保持一致
+- `hierarchical.R`：source 层 guard 与已死的 `keys` 变量删除；`record_key`
+  字段保留至 P2
+
+实测 demo bundle 的 guard 位置（`include_duplicate_check = TRUE`）：
+
+| table | guard 数据集 | BY 键 |
+| --- | --- | --- |
+| `ae_by_soc_pt` | `_TFL_KIN_002` | `chunk_order node_key USUBJID` |
+| `baseline_characteristics` | `_TFL_CIN_001` | `chunk_order USUBJID` |
+| `baseline_characteristics` | `_TFL_KIN_002` | `chunk_order USUBJID` |
+| `z_ae_overview` | `_TFL_KIN_001` | `chunk_order USUBJID` |
+| `vitals_by_visit` | 无（`record`） | — |
+| `z_lab_change_over_time` | 无（`record`） | — |
+
 ### P4：`abort cancel` 改为 `WARNING`
 
 **目的**：I6、D8。唯一改变统计语义的阶段。
@@ -280,10 +306,10 @@ Rscript test/fixtures/sas/continuous_counting_units/build_sources.R
 - [x] P1：primitive 三种类型均要求 `counting_unit`；`distinct_key` 校验与 hierarchical 一致
 - [x] P1：`continuous_summary` 参与 `chunk_batch_signature` 的 key contract
 - [x] P1：新增 `test-counting-unit-contract.R` 覆盖四种错误组合
-- [ ] P3：`record` 不生成任何 guard 或去重代码
-- [ ] P3：categorical/continuous 的 guard BY 键与 hierarchical 同 unit 一致
-- [ ] P3：per-block 检查不含 `column_order`
-- [ ] P3：source 层 guard 完全移除（`_TFL_GKEY_*`、`_TFL_GUARD_H*`、`_TFL_KKEY_*` 不再生成）
+- [x] P3：`record` 不生成任何 guard 或去重代码
+- [x] P3：categorical/continuous 的 guard BY 键与 hierarchical 同 unit 一致
+- [x] P3：per-block 检查不含 `column_order`
+- [x] P3：source 层 guard 完全移除（`_TFL_GKEY_*`、`_TFL_GUARD_H*`、`_TFL_KKEY_*` 不再生成）
 - [ ] P2：`src/` 中 `source_contract`、`duplicate_policy`、`record_key` 零出现
 - [ ] P2：P3→P2 生成的 SAS 逐字节一致
 - [ ] P4：`continuous.R` 中无 `abort cancel`

@@ -84,10 +84,6 @@ continuous_batch_source_input <- function(plan) {
     paste0("data ", combined, ";"),
     paste0("  set ", paste(chunk_inputs, collapse = " "), ";"),
     "run;",
-    if (isTRUE(plan$include_duplicate_check)) {
-      source_duplicate_guard(combined, c("chunk_order", subject_key), suffix,
-                             scope_field = "chunk_order")
-    } else character(),
     "/* Preserve one scaffold row for every batch chunk and membership row. */",
     paste0("data ", chunks, ";"),
     "  length chunk_order 8;",
@@ -111,18 +107,24 @@ continuous_batch_source_input <- function(plan) {
 }
 
 continuous_counting_unit_source <- function(plan) {
-  if (is.null(plan$nodes_dataset)) {
-    return(list(source = character(), dataset = plan$input_dataset))
-  }
   chunk <- plan$chunks[[1L]]
-  unit <- chunk$counting_unit %||% "record"
-  if (identical(unit, "record")) {
-    return(list(source = character(), dataset = plan$input_dataset))
-  }
+  unit <- chunk$counting_unit %||% "distinct_subject"
   suffix <- sprintf("%03d", plan$batch_order)
+  unit_keys <- primitive_counting_keys(chunk, unit)
+  # Nested batches expose node_key; top-level batches only have chunk_order
+  # because header expansion happens after this point.
+  position_keys <- c("chunk_order", if (!is.null(plan$nodes_dataset)) "node_key")
+  guard <- if (isTRUE(plan$include_duplicate_check)) {
+    source_block_duplicate_guard(
+      plan$input_dataset, position_keys, unit_keys,
+      paste0("C", suffix), scope_field = "chunk_order"
+    )
+  } else character()
+  if (is.null(plan$nodes_dataset) || identical(unit, "record")) {
+    return(list(source = guard, dataset = plan$input_dataset))
+  }
   dataset <- continuous_counting_unit_dataset(plan$batch_order)
   sorted_dataset <- paste0("_TFL_CUNIT_SORT_", suffix)
-  unit_keys <- primitive_counting_keys(chunk, unit)
   group_vars <- unique(c("chunk_order", "column_order", "node_key", unit_keys))
   sort_vars <- unique(c(group_vars, "source_row"))
   last_key <- tail(group_vars, 1L)
@@ -131,6 +133,7 @@ continuous_counting_unit_source <- function(plan) {
   }), use.names = FALSE)
   list(
     source = c(
+      guard,
       paste0("/* Materialize one continuous value per ", unit,
              " counting unit without implicit value selection. */"),
       paste0("proc sort data=", plan$input_dataset, " out=", sorted_dataset, ";"),

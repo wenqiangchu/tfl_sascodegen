@@ -27,7 +27,8 @@ testthat::test_that("default categorical emitter generates event input and one F
   testthat::expect_match(result$source, "tables chunk_order*row_order*column_order / out=", fixed = TRUE)
   testthat::expect_match(result$source, "pct = 100 * numerator / denominator", fixed = TRUE)
   testthat::expect_match(result$source, "estimable = 0", fixed = TRUE)
-  testthat::expect_match(result$source, "data _TFL_KKEY_001_001 _TFL_KPRE_001_001;", fixed = TRUE)
+  testthat::expect_match(result$source, "data _TFL_KPRE_001_001;", fixed = TRUE)
+  testthat::expect_false(grepl("_TFL_KKEY_", result$source, fixed = TRUE))
   testthat::expect_match(result$source, "create table _TFL_KMERGE_001 as", fixed = TRUE)
   testthat::expect_match(result$source, "tranwrd", ignore.case = TRUE)
   testthat::expect_match(result$source, "if estimable = 0 then token = 'NE'", fixed = TRUE)
@@ -67,9 +68,8 @@ testthat::test_that("compatible categorical chunks share one source guard and me
   )
   result <- generate_table_source(bundle, "t1")
   testthat::expect_true(result$passed)
-  testthat::expect_equal(length(regmatches(result$source,
-                                           gregexpr("proc sort data=_TFL_KKEY_001 out=", result$source,
-                                                    fixed = TRUE))[[1L]]), 1L)
+  # The source-level key table is gone; duplicate checking now runs per block.
+  testthat::expect_false(grepl("_TFL_KKEY_001", result$source, fixed = TRUE))
   testthat::expect_equal(length(regmatches(result$source,
                                            gregexpr("create table _TFL_KMERGE_001 as", result$source,
                                                     fixed = TRUE))[[1L]]), 1L)

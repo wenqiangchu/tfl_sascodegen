@@ -16,10 +16,6 @@ categorical_chunk_pre_dataset <- function(batch_order, chunk_order) {
   sprintf("_TFL_KPRE_%03d_%03d", batch_order, chunk_order)
 }
 
-categorical_chunk_key_dataset <- function(batch_order, chunk_order) {
-  sprintf("_TFL_KKEY_%03d_%03d", batch_order, chunk_order)
-}
-
 categorical_combined_pre_dataset <- function(batch_order) {
   sprintf("_TFL_KPRE_%03d", batch_order)
 }
@@ -69,17 +65,15 @@ categorical_chunk_source <- function(plan, entry) {
            paste(unique(c(numerator_keys, denominator_keys)), collapse = " "), ";"),
     "run;"
   ), collapse = "\n"))
-  key_dataset <- categorical_chunk_key_dataset(plan$batch_order, entry$chunk_order)
   paste(c(
     "/* Filter categorical chunk source before merge. */",
-    "/* Filter once and emit categorical source keys and counting events. */",
-    paste0("data ", key_dataset, " ", pre_dataset, ";"),
+    "/* Filter once and emit categorical counting events. */",
+    paste0("data ", pre_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
     paste0("  set ", chunk$source_data, ";"),
     if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
     "  source_row = _n_;",
     paste0("  chunk_order = ", entry$chunk_order, ";"),
-    paste0("  output ", key_dataset, ";"),
     paste0("  denominator_eligible = ", eligibility, ";"),
     paste0("  if denominator_eligible then do; row_order = 0; output ", pre_dataset, "; end;"),
     "  if not missing(source_row) then do;",
@@ -100,9 +94,6 @@ categorical_batch_source_input <- function(plan) {
   input_names <- vapply(plan$chunk_orders, function(order) {
     categorical_chunk_pre_dataset(plan$batch_order, order)
   }, character(1L))
-  key_names <- vapply(plan$chunk_orders, function(order) {
-    categorical_chunk_key_dataset(plan$batch_order, order)
-  }, character(1L))
   header_orders <- vapply(seq_along(plan$chunks), function(index) {
     if (identical(plan$chunks[[index]]$denominator$type, "header_population")) {
       plan$chunk_orders[[index]]
@@ -121,15 +112,6 @@ categorical_batch_source_input <- function(plan) {
     paste0("data ", pre, ";"),
     paste0("  set ", paste(input_names, collapse = " "), ";"),
     "run;",
-    if (isTRUE(plan$include_duplicate_check)) c(
-      "/* Check filtered categorical source keys once for this batch. */",
-      paste0("data _TFL_KKEY_", suffix, ";"),
-      paste0("  set ", paste(key_names, collapse = " "), ";"),
-      "run;",
-      source_duplicate_guard(paste0("_TFL_KKEY_", suffix),
-                             c("chunk_order", "USUBJID"), suffix,
-                             scope_field = "chunk_order")
-    ) else character(),
     "/* Expand events once through the shared header membership. */",
     paste0("data ", chunks, ";"),
     "  length chunk_order 8;",
@@ -227,6 +209,13 @@ categorical_batch_analysis_source <- function(plan, exclusive = FALSE) {
       "run;"
     ),
     "/* Count declared units independently for denominator and numerator events. */",
+    if (isTRUE(plan$include_duplicate_check)) {
+      source_block_duplicate_guard(
+        plan$input_dataset,
+        c("chunk_order", if (!is.null(plan$nodes_dataset)) "node_key"),
+        numerator_keys, paste0("K", suffix), scope_field = "chunk_order"
+      )
+    } else character(),
     paste0("proc sort data=", plan$input_dataset, "(where=(row_order = 0)) out=_TFL_KDEN_", suffix, " nodupkey;"),
     paste0("  by ", paste(c(group_vars, denominator_keys), collapse = " "), ";"),
     "run;",

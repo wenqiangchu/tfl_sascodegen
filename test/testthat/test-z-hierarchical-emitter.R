@@ -251,7 +251,8 @@ testthat::test_that("hierarchical report rows include nodes, below rows, and lev
     "data _TFL_HLEVEL_001_001 _TFL_HNODES_001_001",
     "data _TFL_HLEVEL_001_002 _TFL_HNODES_001_002",
     "level_component = cats(lengthn", "group_path = catt(parent_node_key, level_component);",
-    "WARNING: [USER] duplicate_key", "class chunk_order column_order node_key;",
+    # record counting has no meaningful key, so no duplicate_key guard is emitted
+    "class chunk_order column_order node_key;",
     "from _TFL_HMEM_001 as m inner join", "on m.USUBJID = s._TFL_SOURCE_SUBJECT;",
     "data _TFL_HLABEL_001_001;", "data _TFL_HLABEL_001_002;",
     "row_role = 'static';", "analysis_id = 'a1';",
@@ -281,15 +282,34 @@ testthat::test_that("same-row analysis uses dynamic node labels without duplicat
 
 testthat::test_that("duplicate checking is optional for hierarchical record sources", {
   bundle <- hierarchical_report_fixture()
+  # The fixture block counts records, whose key is source_row. A per-block check
+  # on that key could never fire, so record counting emits no guard at all.
   checked <- generate_table_source(bundle, "t1", include_duplicate_check = TRUE)
   unchecked <- generate_table_source(bundle, "t1", include_duplicate_check = FALSE)
   testthat::expect_true(checked$passed)
   testthat::expect_true(unchecked$passed)
-  testthat::expect_match(checked$source, "by USUBJID AESEQ;", fixed = TRUE)
-  testthat::expect_match(checked$source, "WARNING: [USER] duplicate_key", fixed = TRUE)
+  testthat::expect_false(grepl("_TFL_GUARD_|duplicate_key", checked$source))
   testthat::expect_false(grepl("_TFL_GUARD_|duplicate_key", unchecked$source))
   testthat::expect_match(unchecked$source, "Discover hierarchical level 2 nodes", fixed = TRUE)
   testthat::expect_match(unchecked$source, "Execute nested primitive analysis", fixed = TRUE)
+})
+
+testthat::test_that("distinct-subject blocks check duplicates on the counting key", {
+  bundle <- hierarchical_report_fixture()
+  bundle$templates[[1L]]$body$chunks[[1L]]$analysis_blocks[[1L]]$counting_unit <-
+    "distinct_subject"
+  checked <- generate_table_source(bundle, "t1", include_duplicate_check = TRUE)
+  testthat::expect_true(checked$passed)
+  # The guard reuses the counting-unit key but drops column_order, otherwise the
+  # header expansion would report the same source duplicate once per column.
+  testthat::expect_match(checked$source, "by chunk_order node_key USUBJID;", fixed = TRUE)
+  testthat::expect_match(checked$source, "WARNING: [USER] duplicate_key", fixed = TRUE)
+  guard_lines <- grep("_TFL_GUARD_", strsplit(checked$source, "
+", fixed = TRUE)[[1]],
+                       value = TRUE)
+  testthat::expect_false(grepl("column_order", paste(guard_lines, collapse = "
+"),
+                               fixed = TRUE))
 })
 
 testthat::test_that("nested key maps cross join the shared header catalog and scoped nodes", {

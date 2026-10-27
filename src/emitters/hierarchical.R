@@ -469,7 +469,6 @@ hierarchical_summary_emitter <- function(plan, resolved) {
   batch <- plan$batch_order
   suffix <- sprintf("%03d", batch)
   source <- paste0("_TFL_HSRC_", suffix)
-  keys <- if (chunk$source_contract$grain == "subject") chunk$source_contract$subject_key else chunk$source_contract$record_key
   nested_plans <- lapply(seq_along(chunk$analysis_blocks), function(index) {
     hierarchical_nested_plan(plan, chunk$analysis_blocks[[index]], index, resolved)
   })
@@ -508,7 +507,6 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     "  source_row = _n_;",
     "run;",
     hierarchical_text_lengths_source(plan),
-    if (isTRUE(plan$include_duplicate_check)) source_duplicate_guard(source, keys, paste0("H", suffix)),
     "/* Discover nodes across the union of the displayed population columns. */",
     "proc sql noprint;",
     paste0("  create table ", hierarchical_source_dataset(batch), " as"),

@@ -38,6 +38,15 @@ primitive_source_filter <- function(plan, entry, source_dataset, kind) {
   )
 }
 
+source_block_duplicate_guard <- function(dataset, position_keys, unit_keys, suffix,
+                                         scope_field = NULL) {
+  # record counting derives its key from source_row, which is unique by
+  # construction, so a duplicate check there could never report anything.
+  if (!length(unit_keys)) return(character())
+  keys <- c(position_keys, unit_keys)
+  source_duplicate_guard(dataset, keys, suffix, scope_field = scope_field)
+}
+
 primitive_source_input <- function(plan, entry, source_dataset, merged_dataset, kind) {
   chunk <- entry$chunk
   nested <- !is.null(plan$nodes_dataset)
@@ -57,9 +66,6 @@ primitive_source_input <- function(plan, entry, source_dataset, merged_dataset, 
     if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
     "  source_row = _n_;",
     "run;",
-    if (isTRUE(plan$include_duplicate_check) && !nested)
-      source_duplicate_guard(source_dataset, subject_key,
-                             sprintf("%03d_%03d", plan$batch_order, entry$chunk_order)),
     paste0("/* Merge ", kind, " chunk source with header membership. */"),
     "/* SQL expands each source record into every applicable header column. */",
     "proc sql noprint;",
@@ -74,7 +80,9 @@ primitive_source_input <- function(plan, entry, source_dataset, merged_dataset, 
 
 primitive_counting_keys <- function(chunk, unit = chunk$counting_unit %||% "distinct_subject") {
   switch(unit,
-         record = "source_row",
+         # Every source record counts on its own, so there is no key to
+         # collapse on and therefore nothing to check or deduplicate.
+         record = character(),
          distinct_subject = "USUBJID",
          distinct_key = chunk$distinct_key,
          stop("Unsupported counting unit.", call. = FALSE))
