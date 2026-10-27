@@ -334,6 +334,6 @@ Rscript test/fixtures/sas/continuous_counting_units/build_sources.R
 - [x] P5：UI 可编辑 primitive 的 `counting_unit` / `distinct_key`
 - [x] P5：demo bundle 重建，两版 user-guide 同步
 - [x] P5：`docs/open-questions.md` 记录 P-2a
-- [ ] P6：全部 SAS 夹具重新生成
-- [ ] P6：`Rscript test/run_tests.R` 连续 3 次 exit=0
-- [ ] P6：`git diff --check` 干净
+- [x] P6：全部 SAS 夹具重新生成
+- [x] P6：`Rscript test/run_tests.R` 连续 3 次 exit=0
+- [x] P6：`git diff --check` 干净

@@ -680,9 +680,11 @@ SAS overlap guard；平台不执行或校验数据，重叠异常只会在调用
 以 `WARNING: [USER] ...` 暴露，不自动中止或修复。未命中任何 row 的 counting unit
 允许存在。
 
-独立使用时首期 subject-level counting identity 固定为 `USUBJID`；若嵌入
-hierarchical block，`counting_unit` 由 block 显式声明为 `record`、
-`distinct_subject` 或 `distinct_key`，并在需要时提供 `distinct_key`。
+subject 标识固定为 `USUBJID`。primitive chunk 与 hierarchical analysis
+block 都必须声明 `counting_unit`，取值为 `record`、`distinct_subject` 或
+`distinct_key`；`distinct_key` 需同时提供 `distinct_key` 字段序列，另外两种
+不得提供。重复检查在 per-block 层执行，键与去重键一致；`record` 的键是
+source 行号，天然唯一，因此既不生成检查也不去重。
 
 ### 9.4 hierarchical_summary
 
@@ -694,11 +696,6 @@ id: ae_001
 type: hierarchical_summary
 source_data: ADAE
 filter: 'not missing(SOC)'
-source_contract:
-  grain: record
-  subject_key: USUBJID
-  record_key: [USUBJID, AESEQ]
-  duplicate_policy: error
 levels:
   - id: ae_001_level_001
     variable: SOC
@@ -726,19 +723,17 @@ analysis_blocks:
         cell_format: '{n}'
 ~~~
 
-#### Source contract
+#### Counting unit
 
 | 字段 | 语义 |
 | --- | --- |
-| grain | subject、record 或 observation。 |
-| subject_key | 通常为 USUBJID。 |
-| record_key | record/observation grain 的逻辑 key 字段序列。 |
-| duplicate_policy | 重复 key 违反 contract；当前 contract 固定为 `error`，但生成的 SAS 以
-  `WARNING: [USER] ...` 记录，不自动去重或聚合。 |
+| counting_unit | `record`、`distinct_subject` 或 `distinct_key`，必填。 |
+| distinct_key | 仅 `distinct_key` 使用，声明 key 字段序列。 |
 
-这些字段告诉 SAS emitter 应按何种粒度生成排序、连接和计数代码。平台不读取
-数据、不检查 key 是否存在或重复；duplicate policy 由生成的 SAS 以非阻断 warning
-实现，调用方负责根据 log 判断结果。
+`counting_unit` 决定一个被计数的单位是什么，并同时决定去重键与重复检查键。
+平台不读取数据、不检查 key 是否存在或重复；重复由生成的 SAS 以非阻断
+`WARNING: [USER] duplicate_key` 报告，每个重复键最多一次，调用方负责根据
+log 判断结果。subject 标识固定为 `USUBJID`，不由 chunk 声明。
 
 #### Grouping level
 

@@ -163,10 +163,11 @@ population 和 header 条件均保留为 SAS source text。
    `categorical_summary_exclusive` 是 analysis primitive；`hierarchical_summary`
    是 layout/container。container 负责 group discovery、节点遍历、analysis
    placement 和结果展平，不复制 primitive 的统计实现。
-4. 首期 subject-level primitive 使用 `USUBJID`；filter 后每个 subject 最多一条
-   source record。`hierarchical_summary` 可以显式声明 `subject`、`record` 或
-   `observation` grain；后两者必须声明 `record_key`，`duplicate_policy` 固定为
-   `error`，不得隐式 distinct、取第一条、取最大值、平均或其他聚合。
+4. subject 标识固定为 `USUBJID`，不再由 chunk 声明。每个分析 chunk 与每个
+   hierarchical analysis block 必须声明 `counting_unit`，取值 `record`、
+   `distinct_subject` 或 `distinct_key`；`distinct_key` 需同时声明 key 字段序列，
+   其余两种不得声明。重复检查与去重使用同一键，`record` 既不检查也不去重，
+   current unit 缺少一条非缺失值以外的情形不得隐式取最大值、平均或其他聚合。
 5. 所有 chunk 固定遵循 `source -> filter -> filtered source -> type-specific
    merge -> analysis -> render`。filter 只作用于当前 chunk source，先于 merge，
    不修改原始 source，也不影响其他 chunk。分类 row condition 和 denominator
@@ -917,9 +918,10 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
    `USUBJID` 且 filtered source 每个 subject 至多一条；analysis 与 render
    分离；categorical nonexclusive 允许 row condition 重叠。
 3. 沿用 ref 的 hierarchical 字段含义：有序 `levels`、`analysis_blocks`、
-   `source_contract`、显式 `order_variable`/`order_direction`、missing policy、
+   显式 `order_variable`/`order_direction`、missing policy、
    `same_row`/`below`、显式 nested denominator、动态值不写回 metadata；新增
-   `duplicate_policy: error` 和 `result_sort` 的明确结构。
+   `counting_unit` 与 `result_sort` 的明确结构。ref 的 `source_contract`
+   不沿用：其 subject key 固定为 `USUBJID`，`duplicate_policy` 只有一个可接受取值。
 
 4. 沿用 ref 的 position-ID 语义：sequence 是事实来源，chunk、level、analysis
    block 和 row 的 ID 在编辑操作后按位置重建；引用随重编号同步更新。
