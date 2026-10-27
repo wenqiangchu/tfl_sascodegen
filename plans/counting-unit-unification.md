@@ -79,9 +79,8 @@ materialization 仍保留 `column_order`，因为那是按单元格折叠。
 
 ```mermaid
 graph TD
-    P1[P1 primitive 支持 counting_unit] --> P2[P2 移除 source_contract]
-    P1 --> P3[P3 统一键构造与检查位置]
-    P2 --> P3
+    P1[P1 primitive 支持 counting_unit] --> P3[P3 统一键构造与检查位置]
+    P3 --> P2[P2 移除 source_contract]
     P3 --> P4[P4 abort 改 warning]
     P2 --> P5[P5 UI 与运行时资产]
     P3 --> P5
@@ -89,8 +88,25 @@ graph TD
     P5 --> P6[P6 夹具重建与全量验证]
 ```
 
-P1 为纯新增、P2 为纯删除，二者均可独立通过全绿；P3 结构变更；
+P1 为纯新增；**P3 必须先于 P2**（见下方修订记录）；P2 在 P3 之后才成为纯删除；
 **P4 是唯一改变统计语义的阶段**，也是唯一需要人工复核 SAS 输出的阶段。
+
+### 修订记录（2026-10-27）：P2 与 P3 顺序调换
+
+原计划假定 P2（移除 `source_contract`）是纯删除，并以「P2 前后生成的 SAS 逐字节
+一致」作为验收。实施 P2 时发现该前提不成立：
+
+1. `record_key` 并非零消费者。它直接进入 `hierarchical.R:472` 的 source 层
+   duplicate guard 的 BY 子句和 `unit=` 诊断标签。基线证据：
+   `vitals_by_visit` 生成 `by USUBJID PARAMCD AVISITN`，`ae_by_soc_pt` 生成
+   `by USUBJID AESEQ`。
+2. 先删 `record_key` 会让 source 层 guard 失去键，P2 与 P3 因此存在隐藏耦合。
+3. `record_key` 无法由 level 推导：`ae` 的 `AESEQ` 不出现在任何 level 的
+   `variable` 或 `order_variable` 中。
+
+改为先执行 P3（per-block 检查与去重同键落地、移除 source 层检查），再执行 P2；
+此时 source 层 guard 已不存在，P2 才真正是纯删除。阶段编号保留原值以避免与本
+文件其他段落及提交信息冲突，执行顺序以本 DAG 为准。
 
 ## 4. 各阶段
 
@@ -135,7 +151,7 @@ P1 为纯新增、P2 为纯删除，二者均可独立通过全绿；P3 结构�
 | `src/chunks/registry.R` | 删 `new_chunk_type_definition()` 的 `source_contract` 参数、`is.list()` 校验、字段赋值；删 primitive 与 hierarchical 定义中的 `source_contract` |
 | `src/metadata/model.R` | 删 `parse_source_contract_value()`；`parse_hierarchical_chunk_value()` 不再解析与回填 `source_contract` |
 | `src/metadata/yaml_codec.R` | 删 `render_source_contract_yaml()` 及其 emit |
-| `src/emitters/hierarchical.R` | nested plan 的 `subject_key`、membership 的 `source_contract$subject_key`、compatibility 的 `source_contract`、`keys` 计算、exists 过滤全部改为常量 `"USUBJID"` |
+| `src/emitters/hierarchical.R` | nested plan 的 `subject_key`、membership 的 `source_contract$subject_key`、compatibility 的 `source_contract`、`keys` 计算、exists 过滤全部改为常量 `"USUBJID"`。**前置条件**：P3 已删除 source 层 guard，因此这里的 `keys` 计算可整体移除 |
 | `src/ui/metadata_editor_helpers.R` | 删默认 chunk 的 `source_contract` |
 | `src/ui/metadata_editor_runtime.R` | 删 `source_contract` 读写 |
 | `src/ui/metadata_editor_template.R` | 删 grain/subject_key/duplicate_policy/record_key 输入 |
@@ -143,10 +159,12 @@ P1 为纯新增、P2 为纯删除，二者均可独立通过全绿；P3 结构�
 **验收**
 
 - `grep -rn "source_contract\|duplicate_policy\|record_key" src/` 无输出
-- **快照比对**：P2 前后生成的 SAS 源码逐字节一致（证明是纯删除）。实现方式为
-  在 P1 gate 时保存 `demo_metadata.zip` 全部 table 的生成结果作为基线，
-  P2 后逐字节比对
+- **快照比对**：P3 提交后先保存全部 demo table 的生成结果，P2 后逐字节比对，
+  证明 P2 是纯删除
 - 全绿
+
+**为什么换成 P3 先执行**：P1 gate 时保存的基线无法用作 P2 的比对基准，因为
+`record_key` 驱动 source 层 guard 的 BY 子句（详见第 3 节修订记录）。
 
 ### P3：统一键构造与移除 source 层检查
 
@@ -160,7 +178,7 @@ P1 为纯新增、P2 为纯删除，二者均可独立通过全绿；P3 结构�
 | `src/emitters/source_input.R` | 新增基于位置键 + 单位键的 block guard，复用现有 `if last.<key>` 单次报告结构 |
 | `src/emitters/continuous.R` | 删 source 层 guard；`subject_key` 改常量；`continuous_counting_unit_source()` 顶部接入 per-block 检查 |
 | `src/emitters/categorical.R` | 删 `_TFL_KKEY_*` 与 source 层 guard；在 `_TFL_KIN_*` 合成后、`nodupkey` 前插入 per-block 检查；`subject_key` 改常量 |
-| `src/emitters/hierarchical.R` | 删 source 层 guard |
+| `src/emitters/hierarchical.R` | 删 source 层 guard。`keys` 在 P3 中已不再被使用，可一并移除；`record_key` 字段本身在 P2 才删除 |
 
 **验收**
 
@@ -259,14 +277,15 @@ Rscript test/fixtures/sas/continuous_counting_units/build_sources.R
 
 实施完成后逐项勾选，用于验收：
 
-- [ ] P1：primitive 三种类型均要求 `counting_unit`；`distinct_key` 校验与 hierarchical 一致
-- [ ] P1：`continuous_summary` 参与 `chunk_batch_signature` 的 key contract
-- [ ] P1：新增 `test-counting-unit-contract.R` 覆盖四种错误组合
-- [ ] P2：`src/` 中 `source_contract`、`duplicate_policy`、`record_key` 零出现
-- [ ] P2：P1→P2 生成的 SAS 逐字节一致
+- [x] P1：primitive 三种类型均要求 `counting_unit`；`distinct_key` 校验与 hierarchical 一致
+- [x] P1：`continuous_summary` 参与 `chunk_batch_signature` 的 key contract
+- [x] P1：新增 `test-counting-unit-contract.R` 覆盖四种错误组合
 - [ ] P3：`record` 不生成任何 guard 或去重代码
 - [ ] P3：categorical/continuous 的 guard BY 键与 hierarchical 同 unit 一致
 - [ ] P3：per-block 检查不含 `column_order`
+- [ ] P3：source 层 guard 完全移除（`_TFL_GKEY_*`、`_TFL_GUARD_H*`、`_TFL_KKEY_*` 不再生成）
+- [ ] P2：`src/` 中 `source_contract`、`duplicate_policy`、`record_key` 零出现
+- [ ] P2：P3→P2 生成的 SAS 逐字节一致
 - [ ] P4：`continuous.R` 中无 `abort cancel`
 - [ ] P4：多值场景生成 `WARNING` 且只报一次，取值来自最小 `source_row`
 - [ ] P5：UI 可编辑 primitive 的 `counting_unit` / `distinct_key`
