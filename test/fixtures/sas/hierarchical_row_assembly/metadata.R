@@ -13,8 +13,6 @@ row_assembly_fixture <- function(case = "basic") {
   ))
   chunk <- list(
     id = "hier", type = "hierarchical_summary", source_data = "work.ra_records",
-    source_contract = list(grain = "record", subject_key = "USUBJID",
-      record_key = c("USUBJID", "SEQ"), duplicate_policy = "error"),
     levels = list(list(id = "group", variable = "GROUP_VALUE", order_variable = "GROUPN",
       order_direction = "asc", node_role = "analysis", node_analysis_id = "node",
       missing_policy = "exclude")),

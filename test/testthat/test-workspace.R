@@ -26,10 +26,6 @@ workspace_fixture_bundle <- function() {
   )
   hierarchy <- list(
     id = "old_hierarchy", type = "hierarchical_summary", source_data = "adam.adae",
-    source_contract = list(
-      grain = "record", subject_key = "USUBJID",
-      record_key = c("USUBJID", "AESEQ"), duplicate_policy = "error"
-    ),
     levels = list(
       list(
         id = "old_level_1", variable = "SOC", order_variable = "SOCN",

@@ -87,12 +87,6 @@ metadata_editor_server_impl <- function(input, output, session) {
         if (identical(dtype,"custom")) den$expression <- as.character(input[[paste0(p,"den_expression")]] %||% "")
         chunk$denominator <- den; chunk$rows <- collect_rows(chunk$rows, p)
       } else if (identical(chunk$type,"hierarchical_summary")) {
-        chunk$source_contract <- list(
-          grain=as.character(input[[paste0(p,"grain")]] %||% chunk$source_contract$grain %||% "record"),
-          subject_key=as.character(input[[paste0(p,"subject_key")]] %||% chunk$source_contract$subject_key %||% "USUBJID"),
-          duplicate_policy=as.character(input[[paste0(p,"duplicate_policy")]] %||% chunk$source_contract$duplicate_policy %||% "error"))
-        keys <- split_keys(input[[paste0(p,"record_key")]] %||% paste(chunk$source_contract$record_key %||% character(), collapse=","))
-        if (length(keys)) chunk$source_contract$record_key <- keys
         chunk$levels <- lapply(seq_along(chunk$levels %||% list()), function(j) {
           old <- chunk$levels[[j]]; lp <- paste0(p,"level_",j,"_")
           z <- list(id=old$id,

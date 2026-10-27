@@ -139,9 +139,6 @@ testthat::test_that("hierarchical blocks keep their own counting unit contract",
   )
   chunk <- list(
     id = "ch", type = "hierarchical_summary", source_data = "adam.adae",
-    source_contract = list(grain = "record", subject_key = "USUBJID",
-                           record_key = c("USUBJID", "AESEQ"),
-                           duplicate_policy = "error"),
     levels = list(list(
       id = "l1", variable = "SOC", order_variable = "SOC", order_direction = "asc",
       node_role = "label", missing_policy = "exclude"

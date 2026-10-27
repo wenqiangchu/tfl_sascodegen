@@ -117,8 +117,8 @@ testthat::test_that("header rows and template cards expose structural editing", 
   testthat::expect_match(app$get_html("#chunk_cards"), "chunk_1_delete", fixed=TRUE)
   testthat::expect_match(app$get_html("#chunk_cards"), "chunk_1_up", fixed=TRUE)
   testthat::expect_match(app$get_html("#chunk_cards"), "chunk_1_down", fixed=TRUE)
-  app$set_inputs(chunk_1_subject_key="SUBJID");app$click("template_save");app$wait_for_idle(500)
-  testthat::expect_match(app$get_value(input="chunk_1_subject_key"),"SUBJID",fixed=TRUE)
+  app$set_inputs(chunk_1_filter="SAFFL = 'Y'");app$click("template_save");app$wait_for_idle(500)
+  testthat::expect_match(app$get_value(input="chunk_1_filter"),"SAFFL = 'Y'",fixed=TRUE)
 })
 
 testthat::test_that("Add chunk selects each supported type before creation", {

@@ -39,9 +39,7 @@ new_chunk_seed <- function(type) {
   )
   list(
     id = "chunk_001", type = "hierarchical_summary", source_data = "adam.adsl",
-    source_contract = list(
-      grain = "record", subject_key = "USUBJID", duplicate_policy = "error"
-    ), levels = list(level), analysis_blocks = list(block)
+    levels = list(level), analysis_blocks = list(block)
   )
 }
 

@@ -92,7 +92,7 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
     header_columns_dataset = plan$header_columns_dataset,
     membership_dataset = sprintf("_TFL_HMEM_%03d", plan$batch_order),
     membership_expanded_source = TRUE,
-    subject_key = parent$source_contract$subject_key,
+    subject_key = subject_key_constant(),
     nodes_dataset = hierarchical_nodes_dataset(plan$batch_order, level_order),
     global_denominator_source = global_denominator_source,
     include_duplicate_check = isTRUE(plan$include_duplicate_check),
@@ -102,7 +102,7 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
 
 hierarchical_membership_source <- function(plan, level_order) {
   suffix <- sprintf("%03d", plan$batch_order)
-  subject_key <- plan$chunks[[1L]]$source_contract$subject_key
+  subject_key <- subject_key_constant()
   c(
     paste0("/* Expand hierarchical level ", level_order,
            " records through header membership once for all anchored blocks. */"),
@@ -307,7 +307,6 @@ hierarchical_continuous_compatibility <- function(plan, nested) {
   block <- nested$chunks[[1L]]
   list(
     primitive_type = nested$chunk_type,
-    source_contract = plan$chunks[[1L]]$source_contract,
     membership_source = block$source_data,
     nodes_dataset = nested$nodes_dataset,
     counting_unit = block$counting_unit,
@@ -512,7 +511,7 @@ hierarchical_summary_emitter <- function(plan, resolved) {
     paste0("  create table ", hierarchical_source_dataset(batch), " as"),
     paste0("  select s.* from ", source, " as s where exists"),
     paste0("    (select 1 from _TFL_MEM_001 as m where m.USUBJID = s.",
-           chunk$source_contract$subject_key, ");"),
+           subject_key_constant(), ");"),
     "quit;",
     paste0("data _TFL_HMEM_", suffix, ";"),
     "  set _TFL_MEM_001;",

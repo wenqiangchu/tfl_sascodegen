@@ -13,7 +13,6 @@ new_chunk_type_definition <- function(
     field_types,
     row_contract,
     data_grain,
-    source_contract,
     merge_contract,
     analysis_contract,
     render_contract,
@@ -40,7 +39,7 @@ new_chunk_type_definition <- function(
   if (!all(c(required_fields, optional_fields) %in% names(field_types))) {
     stop("Every declared chunk field needs a field type.", call. = FALSE)
   }
-  if (!is.list(row_contract) || !is.list(source_contract) ||
+  if (!is.list(row_contract) ||
       !is.list(merge_contract) || !is.list(analysis_contract) ||
       !is.list(render_contract) || !is.list(batch_contract)) {
     stop("Chunk contracts must be lists.", call. = FALSE)
@@ -57,7 +56,6 @@ new_chunk_type_definition <- function(
       field_types = field_types,
       row_contract = row_contract,
       data_grain = data_grain,
-      source_contract = source_contract,
       merge_contract = merge_contract,
       analysis_contract = analysis_contract,
       render_contract = render_contract,
@@ -145,10 +143,6 @@ make_primitive_definition <- function(type_id, analysis_contract, statistic_ids,
       allow_condition = require_condition
     ),
     data_grain = "subject",
-    source_contract = list(
-      subject_key = "USUBJID",
-      max_records_per_subject_after_filter = 1L
-    ),
     merge_contract = list(
       key = "USUBJID",
       unit = "subject",
@@ -223,12 +217,12 @@ default_chunk_registry <- local({
     hierarchical <- new_chunk_type_definition(
       type_id = "hierarchical_summary",
       capability = "container",
-      required_fields = c("id", "type", "source_data", "source_contract",
+      required_fields = c("id", "type", "source_data",
                           "levels", "analysis_blocks"),
       optional_fields = c("filter"),
       field_types = list(
         id = "string", type = "string", source_data = "non_empty_string",
-        source_contract = "mapping", levels = "sequence",
+        levels = "sequence",
         analysis_blocks = "sequence", filter = "optional_string"
       ),
       row_contract = list(
@@ -236,10 +230,6 @@ default_chunk_registry <- local({
         common_fields = c("id", "type", "label", "indent_level")
       ),
       data_grain = "group",
-      source_contract = list(
-        grains = c("subject", "record", "observation"),
-        duplicate_policy = "error"
-      ),
       merge_contract = list(
         broadcast_key = "subject_key",
         dynamic_nodes = "union_of_eligible_sources"
@@ -254,7 +244,7 @@ default_chunk_registry <- local({
         row = "HierarchicalRenderRow",
         static_before_dynamic = TRUE
       ),
-      correctness_guards = c("duplicate_record_key", "level_order", "anchor_reference"),
+      correctness_guards = c("level_order", "anchor_reference"),
       batch_contract = list(
         batchable = FALSE,
         batch_type = "hierarchical",

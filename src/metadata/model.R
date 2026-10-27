@@ -612,67 +612,7 @@ parse_primitive_denominator <- function(value, path, collector) {
 # Primitive chunks use the explicit value-parser name at their dispatch site.
 parse_primitive_denominator_value <- parse_primitive_denominator
 
-parse_source_contract_value <- function(value, path, collector) {
-  allowed <- c("grain", "subject_key", "record_key", "duplicate_policy")
-  required <- c("grain", "subject_key", "duplicate_policy")
-  if (!check_mapping(value, path, collector, allowed, required)) return(NULL)
-  grain <- parse_string_value(get_field(value, "grain"), error_path_field(path, "grain"),
-                              collector, "grain")
-  if (!is.null(grain) && !grain %in% c("subject", "record", "observation")) {
-    add_value_error(collector, error_path_field(path, "grain"),
-                    sprintf("Source grain '%s' is not supported.", grain))
-    grain <- NULL
-  }
-  subject_key <- parse_string_value(get_field(value, "subject_key"),
-                                    error_path_field(path, "subject_key"), collector,
-                                    "subject_key", non_empty = TRUE)
-  duplicate_policy <- parse_string_value(get_field(value, "duplicate_policy"),
-                                         error_path_field(path, "duplicate_policy"), collector,
-                                         "duplicate_policy")
-  if (!is.null(duplicate_policy) && !identical(duplicate_policy, "error")) {
-    add_value_error(collector, error_path_field(path, "duplicate_policy"),
-                    "Duplicate policy must be 'error'.")
-    duplicate_policy <- NULL
-  }
-  record_key <- NULL
-  if (has_field(value, "record_key")) {
-    raw_value <- get_field(value, "record_key")
-    # R callers may provide a character vector while YAML always decodes a
-    # sequence as a list; normalize both representations for the value model.
-    if (is.character(raw_value)) raw_value <- as.list(raw_value)
-    raw <- parse_sequence_raw(raw_value, error_path_field(path, "record_key"), collector,
-                              "record_key", required = TRUE, allow_empty = FALSE)
-    if (!is.null(raw)) {
-      record_key <- character()
-      for (i in seq_along(raw$items)) {
-        parsed <- parse_string_value(raw$items[[i]],
-                                     error_path_index(error_path_field(path, "record_key"), i - 1L),
-                                     collector, "record_key", non_empty = TRUE)
-        if (!is.null(parsed)) record_key <- c(record_key, parsed)
-      }
-      if (anyDuplicated(record_key)) {
-        add_value_error(collector, error_path_field(path, "record_key"),
-                        "Record key fields must be unique.")
-      }
-    }
-  }
-  if (!is.null(grain) && grain %in% c("record", "observation") && is.null(record_key)) {
-    add_required_error(collector, path, "record_key")
-  }
-  if (!is.null(grain) && identical(grain, "subject") && !is.null(record_key)) {
-    add_value_error(collector, error_path_field(path, "record_key"),
-                    "Record key is not allowed for subject grain.")
-  }
-  if (is.null(grain) || is.null(subject_key) || is.null(duplicate_policy)) return(NULL)
-  result <- list(grain = grain, subject_key = subject_key,
-                 duplicate_policy = duplicate_policy)
-  if (!is.null(record_key)) result$record_key <- record_key
-  # Re-order to the contract's canonical field order.
-  ordered <- list(grain = result$grain, subject_key = result$subject_key)
-  if (!is.null(result$record_key)) ordered$record_key <- result$record_key
-  ordered$duplicate_policy <- result$duplicate_policy
-  ordered
-}
+
 
 parse_hierarchical_denominator_value <- function(value, path, collector) {
   allowed <- c("scope", "unit", "variable", "expression")
@@ -1093,9 +1033,6 @@ validate_hierarchical_references <- function(chunk, path, collector) {
 }
 
 parse_hierarchical_chunk_value <- function(value, path, collector, registry, definition) {
-  source_contract <- parse_source_contract_value(
-    get_field(value, "source_contract"), error_path_field(path, "source_contract"), collector
-  )
   levels_raw <- parse_sequence_raw(get_field(value, "levels"), error_path_field(path, "levels"),
                                    collector, "levels", required = TRUE, allow_empty = FALSE)
   blocks_raw <- parse_sequence_raw(get_field(value, "analysis_blocks"),
@@ -1122,7 +1059,7 @@ parse_hierarchical_chunk_value <- function(value, path, collector, registry, def
       if (!is.null(parsed)) blocks[[length(blocks) + 1L]] <- parsed
     }
   }
-  if (is.null(source_contract) || is.null(levels_raw) || is.null(blocks_raw) ||
+  if (is.null(levels_raw) || is.null(blocks_raw) ||
       length(levels) != length(levels_raw$items) || length(blocks) != length(blocks_raw$items)) {
     return(NULL)
   }
@@ -1134,8 +1071,7 @@ parse_hierarchical_chunk_value <- function(value, path, collector, registry, def
                    lapply(seq_along(blocks), function(i)
                      error_path_index(error_path_field(path, "analysis_blocks"), i - 1L)),
                    collector)
-  result <- list(source_contract = source_contract, levels = levels,
-                 analysis_blocks = blocks)
+  result <- list(levels = levels, analysis_blocks = blocks)
   validate_hierarchical_references(result, path, collector)
   result
 }
@@ -1231,7 +1167,6 @@ parse_chunk_value <- function(value, path, collector, registry) {
   } else if (identical(type, "hierarchical_summary")) {
     hierarchical <- parse_hierarchical_chunk_value(value, path, collector, registry, definition)
     if (is.null(id) || is.null(source_data) || is.null(hierarchical)) return(NULL)
-    result$source_contract <- hierarchical$source_contract
     result$levels <- hierarchical$levels
     result$analysis_blocks <- hierarchical$analysis_blocks
   } else {

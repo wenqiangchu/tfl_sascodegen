@@ -38,6 +38,10 @@ primitive_source_filter <- function(plan, entry, source_dataset, kind) {
   )
 }
 
+# The subject identifier is fixed by the portable contract; carrying it as a
+# per-chunk field only created a second place for the same value to drift.
+subject_key_constant <- function() "USUBJID"
+
 source_block_duplicate_guard <- function(dataset, position_keys, unit_keys, suffix,
                                          scope_field = NULL) {
   # record counting derives its key from source_row, which is unique by
@@ -50,7 +54,7 @@ source_block_duplicate_guard <- function(dataset, position_keys, unit_keys, suff
 primitive_source_input <- function(plan, entry, source_dataset, merged_dataset, kind) {
   chunk <- entry$chunk
   nested <- !is.null(plan$nodes_dataset)
-  subject_key <- plan$subject_key %||% "USUBJID"
+  subject_key <- subject_key_constant()
   if (isTRUE(plan$membership_expanded_source)) {
     return(c(
       paste0("/* Read shared node/header membership source for nested ", kind, " analysis. */"),

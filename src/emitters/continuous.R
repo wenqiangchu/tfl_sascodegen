@@ -75,7 +75,7 @@ continuous_batch_source_input <- function(plan) {
   chunk_inputs <- vapply(plan$chunk_orders, function(chunk_order) {
     continuous_chunk_input_dataset(plan$batch_order, chunk_order)
   }, character(1L))
-  subject_key <- plan$subject_key %||% "USUBJID"
+  subject_key <- subject_key_constant()
   chunk_rows <- unlist(lapply(plan$chunk_orders, function(chunk_order) {
     paste0("  chunk_order = ", chunk_order, "; output;")
   }), use.names = FALSE)

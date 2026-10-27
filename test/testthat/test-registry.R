@@ -25,7 +25,7 @@ testthat::test_that("registry construction is all-or-nothing", {
     new_chunk_type_definition(
       type_id = "bad", capability = "primitive", required_fields = "id",
       optional_fields = "id", field_types = list(id = "string"), row_contract = list(),
-      data_grain = "subject", source_contract = list(), merge_contract = list(),
+      data_grain = "subject", merge_contract = list(),
       analysis_contract = list(), render_contract = list(), correctness_guards = character(),
       batch_contract = list()
     ),

@@ -58,8 +58,6 @@ batching_fixture <- function(case_name, unit) {
                        header_id = "header", template_id = "template")),
     templates = list(list(id = "template", body = list(stub_header = "Group", chunks = list(list(
       id = "hierarchy", type = "hierarchical_summary", source_data = paste0("work.hb_", case_name),
-      source_contract = list(grain = "observation", subject_key = "USUBJID",
-                             record_key = c("USUBJID", "RECORD_ID"), duplicate_policy = "error"),
       levels = list(list(
         id = "group", variable = "GROUP_VALUE", order_variable = "GROUP_ORDER",
         order_direction = "asc", node_role = "analysis", node_analysis_id = "analysis_1",

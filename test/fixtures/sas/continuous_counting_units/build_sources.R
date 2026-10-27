@@ -81,12 +81,6 @@ fixture_bundle <- function(table_id, source_data, counting_unit, distinct_key = 
           id = "hierarchy_001",
           type = "hierarchical_summary",
           source_data = source_data,
-          source_contract = list(
-            grain = "observation",
-            subject_key = "USUBJID",
-            record_key = c("USUBJID", "RECORD_ID"),
-            duplicate_policy = "error"
-          ),
           levels = list(list(
             id = "level_001",
             variable = "GROUP_VALUE",

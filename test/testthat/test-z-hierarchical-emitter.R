@@ -9,8 +9,6 @@ hierarchical_report_fixture <- function() {
     templates = list(list(id = "t", body = list(chunks = list(list(
       id = "hier", type = "hierarchical_summary", source_data = "adam.adae",
       filter = "SAFFL = 'Y'",
-      source_contract = list(grain = "record", subject_key = "USUBJID",
-                             record_key = c("USUBJID", "AESEQ"), duplicate_policy = "error"),
       levels = list(
         list(id = "l1", variable = "SOC", order_variable = "SOCN",
              order_direction = "asc", node_role = "label", missing_policy = "exclude"),

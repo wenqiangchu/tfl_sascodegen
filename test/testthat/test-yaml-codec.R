@@ -189,10 +189,6 @@ testthat::test_that("hierarchical source and result-sort fields round-trip", {
     templates = list(list(
       id = "x", body = list(chunks = list(list(
         id = "ch", type = "hierarchical_summary", source_data = "ADAE",
-        source_contract = list(
-          grain = "record", subject_key = "USUBJID",
-          record_key = c("USUBJID", "AESEQ"), duplicate_policy = "error"
-        ),
         levels = list(level), analysis_blocks = list(block)
       )))
     ))
@@ -201,7 +197,6 @@ testthat::test_that("hierarchical source and result-sort fields round-trip", {
   decoded <- parse_bundle_yaml(encoded)
   testthat::expect_true(decoded$passed)
   testthat::expect_identical(decoded$workspace, bundle)
-  testthat::expect_match(encoded, "record_key:\\n")
   testthat::expect_match(encoded, "result_sort:\\n")
 })
 

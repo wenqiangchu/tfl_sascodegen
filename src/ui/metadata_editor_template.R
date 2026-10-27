@@ -30,14 +30,9 @@ chunk_card_ui <- function(chunk,index) {
       chunk_field(4, textInput(paste0(p,"den_variable"),"Denominator variable",chunk$denominator$variable %||% "")),
       chunk_field(4, textInput(paste0(p,"den_expression"),"Denominator expression",chunk$denominator$expression %||% ""))
     ), rows_ui)
-  else { sc<-chunk$source_contract %||% list(); specific<-tagList(
-    h4("Source contract"), chunk_field_row(
-      chunk_field(4, selectInput(paste0(p,"grain"),"Grain",c("subject","record","observation"),selected=sc$grain)),
-      chunk_field(4, textInput(paste0(p,"subject_key"),"Subject key",sc$subject_key %||% "")),
-      chunk_field(4, selectInput(paste0(p,"duplicate_policy"),"Duplicate policy",c("error","first","last"),selected=sc$duplicate_policy))
-    ), chunk_field_row(chunk_field(8, textInput(paste0(p,"record_key"),"Record key",paste(sc$record_key %||% character(),collapse=", ")))),
+  else specific<-tagList(
     h4("Levels"), collection_buttons(p,"level","levels"), tagList(lapply(seq_along(chunk$levels %||% list()),function(j)level_ui(chunk$levels[[j]],p,j,chunk))),
-    h4("Analysis blocks"), collection_buttons(p,"block","analysis_blocks"), tagList(lapply(seq_along(chunk$analysis_blocks %||% list()),function(b)block_ui(chunk$analysis_blocks[[b]],p,b,chunk)))) }
+    h4("Analysis blocks"), collection_buttons(p,"block","analysis_blocks"), tagList(lapply(seq_along(chunk$analysis_blocks %||% list()),function(b)block_ui(chunk$analysis_blocks[[b]],p,b,chunk))))
   title_bar <- tags$div(class="chunk-titlebar",
     tags$span(class="chunk-title-text", paste("Chunk", index, chunk$id)),
     tags$span(class="chunk-title-actions",

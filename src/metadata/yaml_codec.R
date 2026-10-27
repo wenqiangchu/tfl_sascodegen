@@ -430,17 +430,6 @@ render_primitive_denominator_yaml <- function(value, indent) {
   context$lines
 }
 
-render_source_contract_yaml <- function(value, indent) {
-  context <- new_yaml_lines()
-  yaml_emit_scalar(context, indent, "grain", value$grain)
-  yaml_emit_scalar(context, indent, "subject_key", value$subject_key)
-  if (!is.null(value$record_key)) {
-    yaml_emit_scalar_sequence(context, indent, "record_key", value$record_key, "string")
-  }
-  yaml_emit_scalar(context, indent, "duplicate_policy", value$duplicate_policy)
-  context$lines
-}
-
 render_hierarchical_denominator_yaml <- function(value, indent) {
   context <- new_yaml_lines()
   yaml_emit_scalar(context, indent, "scope", value$scope)
@@ -517,8 +506,6 @@ render_chunk_yaml <- function(value, indent) {
                       render_primitive_denominator_yaml)
     yaml_emit_sequence(context, indent, "rows", value$rows, render_row_yaml)
   } else if (identical(value$type, "hierarchical_summary")) {
-    yaml_emit_mapping(context, indent, "source_contract", value$source_contract,
-                      render_source_contract_yaml)
     yaml_emit_sequence(context, indent, "levels", value$levels, render_level_yaml)
     yaml_emit_sequence(context, indent, "analysis_blocks", value$analysis_blocks,
                        render_analysis_block_yaml)

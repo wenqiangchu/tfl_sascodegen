@@ -171,7 +171,7 @@ categorical_global_denominator_source <- function(plan, keys) {
     paste0("  create table _TFL_GDEN_INPUT_", suffix, " as"),
     "  select s.*, m.column_order",
     paste0("  from ", plan$global_denominator_source, " as s inner join _TFL_MEM_001 as m"),
-    paste0("    on s.", plan$subject_key %||% "USUBJID", " = m.USUBJID;"),
+    paste0("    on s.", subject_key_constant(), " = m.USUBJID;"),
     "quit;",
     paste0("proc sort data=_TFL_GDEN_INPUT_", suffix, " out=_TFL_GDEN_UNITS_", suffix, " nodupkey;"),
     paste0("  by column_order ", paste(keys, collapse = " "), ";"),

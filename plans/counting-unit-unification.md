@@ -166,6 +166,23 @@ P1 为纯新增；**P3 必须先于 P2**（见下方修订记录）；P2 在 P3 
 **为什么换成 P3 先执行**：P1 gate 时保存的基线无法用作 P2 的比对基准，因为
 `record_key` 驱动 source 层 guard 的 BY 子句（详见第 3 节修订记录）。
 
+**实际落地情况（已实施）**
+
+- 新增 `subject_key_constant()`（`source_input.R`），取代 `plan$subject_key` 与
+  `chunk$source_contract$subject_key` 两种取法；实测 `plan$subject_key` 从未
+  被赋值，一直走 fallback
+- `hierarchical_nested_plan()` 的 `subject_key`、`hierarchical_membership_source()`
+  的 rename、`hierarchical_source_dataset` 的 exists 过滤均改为常量
+- compatibility 判等中的 `source_contract` 字段整体删除
+- registry：`new_chunk_type_definition()` 的 `source_contract` 参数、`is.list()`
+  校验、字段赋值，以及两种 chunk 定义中的 `source_contract` 全部删除
+- `correctness_guards` 中的 `duplicate_record_key` 一并删除（P3 后已无对应实现）
+- UI：`source_contract` 默认值、读写逻辑与 Source contract 面板（grain /
+  subject_key / duplicate_policy / record_key 四个输入）全部删除
+- demo bundle 重建，md5 由 `e28f2512f77d0f2ad4d037d346dee332` 变为
+  `00e1d3c039c04280c0db22ffc45a81ce`（5468 字节）
+- SAS 夹具 `build_sources.R`/`metadata.R` 中的 `source_contract` 参数同步删除
+
 ### P3：统一键构造与移除 source 层检查
 
 **目的**：键构造在两级宿主一致（D5、I2、I4、I5）。
@@ -310,8 +327,8 @@ Rscript test/fixtures/sas/continuous_counting_units/build_sources.R
 - [x] P3：categorical/continuous 的 guard BY 键与 hierarchical 同 unit 一致
 - [x] P3：per-block 检查不含 `column_order`
 - [x] P3：source 层 guard 完全移除（`_TFL_GKEY_*`、`_TFL_GUARD_H*`、`_TFL_KKEY_*` 不再生成）
-- [ ] P2：`src/` 中 `source_contract`、`duplicate_policy`、`record_key` 零出现
-- [ ] P2：P3→P2 生成的 SAS 逐字节一致
+- [x] P2：`src/` 中 `source_contract`、`duplicate_policy`、`record_key` 零出现
+- [x] P2：P3→P2 生成的 SAS 逐字节一致
 - [ ] P4：`continuous.R` 中无 `abort cancel`
 - [ ] P4：多值场景生成 `WARNING` 且只报一次，取值来自最小 `source_row`
 - [ ] P5：UI 可编辑 primitive 的 `counting_unit` / `distinct_key`
