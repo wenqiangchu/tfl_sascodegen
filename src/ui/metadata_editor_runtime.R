@@ -36,6 +36,12 @@ metadata_editor_server_impl <- function(input, output, session) {
     x <- trimws(unlist(strsplit(as.character(x %||% ""), ",", fixed=TRUE)))
     x[nzchar(x)]
   }
+  # An empty editor field means "no distinct key", not an empty key sequence: the
+  # parser rejects a present-but-empty sequence, so drop the field entirely.
+  assign_distinct_key <- function(chunk, keys) {
+    if (length(keys)) chunk$distinct_key <- keys else chunk$distinct_key <- NULL
+    chunk
+  }
   normalize_stat_digits <- function(x) {
     x <- trimws(as.character(x %||% "")); if (!nzchar(x)) return(NULL)
     if (grepl("^[+-][0-9]+$", x)) x else suppressWarnings(as.integer(x))
@@ -78,9 +84,15 @@ metadata_editor_server_impl <- function(input, output, session) {
       chunk$source_data <- as.character(input[[paste0(p,"source_data")]] %||% chunk$source_data %||% "")
       chunk$filter <- trim_optional(input[[paste0(p,"filter")]] %||% chunk$filter)
       if (identical(chunk$type, "continuous_summary")) {
+        chunk$counting_unit <- as.character(input[[paste0(p,"counting_unit")]] %||% chunk$counting_unit %||% "distinct_subject")
+        chunk <- assign_distinct_key(chunk, split_keys(
+          input[[paste0(p,"distinct_key")]] %||% paste(chunk$distinct_key %||% character(), collapse=",")))
         chunk$analysis_variable <- as.character(input[[paste0(p,"analysis_variable")]] %||% chunk$analysis_variable %||% "")
         chunk$rows <- collect_rows(chunk$rows, p)
       } else if (chunk$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
+        chunk$counting_unit <- as.character(input[[paste0(p,"counting_unit")]] %||% chunk$counting_unit %||% "distinct_subject")
+        chunk <- assign_distinct_key(chunk, split_keys(
+          input[[paste0(p,"distinct_key")]] %||% paste(chunk$distinct_key %||% character(), collapse=",")))
         dtype <- as.character(input[[paste0(p,"den_type")]] %||% chunk$denominator$type %||% "header_population")
         den <- list(type=dtype)
         if (identical(dtype,"non_missing")) den$variable <- as.character(input[[paste0(p,"den_variable")]] %||% "")

@@ -18,6 +18,7 @@ new_chunk_seed <- function(type) {
   if (identical(type, "continuous_summary")) {
     return(list(
       id = "chunk_001", type = type, source_data = "adam.adsl",
+      counting_unit = "distinct_subject",
       analysis_variable = "AVAL", rows = list(row)
     ))
   }
@@ -25,6 +26,7 @@ new_chunk_seed <- function(type) {
     row$statistics <- list(list(id = "n"), list(id = "pct", digits = 1L))
     return(list(
       id = "chunk_001", type = type, source_data = "adam.adsl",
+      counting_unit = "distinct_subject",
       denominator = list(type = "header_population"), rows = list(row)
     ))
   }
@@ -34,7 +36,7 @@ new_chunk_seed <- function(type) {
   )
   block <- list(
     id = "analysis_001", anchor_level = level$id, placement = "below",
-    type = "continuous_summary", counting_unit = "record",
+    type = "continuous_summary", counting_unit = "distinct_subject",
     analysis_variable = "AVAL", rows = list(row)
   )
   list(

@@ -1,6 +1,23 @@
 # 未决问题
 
-当前没有待确认问题。
+## P-2a：primitive denominator 是否增加 `unit` 字段
+
+primitive categorical chunk 的 `denominator` 目前只有 `type`，而 hierarchical
+block 的 `denominator` 有 `scope`、`unit`、`variable`、`expression`。primitive 侧
+的质量通过 `categorical.R` 里的 `%||% "distinct_subject"` 回退到 subject 计数，
+即分母单位固定为 `distinct_subject`，无法单独声明。
+
+这带来一处已知不一致：`source_generator.R` 的 `use_header_n` 依赖
+`unit == "distinct_subject"`，但 primitive 侧的 `unit` 永远是回退值，用户无法通过
+metadata 改变它。当前行为可接受，因为尚无「分子按 `distinct_key`、分母按另一种
+单位」的已确认需求。
+
+待确认：primitive `denominator` 是否补 `unit` 字段（并让 UI 可编辑），还是明确
+文档化为「primitive 分母恒为 `distinct_subject`」。在确认前不实现。
+
+## 其他
+
+当前没有其他待确认问题。
 [Hierarchical continuous 结果转换共享](hierarchical-result-sharing-proposal.md)
 已按用户确认实施为 P0-13：只共享 value/digits DATA step，保留所有中间表和逐块
 expected-cell、join、render、HSMAP，不增加共享中间表或宏封装。用户已接受本组

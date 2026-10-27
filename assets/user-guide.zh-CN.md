@@ -63,6 +63,37 @@ digits:     0 1 1
 Hierarchical chunk 还包含多层 levels 和 analysis blocks，可以编辑 parent level、分析
 类型和结构化 denominator。
 
+## 计数单位（counting unit）
+
+每个分析 chunk 和每个 hierarchical analysis block 都必须声明
+`counting_unit`。它决定「一条被计数的观察」是什么，因此是必填项：缺少该字段的
+bundle 会在导入时被拒绝。
+
+| `counting_unit` | 一个单位是 | 重复检查 | 去重 |
+| --- | --- | --- | --- |
+| `record` | 一条 source record | 不检查 | 不去重 |
+| `distinct_subject` | 一个 `USUBJID` | 按 `USUBJID` | 合并重复 subject |
+| `distinct_key` | 声明的一组 `distinct_key` 字段组合 | 按 `distinct_key` | 合并重复键 |
+
+`record` 把每条记录视为独立单位，其键就是 source 行号，天然唯一，重复检查永远
+不会报告任何内容，因此不生成检查也不去重。需要按观察计数时用 `record`，要求每个
+subject 只贡献一次时用 `distinct_subject`。
+
+`distinct_key` 需要同时填写 `distinct_key`，按顺序列出键变量，例如
+`USUBJID, AVISITN`。另外两种单位下该字段应留空；若非空但单位不是
+`distinct_key`，导入会被拒绝。
+
+重复检查默认开启，每个重复键最多报告一次。它不删除记录，只在 SAS log 中写入
+`WARNING: [USER] duplicate_key`。生成时关闭该开关只移除检查本身。
+
+### 旧 bundle 迁移
+
+在计数单位出现之前导出的 bundle 没有 `counting_unit` 字段，无法再导入。请为每个
+分析 chunk 和每个 hierarchical analysis block 补上
+`counting_unit: distinct_subject`，可复现此前按 subject 计数的行为。已移除的
+`source_contract` 块应直接删除而不是翻译：其 subject key 现固定为 `USUBJID`，
+而 duplicate policy 只接受过一个取值。
+
 ## 生成 SAS
 
 进入 `Generate SAS`，选择 table 和本次生成选项后点击 `Generate SAS`。生成的 SAS source

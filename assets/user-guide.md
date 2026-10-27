@@ -90,6 +90,41 @@ space-separated, for example `n mean sd` and `0 1 1`. Hierarchical chunks
 contain nested levels and analysis blocks with parent relationships and
 structured denominators.
 
+## Counting units
+
+Every analysis chunk and every hierarchical analysis block declares a
+`counting_unit`. It decides what one counted observation is, and it is
+required, so an imported bundle without it is rejected.
+
+| `counting_unit` | One unit is | Duplicate check | Deduplication |
+| --- | --- | --- | --- |
+| `record` | One source record | None | None |
+| `distinct_subject` | One `USUBJID` | On `USUBJID` | Collapses repeated subjects |
+| `distinct_key` | One combination of the declared `distinct_key` fields | On `distinct_key` | Collapses repeated keys |
+
+`record` counts every record as its own unit, so its key is the source row
+number, which is unique by construction. A duplicate check there could never
+report anything, so none is generated and nothing is deduplicated. Use
+`record` for observation-level statistics and `distinct_subject` when each
+subject must contribute once.
+
+`distinct_key` requires a `distinct_key` field listing the key variables in
+order, for example `USUBJID, AVISITN`. Leave that field empty for the other
+two units; a non-empty key with a different unit is rejected.
+
+The duplicate check is on by default and reports each duplicated key at most
+once. It never drops records; it only writes `WARNING: [USER] duplicate_key`
+to the SAS log. Turning it off in the generate step removes only the check.
+
+### Migrating an older bundle
+
+Bundles exported before counting units existed have no `counting_unit` field
+and no longer import. Add `counting_unit: distinct_subject` to each analysis
+chunk and each hierarchical analysis block, which reproduces the previous
+subject-level behaviour. The removed `source_contract` block should be
+deleted rather than translated: its subject key is now fixed to `USUBJID`
+and its duplicate policy had only one accepted value.
+
 ## Header and population
 
 Header columns and spanning headers are edited together in one DT. Spanning

@@ -22,14 +22,24 @@ chunk_card_ui <- function(chunk,index) {
     )
   )
   rows_ui <- tagList(h4("Rows / statistics"), collection_buttons(p,"row","rows"))
+  # Primitive chunks declare their counting unit the same way hierarchical blocks
+  # do, so one shared control keeps the two editors from drifting apart.
+  counting_unit_ui <- chunk_field_row(
+    chunk_field(4, selectInput(paste0(p,"counting_unit"),"Counting unit",
+                               c("record","distinct_subject","distinct_key"),
+                               selected = chunk$counting_unit %||% "distinct_subject")),
+    chunk_field(8, textInput(paste0(p,"distinct_key"),"Distinct key",
+                             paste(chunk$distinct_key %||% character(), collapse=", ")))
+  )
   if(chunk$type=="continuous_summary") specific<-tagList(
-    chunk_field_row(chunk_field(4, textInput(paste0(p,"analysis_variable"),"Analysis variable",chunk$analysis_variable %||% ""))), rows_ui)
+    chunk_field_row(chunk_field(4, textInput(paste0(p,"analysis_variable"),"Analysis variable",chunk$analysis_variable %||% ""))),
+    counting_unit_ui, rows_ui)
   else if(chunk$type%in%c("categorical_summary_nonexclusive","categorical_summary_exclusive")) specific<-tagList(
     chunk_field_row(
       chunk_field(4, selectInput(paste0(p,"den_type"),"Denominator type",c("header_population","non_missing","custom"),selected=chunk$denominator$type)),
       chunk_field(4, textInput(paste0(p,"den_variable"),"Denominator variable",chunk$denominator$variable %||% "")),
       chunk_field(4, textInput(paste0(p,"den_expression"),"Denominator expression",chunk$denominator$expression %||% ""))
-    ), rows_ui)
+    ), counting_unit_ui, rows_ui)
   else specific<-tagList(
     h4("Levels"), collection_buttons(p,"level","levels"), tagList(lapply(seq_along(chunk$levels %||% list()),function(j)level_ui(chunk$levels[[j]],p,j,chunk))),
     h4("Analysis blocks"), collection_buttons(p,"block","analysis_blocks"), tagList(lapply(seq_along(chunk$analysis_blocks %||% list()),function(b)block_ui(chunk$analysis_blocks[[b]],p,b,chunk))))

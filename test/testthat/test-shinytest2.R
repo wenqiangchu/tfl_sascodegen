@@ -146,6 +146,30 @@ testthat::test_that("Add chunk selects each supported type before creation", {
   for (type in unname(types)) testthat::expect_match(html, type, fixed = TRUE)
 })
 
+testthat::test_that("primitive chunks expose and save a counting unit", {
+  app <- new_editor_app("editor-counting-unit")
+  on.exit(app$stop(), add = TRUE)
+  import_demo(app)
+  app$set_inputs(main_nav = "template_editor")
+  app$wait_for_idle(700)
+  app$click("chunk_add")
+  app$wait_for_idle(200)
+  app$set_inputs(new_chunk_type = "continuous_summary")
+  app$click("confirm_new_chunk")
+  app$wait_for_idle(500)
+  # The seeded default must be a valid counting unit, not an empty selection.
+  testthat::expect_identical(app$get_value(input = "chunk_2_counting_unit"),
+                             "distinct_subject")
+  app$set_inputs(chunk_2_counting_unit = "distinct_key")
+  app$set_inputs(chunk_2_distinct_key = "USUBJID, AVISITN")
+  app$click("template_save")
+  app$wait_for_idle(500)
+  testthat::expect_identical(app$get_value(input = "chunk_2_counting_unit"),
+                             "distinct_key")
+  testthat::expect_match(app$get_value(input = "chunk_2_distinct_key"), "AVISITN",
+                         fixed = TRUE)
+})
+
 testthat::test_that("chunk move buttons reorder cards and remain usable", {
   app <- new_editor_app("editor-chunk-move")
   on.exit(app$stop(), add = TRUE)
