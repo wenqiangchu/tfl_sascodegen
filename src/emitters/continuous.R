@@ -223,9 +223,10 @@ continuous_counting_unit_source <- function(plan) {
       "    output;",
       "  end;",
       "  keep chunk_order column_order analysis_value source_row node_key",
-      # The subject survives materialization because denominator counting and
-      # header membership still resolve it, and so does any declared distinct key.
-      "       ", paste(unique(c("USUBJID", unit_keys)), collapse = " "), ";",
+      # The counting-unit keys have to survive because they identify the row. No
+      # later stage in this batch reads the subject, so it is kept only when the
+      # declared unit is the subject itself.
+      "       ", paste(unit_keys, collapse = " "), ";",
       "run;"
     ),
     dataset = dataset

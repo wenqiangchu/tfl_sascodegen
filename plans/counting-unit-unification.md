@@ -464,7 +464,7 @@ P6 之后与 P2 之后的 demo 输出有 4 个文件不同，均为预期：
 |---|---|---|
 | M1 | 回归测试按固定缩进与前 5 行统计投影列数，5 键时误判为 5 对 4 | 改为按 SELECT→FROM 全范围解析投影，并加 6 键用例 |
 | M2 | `categorical_source_dataset()` 与 `categorical_guard_source_dataset()` 返回同一名字 `_TFL_KSRC_*` | guard 投影改名为 `_TFL_KGRD_*`，两个入口对应两个不同数据集 |
-| M3 | `continuous.R:224` 注释称下游 precision/render 仍解析 `USUBJID`，实际 precision 用 `chunk_order/node_key/source_row`；categorical 的 "Filter once" 掩盖了检查开启时的两次读取 | 两处注释改为当前事实 |
+| M3 | `continuous.R:224` 注释称下游 precision/render 仍解析 `USUBJID`，实际 precision 用 `chunk_order/node_key/source_row`；categorical 的 "Filter once" 掩盖了检查开启时的两次读取 | 两处注释改为当前事实；第二轮修正后再次核验，`USUBJID` 其实无需无条件保留（见下） |
 
 ### M1 细节
 
@@ -495,8 +495,18 @@ guard 排序的就是 filtered source。现在后者为 `_TFL_KGRD_*`（`K` = ca
 - `continuous.R` 的 materialization keep 注释原称「下游 precision 与 render 仍
   解析 USUBJID」。实际 `continuous_precision_source()` 只按
   `chunk_order node_key source_row` 排序，`render_long_form_source()` 也不读取
-  `USUBJID`。保留 `USUBJID` 的真实理由是分母计数与 header membership 仍用它，
-  以及声明的 distinct key 必须穿过 materialization。
+  `USUBJID`。
+
+  第二轮把这条注释改成「分母计数与 header membership 仍用它」，仍然不成立：
+  continuous 本身不计算分母，header membership 也不读 `_TFL_CUNIT_*`。
+  `_TFL_CUNIT_*` 只有三个消费者——precision 排序、`PROC MEANS`、诊断 WARNING——
+  都不读 `USUBJID`。
+
+  最终结论：`USUBJID` 此前是无条件保留的，而它本来就已经在 `unit_keys` 里
+  （`distinct_subject` 时即 `USUBJID`；`distinct_key` 时才显式声明）。因此改为
+  只保留 `unit_keys`，并删掉因果解释：materialization 之后本批次没有任何阶段
+  读取 subject，它留下的唯一理由是它就是计数键。附带效果是
+  `distinct_key: [VISIT, PARAMCD]` 不再多带一列 `USUBJID`。
 - categorical 顶层原注释为 `/* Filter once and emit categorical counting events. */`。
   检查开启时源数据实际被读两次：一次给 guard 投影，一次给计数事件。注释改为
   明确写出这一点，避免读者以为只有一次读取。
