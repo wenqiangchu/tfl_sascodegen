@@ -155,7 +155,9 @@ continuous_counting_unit_source <- function(plan) {
       position_keys <- c("chunk_order", "node_key")
       guard_dataset <- continuous_guard_source_dataset(plan$batch_order, chunk_order)
       c(
-        "/* Tag level records with their chunk position for duplicate checking. */",
+        # The level table carries no chunk position, so the guard builds its own
+        # input instead of sorting the level table directly.
+        "/* Project level records onto the duplicate-check keys. */",
         paste0("data ", guard_dataset, ";"),
         paste0("  set ", source_dataset, ";"),
         paste0("  chunk_order = ", chunk_order, ";"),
@@ -173,8 +175,8 @@ continuous_counting_unit_source <- function(plan) {
   if (identical(unit, "record")) {
     return(list(source = guard, dataset = plan$input_dataset))
   }
-  # Distinct units are materialized for top-level chunks too. Skipping them
-  # there silently counted every source record, ignoring the declared unit.
+  # Distinct units are materialized for top-level chunks too; the input already
+  # holds one row per source record, not one row per counted unit.
   dataset <- continuous_counting_unit_dataset(plan$batch_order)
   sorted_dataset <- paste0("_TFL_CUNIT_SORT_", suffix)
   group_vars <- unique(c("chunk_order", "column_order", "node_key", unit_keys))
@@ -221,8 +223,8 @@ continuous_counting_unit_source <- function(plan) {
       "    output;",
       "  end;",
       "  keep chunk_order column_order analysis_value source_row node_key",
-      # Downstream precision and render stages still resolve USUBJID, and a
-      # declared distinct key has to survive materialization.
+      # The subject survives materialization because denominator counting and
+      # header membership still resolve it, and so does any declared distinct key.
       "       ", paste(unique(c("USUBJID", unit_keys)), collapse = " "), ";",
       "run;"
     ),

@@ -246,7 +246,7 @@ testthat::test_that("guards run on source records, not on expanded copies", {
   guarded <- sorted_input(lines[guard_start])
   # The guarded dataset must be the pre-expansion source projection: a table
   # carrying column_order would mean the guard sees one row per header column.
-  testthat::expect_match(guarded, "_TFL_KSRC_", fixed = TRUE)
+  testthat::expect_match(guarded, "_TFL_KGRD_", fixed = TRUE)
   keeps <- keep_lists(lines)
   testthat::expect_false("column_order" %in% keeps[[guarded]])
   testthat::expect_false("row_order" %in% keeps[[guarded]])
@@ -380,31 +380,61 @@ testthat::test_that("nested record counting emits no duplicate guard", {
   testthat::expect_true(generated$passed)
   testthat::expect_false(grepl("out=_TFL_GUARD_", generated$source, fixed = TRUE))
 })
+# Extract the projection of one SELECT branch: every column expression between
+# its SELect keyword and the FROM that closes it, in order. Continuation lines
+# and commas are normalized away, so layout changes do not change the result.
+select_projection <- function(lines, start) {
+  # Collect until the FROM clause that belongs to this SELECT.
+  end <- start + which(grepl("^\\s*from ", lines[start:length(lines)]))[1L] - 2L
+  text <- paste(lines[start:end], collapse = " ")
+  text <- sub("^\\s*select\\s+", "", text)
+  parts <- trimws(strsplit(text, ",", fixed = TRUE)[[1L]])
+  parts[nzchar(parts)]
+}
+
+# The column a projection expression produces, qualified alias removed.
+projection_columns <- function(parts) {
+  vapply(parts, function(part) {
+    part <- trimws(part)
+    # "s.VISIT" and "t.VISIT" both produce a column named VISIT.
+    alias <- sub("^.*\\bas\\s+", "", part)
+    if (!identical(alias, part)) return(tolower(trimws(alias)))
+    sub("^[A-Za-z_][A-Za-z0-9_]*\\.", "", part)
+  }, character(1L), USE.NAMES = FALSE)
+}
+
 testthat::test_that("declared keys reach both branches of the membership union", {
   # The scaffold branch supplies denominator rows for a header-population chunk.
-  # It runs through the same UNION ALL as the event branch, so it has to carry
-  # every declared distinct key as well; otherwise the two branches disagree on
-  # column count and SAS cannot build the merged table at all.
-  for (check in c(TRUE, FALSE)) {
-    chunk <- categorical_chunk("distinct_key", c("USUBJID", "VISIT"))
-    chunk$denominator <- list(type = "header_population")
-    result <- generate_table_source(base_bundle(chunk), "t1",
-                                    include_duplicate_check = check)
-    testthat::expect_true(result$passed)
-    lines <- strsplit(result$source, "\n", fixed = TRUE)[[1]]
-    union_at <- grep("^  union all$", lines)
-    testthat::expect_length(union_at, 1L)
-    event_at <- max(grep("^  select ", lines[seq_len(union_at)]))
-    scaffold_at <- union_at + grep("^  select ", lines[union_at:length(lines)])[1L]
-    # Count the projected columns by the continuation lines that add keys.
-    event_cols <- length(grep("^         , s\\.", lines[event_at:union_at]))
-    scaffold_cols <- length(grep("^         , t\\.", lines[scaffold_at:length(lines)][1:5]))
-    testthat::expect_equal(scaffold_cols, event_cols)
-    testthat::expect_gt(scaffold_cols, 0L)
-    # Both branches name the same key, so the merged table keeps one column.
-    event_side <- paste(lines[event_at:union_at], collapse = " ")
-    scaffold_side <- paste(lines[scaffold_at:length(lines)], collapse = " ")
-    testthat::expect_match(event_side, "s.VISIT", fixed = TRUE)
-    testthat::expect_match(scaffold_side, "t.VISIT", fixed = TRUE)
+  # It runs through the same UNION ALL as the event branch, so it has to project
+  # the same columns in the same shape; otherwise SAS cannot build the merged
+  # table at all. Key count must not matter, so several key sets are exercised.
+  key_sets <- list(
+    c("USUBJID", "VISIT"),
+    c("USUBJID", "K1", "K2", "K3", "K4", "K5")
+  )
+  for (keys in key_sets) {
+    for (check in c(TRUE, FALSE)) {
+      chunk <- categorical_chunk("distinct_key", keys)
+      chunk$denominator <- list(type = "header_population")
+      result <- generate_table_source(base_bundle(chunk), "t1",
+                                      include_duplicate_check = check)
+      testthat::expect_true(result$passed)
+      lines <- strsplit(result$source, "\n", fixed = TRUE)[[1]]
+      union_at <- grep("^\\s*union all$", lines)
+      testthat::expect_length(union_at, 1L)
+      event_at <- max(grep("^\\s*select ", lines[seq_len(union_at)]))
+      scaffold_at <- union_at + grep("^\\s*select ", lines[union_at:length(lines)])[1L] - 1L
+
+      event_cols <- projection_columns(select_projection(lines, event_at))
+      scaffold_cols <- projection_columns(select_projection(lines, scaffold_at))
+
+      # Same columns, same order: a UNION ALL matches positionally.
+      testthat::expect_identical(scaffold_cols, event_cols)
+      # Declared keys other than USUBJID have to appear on both sides.
+      declared <- setdiff(keys, "USUBJID")
+      testthat::expect_true(all(declared %in% event_cols))
+      testthat::expect_true(all(declared %in% scaffold_cols))
+      testthat::expect_length(declared, length(keys) - 1L)
+    }
   }
 })

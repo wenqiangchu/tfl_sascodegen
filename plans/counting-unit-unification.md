@@ -363,7 +363,7 @@ P1-P6 完成后对 `ea9a83d..fbf5fe5` 做独立审查，发现 5 个问题并全
   `primitive_check_keys()`（检查键，`record` 为空）。NODUPKEY 恢复正确性，
   同时 `record` 仍不生成检查。
 - guard 移到**展开前**的真实源记录层，粒度为 per-chunk：categorical 用
-  轻量投影 `_TFL_KSRC_<batch>_<chunk>`（只保留位置键与检查键），continuous 直接
+  轻量投影 `_TFL_KGRD_<batch>_<chunk>`（只保留位置键与检查键），continuous 直接
   读 `_TFL_CIN_*`。nested 时位置键含 `node_key`。
 - 顶层 continuous 不再跳过 materialization，`distinct_subject`/`distinct_key` 真正
   生效；chunk 输入与 merge 输出保留 `USUBJID` 与自定义键。
@@ -383,7 +383,7 @@ P6 之后与 P2 之后的 demo 输出有 4 个文件不同，均为预期：
 `test/testthat/test-block-duplicate-guard.R` 末尾追加 6 个用例，断言
 「guard 的每个 BY 变量都被其输入数据集 keep」而非仅断言语句出现，另覆盖
 `record` 不压缩记录、exclusive 无空键、顶层 continuous 走 `_TFL_CUNIT_*`、
-`distinct_key` 变量贯通、guard 读 `_TFL_KSRC_*` 且不含 `column_order`。
+`distinct_key` 变量贯通、guard 读 `_TFL_KGRD_*` 且不含 `column_order`。
 
 ### 保留的设计取舍
 
@@ -454,3 +454,58 @@ P6 之后与 P2 之后的 demo 输出有 4 个文件不同，均为预期：
 - **nested guard 的位置字段**在 guard 输入里构造，而不是让 level 表本身带
   `chunk_order`。后者会污染层级表的语义，并让渲染阶段继续依赖一个与节点无关
   的批内序号。
+
+## 11. 第三轮审查（2026-10-27）— 可维护性
+
+第二轮修复通过核验后，第三轮审查指出三处可维护性问题。这三条都不是生成语义
+错误，而是让后续维护更容易误判的地方。
+
+| 编号 | 问题 | 处理 |
+|---|---|---|
+| M1 | 回归测试按固定缩进与前 5 行统计投影列数，5 键时误判为 5 对 4 | 改为按 SELECT→FROM 全范围解析投影，并加 6 键用例 |
+| M2 | `categorical_source_dataset()` 与 `categorical_guard_source_dataset()` 返回同一名字 `_TFL_KSRC_*` | guard 投影改名为 `_TFL_KGRD_*`，两个入口对应两个不同数据集 |
+| M3 | `continuous.R:224` 注释称下游 precision/render 仍解析 `USUBJID`，实际 precision 用 `chunk_order/node_key/source_row`；categorical 的 "Filter once" 掩盖了检查开启时的两次读取 | 两处注释改为当前事实 |
+
+### M1 细节
+
+旧断言：
+
+```r
+scaffold_cols <- length(grep("^         , t\.", lines[scaffold_at:length(lines)][1:5]))
+```
+
+两个脆弱点：固定缩进（`^         , t\.`）与固定窗口（`[1:5]`）。键数超过 4 时
+第 5 个键落在窗口外，于是「5 对 4」误判失败——但实际两侧都是 5。反向验证中它
+之所以能抓到 bug，只是因为当时的用例恰好只有 1 个键。
+
+新实现把投影当 SQL 解析：从 `select` 到对应 `from` 之间按逗号切分，再去掉表
+别名，得到列名序列；断言两侧列名**逐位相同**。测试还是反向验证过：删掉 scaffold
+的 `t.<key>` 投影后，`identical(scaffold_cols, event_cols)` 立刻失败。
+
+### M2 细节
+
+两个函数返回同一字符串，是历史遗留：`categorical_source_dataset()` 服务
+`primitive_source_input()` 的 filtered source，`categorical_guard_source_dataset()`
+服务 guard 的 key-only 投影。它们是两个不同的数据集，名字相同会让读者以为
+guard 排序的就是 filtered source。现在后者为 `_TFL_KGRD_*`（`K` = categorical，
+`GRD` = guard），与 `_TFL_CSRCG_*`（continuous nested guard）平行。
+
+### M3 细节
+
+- `continuous.R` 的 materialization keep 注释原称「下游 precision 与 render 仍
+  解析 USUBJID」。实际 `continuous_precision_source()` 只按
+  `chunk_order node_key source_row` 排序，`render_long_form_source()` 也不读取
+  `USUBJID`。保留 `USUBJID` 的真实理由是分母计数与 header membership 仍用它，
+  以及声明的 distinct key 必须穿过 materialization。
+- categorical 顶层原注释为 `/* Filter once and emit categorical counting events. */`。
+  检查开启时源数据实际被读两次：一次给 guard 投影，一次给计数事件。注释改为
+  明确写出这一点，避免读者以为只有一次读取。
+
+### 不做的事
+
+- **不合并两个 guard 投影 helper**：categorical 的位置键是
+  `chunk_order [+ node_key]`，continuous nested 的位置键固定
+  `chunk_order node_key`，且后者必须自己构造 `chunk_order`。强抽一个共享函数
+  会把这两个差异推到参数里，可读性反而下降。
+- **不缩短 `on 0 = 1` 的类型继承说明**：它解释的是一个不直观但必要的技巧，
+  属于 AGENTS.md 要求的「解释意图与不明显的逻辑」。

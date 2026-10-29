@@ -16,10 +16,11 @@ categorical_chunk_pre_dataset <- function(batch_order, chunk_order) {
   sprintf("_TFL_KPRE_%03d_%03d", batch_order, chunk_order)
 }
 
+# The guard reads a key-only projection of the source, which is a different
+# dataset from the filtered source above even though both derive from it.
 categorical_guard_source_dataset <- function(batch_order, chunk_order) {
-  sprintf("_TFL_KSRC_%03d_%03d", batch_order, chunk_order)
+  sprintf("_TFL_KGRD_%03d_%03d", batch_order, chunk_order)
 }
-
 categorical_combined_pre_dataset <- function(batch_order) {
   sprintf("_TFL_KPRE_%03d", batch_order)
 }
@@ -97,8 +98,10 @@ categorical_chunk_source <- function(plan, entry) {
     "run;"
   ), collapse = "\n"))
   paste(c(
-    "/* Filter categorical chunk source before merge. */",
-    "/* Filter once and emit categorical counting events. */",
+    "/* Emit categorical counting events from the filtered chunk source. */",
+    # The guard above already read the source once to project its keys; this step
+    # reads it again for the counting events, so the source is read twice when
+    # checking is enabled.
     guard,
     paste0("data ", pre_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
