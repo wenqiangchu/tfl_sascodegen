@@ -138,11 +138,17 @@ categorical_batch_source_input <- function(plan) {
     } else NA_integer_
   }, integer(1L))
   header_orders <- header_orders[!is.na(header_orders)]
+  # The scaffold rows must line up with the event rows in the UNION ALL, so they
+  # have to carry the declared distinct keys as well. The keys are taken from the
+  # event side through a never-matching join rather than written as literal
+  # missing values, so both branches get the same column type as well as count.
   scaffold <- if (length(header_orders)) c(
     "  union all",
     "  select b.chunk_order, m.USUBJID, m.header_column_id, m.column_order,",
     "         . as source_row, 0 as row_order, '' as node_key, 1 as denominator_eligible",
+    if (length(extra_keys)) paste0("         , t.", extra_keys, collapse = "\n"),
     paste0("  from ", chunks, " as b cross join ", plan$membership_dataset, " as m"),
+    paste0("    left join ", pre, " as t on 0 = 1"),
     paste0("  where b.chunk_order in (", paste(header_orders, collapse = ", "), ")")
   ) else character()
   c(

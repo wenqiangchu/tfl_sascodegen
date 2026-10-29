@@ -393,3 +393,64 @@ P6 之后与 P2 之后的 demo 输出有 4 个文件不同，均为预期：
 - **D8/P4** 成立但结果依赖输入顺序，已在两版 user-guide 补充说明；冲突夹具断言
   的仍是「继续执行」而非实际保留值与统计量，这属于 SAS 侧运行期验证，不在本应用
   边界内。
+
+## 10. 第二轮审查（2026-10-27）
+
+第二轮外部审查报告 2 个 P1 与 1 个测试缺陷。三条全部复现确认后修复
+（提交 `b882cc8` 之后的 `Guard both membership union branches and nested chunk positions`）。
+
+### 问题归属
+
+| 编号 | 问题 | 归属 |
+|---|---|---|
+| P1-a | `categorical.R` 事件侧 SELECT 增加自定义键，scaffold 侧未同步，UNION 两侧列数不一致 | 本次 `b882cc8` 引入（只改了一侧） |
+| P1-b | nested continuous guard 对 level 表 `by chunk_order`，但该表从未生成 `chunk_order` | 本次 `b882cc8` 引入（改输入未补字段） |
+| P2 | 新增 nested 回归测试实际被 skip，且 feeder 正则匹配不到 | 本次引入（路径用相对 `assets/`） |
+
+### 根因
+
+- **P1-a**：`categorical_batch_source_input()` 用 `union all` 合并「事件行」与
+  「header_population 占位行」。`extra_keys`（来自 `primitive_counting_keys()`）
+  只加进事件分支。SQL 的 `UNION ALL` 要求两侧列数、顺序、类型一致，因此该批次
+  在 `proc sql` 阶段必然失败。它与 `include_duplicate_check` 无关，是两条分支
+  不对称导致的。
+- **P1-b**：`_TFL_HLEVEL_*` 由 `data _TFL_HLEVEL_* _TFL_HNODES_*; set _TFL_HSORT_*;`
+  生成，全程不赋 `chunk_order`；`chunk_order` 只在后续 `_TFL_CIN_*` 里赋值。
+  guard 直接排序 level 表，于是 `by chunk_order` 引用不存在的变量。上一轮把
+  guard 输入从 `HMERGE`（已按列广播）改为 `HLEVEL`（正确粒度）时，漏了「正确的
+  粒度但不含位置字段」这一点。
+- **P2**：`testthat::test_path()` 的相对基准是 `test/testthat`，因此
+  `file.path("assets", ...)` 永远找不到根目录的 bundle，`skip_if_not()` 静默
+  跳过。feeder 正则假设 guard 输入由 `set <guarded>` 直接喂入，但修复后它由
+  DATA step 构造，断言条件与实现不匹配。
+
+### 修复
+
+1. `categorical.R`：scaffold 分支新增
+   `left join <pre> as t on 0 = 1` 并投影 `t.<key>`。用永不匹配的连接从事件侧
+   取键，而不是写 `'' as VISIT` 字面量，因此两侧列的类型也一致，无需人工推断
+   每个键的 SAS 类型。
+2. `continuous.R`：新增 `continuous_guard_source_dataset()` 与一个 DATA step，
+   在 level 表上显式 `chunk_order = <plan$chunk_orders[[1L]]>` 并 `keep` 位置键
+   与检查键，再交给 `source_block_duplicate_guard()`。
+3. `test-block-duplicate-guard.R`：改用 `file.path(project_root, "assets", ...)`；
+   新增 3 个用例——UNION 两侧列数与键一致、nested continuous guard 构造
+   `chunk_order` 且 BY 变量都在 guard 输入的 keep 里、nested `record` 不产生 guard。
+
+### 反向验证
+
+两条回归测试都做了「先回退修复、确认测试失败、再恢复」的验证：
+
+- 移除 scaffold 的 `t.<key>` 投影与 `left join` → `declared keys reach both
+  branches` 用例 3 条断言失败。
+- 移除 nested continuous 的 `chunk_order` 赋值 DATA step → `nested continuous
+  guards construct the chunk position field` 用例 4 条断言失败。
+
+### 保留的设计取舍
+
+- **UNION 类型一致性**用 `on 0 = 1` 的连接实现，而不是在 scaffold 分支手写
+  类型化字面量。代价是执行计划里多一个空连接；收益是新增 `distinct_key` 时不
+  需要维护第二份类型映射。
+- **nested guard 的位置字段**在 guard 输入里构造，而不是让 level 表本身带
+  `chunk_order`。后者会污染层级表的语义，并让渲染阶段继续依赖一个与节点无关
+  的批内序号。

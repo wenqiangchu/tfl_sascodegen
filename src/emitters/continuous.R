@@ -134,6 +134,10 @@ continuous_batch_source_input <- function(plan) {
   )
 }
 
+continuous_guard_source_dataset <- function(batch_order, chunk_order) {
+  sprintf("_TFL_CSRCG_%03d_%03d", batch_order, chunk_order)
+}
+
 continuous_counting_unit_source <- function(plan) {
   chunk <- plan$chunks[[1L]]
   unit <- chunk$counting_unit %||% "distinct_subject"
@@ -141,13 +145,28 @@ continuous_counting_unit_source <- function(plan) {
   unit_keys <- primitive_counting_keys(chunk, unit)
   # Top-level batches are guarded in continuous_batch_source_input(), before the
   # membership join; nested ones are guarded here, on the node-scoped level
-  # table, which still holds one row per source record.
+  # table, which still holds one row per source record. That level table has no
+  # chunk_order, so the position field has to be constructed for the guard.
   guard <- if (isTRUE(plan$include_duplicate_check) && !is.null(plan$nodes_dataset)) {
-    source_block_duplicate_guard(
-      plan$node_source_dataset %||% plan$input_dataset,
-      c("chunk_order", "node_key"), primitive_check_keys(chunk, unit),
-      paste0("C", suffix), scope_field = "chunk_order"
-    )
+    check_keys <- primitive_check_keys(chunk, unit)
+    if (!length(check_keys)) character() else {
+      chunk_order <- plan$chunk_orders[[1L]]
+      source_dataset <- plan$node_source_dataset %||% plan$input_dataset
+      position_keys <- c("chunk_order", "node_key")
+      guard_dataset <- continuous_guard_source_dataset(plan$batch_order, chunk_order)
+      c(
+        "/* Tag level records with their chunk position for duplicate checking. */",
+        paste0("data ", guard_dataset, ";"),
+        paste0("  set ", source_dataset, ";"),
+        paste0("  chunk_order = ", chunk_order, ";"),
+        paste0("  keep ", paste(unique(c(position_keys, check_keys)), collapse = " "), ";"),
+        "run;",
+        source_block_duplicate_guard(
+          guard_dataset, position_keys, check_keys,
+          paste0("C", suffix), scope_field = "chunk_order"
+        )
+      )
+    }
   } else character()
   # record counting keys every row on its own source_row, so there is nothing to
   # collapse; the input already is one row per counted unit.

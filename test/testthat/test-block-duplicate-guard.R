@@ -278,10 +278,53 @@ testthat::test_that("continuous guards also run before the membership join", {
   testthat::expect_true("USUBJID" %in% keeps[[guarded]])
 })
 
-testthat::test_that("nested guards read the node level table, not the merge", {
-  # The hierarchical membership join broadcasts each level record per header
-  # column, so a guard on the merged source would count broadcast copies.
-  path <- file.path("assets", "demo_metadata.zip")
+
+# Pull the BY variables out of the sort that feeds a guard.
+keep_by_vars <- function(lines, guard_start) {
+  # The sort statement sits inside the next few lines after the guard header.
+  hit <- grep("^  by ", lines[guard_start:min(guard_start + 4L, length(lines))],
+              value = TRUE)
+  testthat::expect_length(hit, 1L)
+  vars <- strsplit(trimws(sub(";$", "", hit[[1L]])), " ", fixed = TRUE)[[1L]]
+  vars[-1L]
+}
+nested_continuous_duplicate_fixture <- function(unit = "distinct_subject", distinct_key = NULL) {
+  # A minimal nested continuous batch: one hierarchy level anchors one block, so
+  # the block runs against a node-scoped level table rather than the top level.
+  block <- list(
+    id = "a1", anchor_level = "l1", placement = "below",
+    type = "continuous_summary", counting_unit = unit,
+    analysis_variable = "AGE",
+    rows = list(list(id = "r1", type = "analysis", label = "Mean",
+                     statistics = list(list(id = "mean", digits = 1L)),
+                     cell_format = "{mean}"))
+  )
+  if (!is.null(distinct_key)) block$distinct_key <- distinct_key
+  new_metadata_bundle(
+    populations = list(list(id = "p", label = "Population", expression = "1")),
+    headers = list(list(id = "h", source_data = "adam.adsl", orientation = "landscape",
+                        columns = list(list(id = "all", label = "All", condition = "1",
+                                            display_order = 1L, width = 1,
+                                            alignment = "center")))),
+    tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
+    templates = list(list(id = "t", body = list(chunks = list(list(
+      id = "hier", type = "hierarchical_summary", source_data = "adam.adae",
+      filter = "SAFFL = 'Y'",
+      levels = list(
+        list(id = "l1", variable = "SOC", order_variable = "SOCN",
+             order_direction = "asc", node_role = "label", missing_policy = "exclude"),
+        list(id = "l2", variable = "PT", order_variable = "PTN",
+             order_direction = "asc", node_role = "label", missing_policy = "exclude")
+      ),
+      analysis_blocks = list(block)
+    )))))
+  )
+}
+
+testthat::test_that("nested categorical guards read the node level table", {
+  # The hierarchical membership join broadcasts each level record across header
+  # columns, so a guard on the merged source would count broadcast copies.
+  path <- file.path(project_root, "assets", "demo_metadata.zip")
   skip_if_not(file.exists(path), "demo bundle is not available")
   imported <- application_import_bundle(
     new_empty_workspace(), readBin(path, "raw", n = file.info(path)$size))
@@ -289,14 +332,79 @@ testthat::test_that("nested guards read the node level table, not the merge", {
   generated <- application_generate_source(imported$workspace, "ae_by_soc_pt",
                                            include_duplicate_check = TRUE)
   testthat::expect_true(generated$passed)
-  lines <- strsplit(generated$value, "
-", fixed = TRUE)[[1]]
+  lines <- strsplit(generated$value, "\n", fixed = TRUE)[[1]]
   guard_start <- grep("out=_TFL_GUARD_", lines)
   testthat::expect_length(guard_start, 1L)
   guarded <- sorted_input(lines[guard_start])
-  guards <- keep_lists(lines)
-  testthat::expect_false("column_order" %in% guards[[guarded]])
-  feeder <- grep(paste0("set ", guarded, "$"), lines, value = TRUE)
+  # The guard must not read a table that carries one row per header column.
+  testthat::expect_false("column_order" %in% keep_lists(lines)[[guarded]])
+  # The guard input is built by a DATA step, so the level table reaches it
+  # through that step rather than by being sorted directly.
+  build <- grep(paste0("^data ", guarded, ";$"), lines)
+  testthat::expect_length(build, 1L)
+  feeder <- grep("^  set _TFL_", lines[build:min(build + 4L, length(lines))],
+                 value = TRUE)
   testthat::expect_length(feeder, 1L)
-  testthat::expect_match(feeder[[1L]], "_TFL_HLEVEL_", fixed = TRUE)
+  testthat::expect_false(grepl("HMERGE|KMERGE|CPRE|CMERGE", feeder[[1L]]))
+})
+
+testthat::test_that("nested continuous guards construct the chunk position field", {
+  # A nested level table has no chunk_order, so sorting it by chunk_order without
+  # constructing the field references a variable that does not exist.
+  for (unit in c("distinct_subject", "distinct_key")) {
+    bundle <- nested_continuous_duplicate_fixture(
+      unit, if (unit == "distinct_key") c("USUBJID", "AESEQ") else NULL)
+    generated <- generate_table_source(bundle, "t1", include_duplicate_check = TRUE)
+    testthat::expect_true(generated$passed)
+    lines <- strsplit(generated$source, "\n", fixed = TRUE)[[1]]
+    guard_start <- grep("out=_TFL_GUARD_", lines)
+    testthat::expect_length(guard_start, 1L)
+    guarded <- sorted_input(lines[guard_start])
+    by_vars <- keep_by_vars(lines, guard_start)
+    # Every sorted variable has to exist in the guard input.
+    available <- keep_lists(lines)[[guarded]]
+    testthat::expect_false(is.null(available))
+    testthat::expect_true(all(by_vars %in% available))
+    # The level table never carries chunk_order, so the guard input must be built
+    # by a DATA step that assigns it explicitly.
+    build <- grep(paste0("^data ", guarded, ";$"), lines)
+    testthat::expect_length(build, 1L)
+    body <- lines[build:min(build + 6L, length(lines))]
+    testthat::expect_true(any(grepl("^  chunk_order = ", body)))
+  }
+})
+
+testthat::test_that("nested record counting emits no duplicate guard", {
+  bundle <- nested_continuous_duplicate_fixture("record")
+  generated <- generate_table_source(bundle, "t1", include_duplicate_check = TRUE)
+  testthat::expect_true(generated$passed)
+  testthat::expect_false(grepl("out=_TFL_GUARD_", generated$source, fixed = TRUE))
+})
+testthat::test_that("declared keys reach both branches of the membership union", {
+  # The scaffold branch supplies denominator rows for a header-population chunk.
+  # It runs through the same UNION ALL as the event branch, so it has to carry
+  # every declared distinct key as well; otherwise the two branches disagree on
+  # column count and SAS cannot build the merged table at all.
+  for (check in c(TRUE, FALSE)) {
+    chunk <- categorical_chunk("distinct_key", c("USUBJID", "VISIT"))
+    chunk$denominator <- list(type = "header_population")
+    result <- generate_table_source(base_bundle(chunk), "t1",
+                                    include_duplicate_check = check)
+    testthat::expect_true(result$passed)
+    lines <- strsplit(result$source, "\n", fixed = TRUE)[[1]]
+    union_at <- grep("^  union all$", lines)
+    testthat::expect_length(union_at, 1L)
+    event_at <- max(grep("^  select ", lines[seq_len(union_at)]))
+    scaffold_at <- union_at + grep("^  select ", lines[union_at:length(lines)])[1L]
+    # Count the projected columns by the continuation lines that add keys.
+    event_cols <- length(grep("^         , s\\.", lines[event_at:union_at]))
+    scaffold_cols <- length(grep("^         , t\\.", lines[scaffold_at:length(lines)][1:5]))
+    testthat::expect_equal(scaffold_cols, event_cols)
+    testthat::expect_gt(scaffold_cols, 0L)
+    # Both branches name the same key, so the merged table keeps one column.
+    event_side <- paste(lines[event_at:union_at], collapse = " ")
+    scaffold_side <- paste(lines[scaffold_at:length(lines)], collapse = " ")
+    testthat::expect_match(event_side, "s.VISIT", fixed = TRUE)
+    testthat::expect_match(scaffold_side, "t.VISIT", fixed = TRUE)
+  }
 })
