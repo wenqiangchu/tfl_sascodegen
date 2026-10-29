@@ -16,6 +16,10 @@ categorical_chunk_pre_dataset <- function(batch_order, chunk_order) {
   sprintf("_TFL_KPRE_%03d_%03d", batch_order, chunk_order)
 }
 
+categorical_guard_source_dataset <- function(batch_order, chunk_order) {
+  sprintf("_TFL_KSRC_%03d_%03d", batch_order, chunk_order)
+}
+
 categorical_combined_pre_dataset <- function(batch_order) {
   sprintf("_TFL_KPRE_%03d", batch_order)
 }
@@ -41,6 +45,28 @@ categorical_chunk_source <- function(plan, entry) {
   )
   numerator_keys <- primitive_counting_keys(chunk)
   denominator_keys <- primitive_counting_keys(chunk, denominator$unit %||% "distinct_subject")
+  # Duplicate checking is per chunk and runs on real source records, before any
+  # header, denominator, analysis-row or scaffold expansion. The guard needs its
+  # own chunk_order column, so it reads a small key-only projection rather than
+  # the event table, which no longer carries one record per source row.
+  guard_dataset <- categorical_guard_source_dataset(plan$batch_order, entry$chunk_order)
+  check_keys <- primitive_check_keys(chunk)
+  # Nested blocks carry a node_key; the same subject legitimately appears in
+  # several nodes, so node identity has to be part of the duplicate key.
+  guard_position_keys <- c("chunk_order", if (!is.null(plan$nodes_dataset)) "node_key")
+  guard <- if (isTRUE(plan$include_duplicate_check) && length(check_keys)) c(
+    "/* Keep one row per filtered source record for duplicate checking. */",
+    paste0("data ", guard_dataset, ";"),
+    paste0("  set ", chunk$source_data, ";"),
+    if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
+    paste0("  chunk_order = ", entry$chunk_order, ";"),
+    paste0("  keep ", paste(unique(c(guard_position_keys, check_keys)), collapse = " "), ";"),
+    "run;",
+    source_block_duplicate_guard(
+      guard_dataset, guard_position_keys, check_keys,
+      sprintf("%03d_%03d", plan$batch_order, entry$chunk_order)
+    )
+  ) else character()
   pre_dataset <- categorical_chunk_pre_dataset(plan$batch_order, entry$chunk_order)
   row_output <- if (is.null(plan$nodes_dataset)) paste0("output ", pre_dataset, ";") else "output;"
   row_lines <- unlist(lapply(seq_along(chunk$rows), function(row_order) {
@@ -50,6 +76,7 @@ categorical_chunk_source <- function(plan, entry) {
            "; ", row_output, " end;")
   }), use.names = FALSE)
   if (!is.null(plan$nodes_dataset)) return(paste(c(
+    guard,
     primitive_source_input(plan, entry, source_dataset, merged_dataset, "categorical"),
     "/* Normalize denominator and numerator counting events. */",
     paste0("data ", input_dataset, ";"),
@@ -68,6 +95,7 @@ categorical_chunk_source <- function(plan, entry) {
   paste(c(
     "/* Filter categorical chunk source before merge. */",
     "/* Filter once and emit categorical counting events. */",
+    guard,
     paste0("data ", pre_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
     paste0("  set ", chunk$source_data, ";"),
@@ -94,6 +122,12 @@ categorical_batch_source_input <- function(plan) {
   input_names <- vapply(plan$chunk_orders, function(order) {
     categorical_chunk_pre_dataset(plan$batch_order, order)
   }, character(1L))
+  # Declared distinct keys have to reach the analysis input, because the
+  # numerator and denominator sorts group on them by name.
+  extra_keys <- unique(unlist(lapply(plan$chunks, function(chunk) {
+    primitive_counting_keys(chunk)
+  }), use.names = FALSE))
+  extra_keys <- setdiff(extra_keys, c("chunk_order", "USUBJID", "source_row"))
   header_orders <- vapply(seq_along(plan$chunks), function(index) {
     if (identical(plan$chunks[[index]]$denominator$type, "header_population")) {
       plan$chunk_orders[[index]]
@@ -124,6 +158,9 @@ categorical_batch_source_input <- function(plan) {
     paste0("  create table ", merged, " as"),
     "  select s.chunk_order, m.USUBJID, m.header_column_id, m.column_order,",
     "         s.source_row, s.row_order, s.node_key, s.denominator_eligible",
+    # Declared distinct keys must survive the join, otherwise later BY lists
+    # reference variables that no longer exist.
+    if (length(extra_keys)) paste0("         , s.", extra_keys, collapse = "\n"),
     paste0("  from ", pre, " as s inner join ", plan$membership_dataset, " as m"),
     "    on s.USUBJID = m.USUBJID",
     scaffold,
@@ -133,7 +170,9 @@ categorical_batch_source_input <- function(plan) {
     "  length node_key $&_TFL_NODE_LEN;",
     paste0("  set ", merged, ";"),
     "  keep chunk_order row_order column_order node_key USUBJID source_row ",
-    "       denominator_eligible;",
+    "       denominator_eligible",
+    if (length(extra_keys)) paste0(" ", paste(extra_keys, collapse = " ")),
+    ";",
     "run;"
   )
 }
@@ -209,13 +248,9 @@ categorical_batch_analysis_source <- function(plan, exclusive = FALSE) {
       "run;"
     ),
     "/* Count declared units independently for denominator and numerator events. */",
-    if (isTRUE(plan$include_duplicate_check)) {
-      source_block_duplicate_guard(
-        plan$input_dataset,
-        c("chunk_order", if (!is.null(plan$nodes_dataset)) "node_key"),
-        numerator_keys, paste0("K", suffix), scope_field = "chunk_order"
-      )
-    } else character(),
+    # record counting keys every row on its own source_row, so NODUPKEY is a
+    # no-op there rather than a whole-table collapse. Later stages still need
+    # one row per source record.
     paste0("proc sort data=", plan$input_dataset, "(where=(row_order = 0)) out=_TFL_KDEN_", suffix, " nodupkey;"),
     paste0("  by ", paste(c(group_vars, denominator_keys), collapse = " "), ";"),
     "run;",

@@ -337,3 +337,59 @@ Rscript test/fixtures/sas/continuous_counting_units/build_sources.R
 - [x] P6：全部 SAS 夹具重新生成
 - [x] P6：`Rscript test/run_tests.R` 连续 3 次 exit=0
 - [x] P6：`git diff --check` 干净
+
+## 9. 完成后审查（2026-10-27）
+
+P1-P6 完成后对 `ea9a83d..fbf5fe5` 做独立审查，发现 5 个问题并全部修复。
+
+### 引入归属
+
+| # | 问题 | 归属 |
+| --- | --- | --- |
+| 1 | 顶层 continuous guard 引用已丢弃的 `USUBJID` | 本次引入（P3 把 guard 移到 merge 后的窄表） |
+| 2 | `record` 空键使 NODUPKEY 压缩全表；exclusive 生成 `if first. then` | 本次引入退化（NODUPKEY 是既存的，原 `record = "source_row"` 恰好安全） |
+| 3 | 顶层 continuous 跳过 counting-unit materialization | 既存缺陷（`1b9b5eb` 即如此） |
+| 4 | categorical membership merge 丢弃 `distinct_key` 变量 | 既存缺陷 |
+| 5 | guard 在已展开事件表上检查，把展开副本报成重复 | 本次引入（P3 选错位置） |
+
+### 根因
+
+`primitive_counting_keys()` 同时承担「记录身份键」与「是否检查」，`record` 返回
+`character()` 把二者塌缩成一个返回值。所有无条件消费该键的调用点因此静默失效。
+
+### 修复
+
+- 拆分为 `primitive_counting_keys()`（身份键，`record` 恒为 `source_row`）与
+  `primitive_check_keys()`（检查键，`record` 为空）。NODUPKEY 恢复正确性，
+  同时 `record` 仍不生成检查。
+- guard 移到**展开前**的真实源记录层，粒度为 per-chunk：categorical 用
+  轻量投影 `_TFL_KSRC_<batch>_<chunk>`（只保留位置键与检查键），continuous 直接
+  读 `_TFL_CIN_*`。nested 时位置键含 `node_key`。
+- 顶层 continuous 不再跳过 materialization，`distinct_subject`/`distinct_key` 真正
+  生效；chunk 输入与 merge 输出保留 `USUBJID` 与自定义键。
+- categorical membership merge 的 select 与 keep 动态带上 `distinct_key` 变量。
+
+### 预期输出变化
+
+P6 之后与 P2 之后的 demo 输出有 4 个文件不同，均为预期：
+
+- `baseline_characteristics.nocheck/check`：新增 `_TFL_CUNIT_001` materialization，
+  `PROC MEANS` 输入由 `_TFL_CIN_001` 改为 `_TFL_CUNIT_001`（问题 3）。
+- `ae_by_soc_pt.check`、`z_ae_overview.check`：guard 数据集与编号由
+  `_TFL_GUARD_K###`(展开后) 改为 `_TFL_GUARD_###_###`(源记录层)（问题 5）。
+
+### 新增回归测试
+
+`test/testthat/test-block-duplicate-guard.R` 末尾追加 6 个用例，断言
+「guard 的每个 BY 变量都被其输入数据集 keep」而非仅断言语句出现，另覆盖
+`record` 不压缩记录、exclusive 无空键、顶层 continuous 走 `_TFL_CUNIT_*`、
+`distinct_key` 变量贯通、guard 读 `_TFL_KSRC_*` 且不含 `column_order`。
+
+### 保留的设计取舍
+
+- **D7** 成立但需明确：`source_row` 唯一只证明物理行身份唯一，不证明业务键
+  （如 `USUBJID AESEQ`）完整。移除原检查后该责任完全交给调用方。需要该检查时
+  应声明 `counting_unit: distinct_key`，其语义是去重而非仅报错。
+- **D8/P4** 成立但结果依赖输入顺序，已在两版 user-guide 补充说明；冲突夹具断言
+  的仍是「继续执行」而非实际保留值与统计量，这属于 SAS 侧运行期验证，不在本应用
+  边界内。

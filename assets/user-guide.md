@@ -116,6 +116,20 @@ The duplicate check is on by default and reports each duplicated key at most
 once. It never drops records; it only writes `WARNING: [USER] duplicate_key`
 to the SAS log. Turning it off in the generate step removes only the check.
 
+### Continuous statistics and multiple values
+
+`distinct_subject` and `distinct_key` continuous chunks reduce each unit to one
+value before `PROC MEANS` runs, so `n` counts units rather than records. When a
+unit contributes more than one non-missing value, the generator cannot pick one
+without inventing a rule, so it writes
+`WARNING: [USER] continuous_unit_multiple_values` to the SAS log and keeps the
+value from the first non-missing record in input order - the smallest
+`source_row`. The run continues.
+
+This means the result depends on input row order, which a preceding sort fully
+determines. The warning is a data-quality signal, not a fatal error: check the
+log and make the source unique per unit if that is what the analysis requires.
+
 ### Migrating an older bundle
 
 Bundles exported before counting units existed have no `counting_unit` field

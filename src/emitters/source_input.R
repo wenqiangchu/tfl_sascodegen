@@ -42,12 +42,11 @@ primitive_source_filter <- function(plan, entry, source_dataset, kind) {
 # per-chunk field only created a second place for the same value to drift.
 subject_key_constant <- function() "USUBJID"
 
-source_block_duplicate_guard <- function(dataset, position_keys, unit_keys, suffix,
+source_block_duplicate_guard <- function(dataset, position_keys, check_keys, suffix,
                                          scope_field = NULL) {
-  # record counting derives its key from source_row, which is unique by
-  # construction, so a duplicate check there could never report anything.
-  if (!length(unit_keys)) return(character())
-  keys <- c(position_keys, unit_keys)
+  # An empty check key list means this counting unit has no duplicate concept.
+  if (!length(check_keys)) return(character())
+  keys <- c(position_keys, check_keys)
   source_duplicate_guard(dataset, keys, suffix, scope_field = scope_field)
 }
 
@@ -83,11 +82,22 @@ primitive_source_input <- function(plan, entry, source_dataset, merged_dataset, 
 }
 
 primitive_counting_keys <- function(chunk, unit = chunk$counting_unit %||% "distinct_subject") {
+  # The identity key says which records collapse into one counted unit. It is
+  # consumed by NODUPKEY and by every grouping that must agree with counting,
+  # so it must never be empty: an empty BY list silently turns NODUPKEY into a
+  # whole-table collapse.
   switch(unit,
-         # Every source record counts on its own, so there is no key to
-         # collapse on and therefore nothing to check or deduplicate.
-         record = character(),
+         record = "source_row",
          distinct_subject = "USUBJID",
          distinct_key = chunk$distinct_key,
          stop("Unsupported counting unit.", call. = FALSE))
+}
+
+primitive_check_keys <- function(chunk, unit = chunk$counting_unit %||% "distinct_subject") {
+  # Which keys deserve a duplicate warning. record counts each source row on its
+  # own, so source_row is unique by construction and a check could never fire.
+  # That is a property of the check, not of record identity, so it is kept
+  # separate from primitive_counting_keys().
+  if (identical(unit, "record")) return(character())
+  primitive_counting_keys(chunk, unit)
 }

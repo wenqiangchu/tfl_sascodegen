@@ -50,6 +50,11 @@ continuous_chunk_source <- function(plan, entry) {
       "run;"
     ), collapse = "\n"))
   }
+  unit_keys <- primitive_counting_keys(entry$chunk)
+  # A declared distinct key has to survive this normalization, because the
+  # counting-unit materialization later groups on it by name.
+  top_level_keep <- unique(c("chunk_order", "USUBJID", "analysis_value", "source_row",
+                             "node_key", unit_keys))
   paste(c(
     "/* Filter continuous chunk source before merge. */",
     "/* Normalize continuous analysis values before the batch merge. */",
@@ -62,7 +67,7 @@ continuous_chunk_source <- function(plan, entry) {
     "  source_row = _n_;",
     paste0("  chunk_order = ", entry$chunk_order, ";"),
     paste0("  analysis_value = ", entry$chunk$analysis_variable, ";"),
-    "  keep chunk_order USUBJID analysis_value source_row node_key;",
+    paste0("  keep ", paste(top_level_keep, collapse = " "), ";"),
     "run;"
   ), collapse = "\n")
 }
@@ -76,6 +81,12 @@ continuous_batch_source_input <- function(plan) {
     continuous_chunk_input_dataset(plan$batch_order, chunk_order)
   }, character(1L))
   subject_key <- subject_key_constant()
+  # Declared distinct keys must reach the merged input, because the
+  # counting-unit sort groups on them by name.
+  extra_keys <- unique(unlist(lapply(plan$chunks, function(chunk) {
+    primitive_counting_keys(chunk)
+  }), use.names = FALSE))
+  extra_keys <- setdiff(extra_keys, c("chunk_order", "USUBJID", "analysis_value", "source_row"))
   chunk_rows <- unlist(lapply(plan$chunk_orders, function(chunk_order) {
     paste0("  chunk_order = ", chunk_order, "; output;")
   }), use.names = FALSE)
@@ -94,6 +105,7 @@ continuous_batch_source_input <- function(plan) {
     paste0("  create table ", merged, " as"),
     "  select b.chunk_order, m.USUBJID, m.header_column_id, m.column_order,",
     "         s.source_row, s.analysis_value, '' as node_key length=&_TFL_NODE_LEN",
+    if (length(extra_keys)) paste0("         , s.", extra_keys, collapse = "\n"),
     paste0("  from ", chunks, " as b cross join ", plan$membership_dataset, " as m"),
     paste0("  left join ", combined, " as s"),
     paste0("    on s.chunk_order = b.chunk_order and s.", subject_key, " = m.USUBJID;"),
@@ -101,7 +113,11 @@ continuous_batch_source_input <- function(plan) {
     paste0("data ", plan$input_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
     paste0("  set ", merged, ";"),
-    "  keep chunk_order column_order analysis_value source_row node_key;",
+    # USUBJID is kept because distinct counting units group on it; it is not
+    # only a join key. Declared distinct keys must survive for the same reason.
+    paste0("  keep ", paste(unique(c("chunk_order", "column_order", "USUBJID",
+                                     "analysis_value", "source_row", "node_key",
+                                     extra_keys)), collapse = " "), ";"),
     "run;"
   )
 }
@@ -111,18 +127,23 @@ continuous_counting_unit_source <- function(plan) {
   unit <- chunk$counting_unit %||% "distinct_subject"
   suffix <- sprintf("%03d", plan$batch_order)
   unit_keys <- primitive_counting_keys(chunk, unit)
+  check_keys <- primitive_check_keys(chunk, unit)
   # Nested batches expose node_key; top-level batches only have chunk_order
   # because header expansion happens after this point.
   position_keys <- c("chunk_order", if (!is.null(plan$nodes_dataset)) "node_key")
   guard <- if (isTRUE(plan$include_duplicate_check)) {
     source_block_duplicate_guard(
-      plan$input_dataset, position_keys, unit_keys,
+      plan$input_dataset, position_keys, check_keys,
       paste0("C", suffix), scope_field = "chunk_order"
     )
   } else character()
-  if (is.null(plan$nodes_dataset) || identical(unit, "record")) {
+  # record counting keys every row on its own source_row, so there is nothing to
+  # collapse; the input already is one row per counted unit.
+  if (identical(unit, "record")) {
     return(list(source = guard, dataset = plan$input_dataset))
   }
+  # Distinct units are materialized for top-level chunks too. Skipping them
+  # there silently counted every source record, ignoring the declared unit.
   dataset <- continuous_counting_unit_dataset(plan$batch_order)
   sorted_dataset <- paste0("_TFL_CUNIT_SORT_", suffix)
   group_vars <- unique(c("chunk_order", "column_order", "node_key", unit_keys))
@@ -168,7 +189,10 @@ continuous_counting_unit_source <- function(plan) {
       "    source_row = _tfl_source_row;",
       "    output;",
       "  end;",
-      "  keep chunk_order column_order analysis_value source_row node_key;",
+      "  keep chunk_order column_order analysis_value source_row node_key",
+      # Downstream precision and render stages still resolve USUBJID, and a
+      # declared distinct key has to survive materialization.
+      "       ", paste(unique(c("USUBJID", unit_keys)), collapse = " "), ";",
       "run;"
     ),
     dataset = dataset

@@ -86,6 +86,17 @@ subject 只贡献一次时用 `distinct_subject`。
 重复检查默认开启，每个重复键最多报告一次。它不删除记录，只在 SAS log 中写入
 `WARNING: [USER] duplicate_key`。生成时关闭该开关只移除检查本身。
 
+### 连续统计与多值冲突
+
+`distinct_subject` 与 `distinct_key` 的 continuous chunk 会先把每个计数单位归约成一个
+值，再执行 `PROC MEANS`，因此 `n` 统计的是单位数而不是记录数。当一个单位贡献了不止
+一个非缺失值时，生成器不会凭空发明取值规则，而是向 SAS log 写入
+`WARNING: [USER] continuous_unit_multiple_values`，并保留输入顺序中第一条非缺失
+记录（即 `source_row` 最小者）的值，继续执行。
+
+因此结果依赖输入行顺序，而这由前置排序完全决定。该 warning 是数据质量信号而不是
+致命错误：请检查 log，如分析要求每个单位唯一，应先让 source 满足该条件。
+
 ### 旧 bundle 迁移
 
 在计数单位出现之前导出的 bundle 没有 `counting_unit` 字段，无法再导入。请为每个
