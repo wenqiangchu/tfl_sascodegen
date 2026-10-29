@@ -87,6 +87,9 @@ continuous_batch_source_input <- function(plan) {
     primitive_counting_keys(chunk)
   }), use.names = FALSE))
   extra_keys <- setdiff(extra_keys, c("chunk_order", "USUBJID", "analysis_value", "source_row"))
+  check_keys <- unique(unlist(lapply(plan$chunks, function(chunk) {
+    primitive_check_keys(chunk)
+  }), use.names = FALSE))
   chunk_rows <- unlist(lapply(plan$chunk_orders, function(chunk_order) {
     paste0("  chunk_order = ", chunk_order, "; output;")
   }), use.names = FALSE)
@@ -95,6 +98,15 @@ continuous_batch_source_input <- function(plan) {
     paste0("data ", combined, ";"),
     paste0("  set ", paste(chunk_inputs, collapse = " "), ";"),
     "run;",
+    # Duplicate checking runs here: the membership join below broadcasts each
+    # source record once per header column, so a later check would count the
+    # broadcast copies as duplicates.
+    if (isTRUE(plan$include_duplicate_check) && length(check_keys)) {
+      source_block_duplicate_guard(
+        combined, "chunk_order", check_keys, paste0("C", suffix),
+        scope_field = "chunk_order"
+      )
+    } else character(),
     "/* Preserve one scaffold row for every batch chunk and membership row. */",
     paste0("data ", chunks, ";"),
     "  length chunk_order 8;",
@@ -127,13 +139,13 @@ continuous_counting_unit_source <- function(plan) {
   unit <- chunk$counting_unit %||% "distinct_subject"
   suffix <- sprintf("%03d", plan$batch_order)
   unit_keys <- primitive_counting_keys(chunk, unit)
-  check_keys <- primitive_check_keys(chunk, unit)
-  # Nested batches expose node_key; top-level batches only have chunk_order
-  # because header expansion happens after this point.
-  position_keys <- c("chunk_order", if (!is.null(plan$nodes_dataset)) "node_key")
-  guard <- if (isTRUE(plan$include_duplicate_check)) {
+  # Top-level batches are guarded in continuous_batch_source_input(), before the
+  # membership join; nested ones are guarded here, on the node-scoped level
+  # table, which still holds one row per source record.
+  guard <- if (isTRUE(plan$include_duplicate_check) && !is.null(plan$nodes_dataset)) {
     source_block_duplicate_guard(
-      plan$input_dataset, position_keys, check_keys,
+      plan$node_source_dataset %||% plan$input_dataset,
+      c("chunk_order", "node_key"), primitive_check_keys(chunk, unit),
       paste0("C", suffix), scope_field = "chunk_order"
     )
   } else character()

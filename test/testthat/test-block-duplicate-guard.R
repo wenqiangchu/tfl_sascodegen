@@ -97,13 +97,13 @@ testthat::test_that("duplicate checking can be switched off entirely", {
 
 # --- Regressions found in review of the counting-unit change -----------------
 
-# Return the keep lists of every DATA step in a generated program, keyed by the
-# dataset each step writes.
+# Return the variables each DATA step exposes, keyed by the dataset it writes.
+# A step without a keep list inherits every variable from the datasets it
+# reads via SET, which is how _TFL_CPRE_* passes the chunk input through.
 keep_lists <- function(lines) {
-  # A keep list may wrap across lines, so join continuations until the
-  # terminating semicolon before splitting it into variable names.
   starts <- grep("^data [A-Z0-9_]+;", lines)
-  out <- list()
+  steps <- list()
+  order <- character()
   for (start in starts) {
     written <- sub("^data ([A-Z0-9_]+);", "\\1", lines[start])
     rest <- lines[(start + 1L):length(lines)]
@@ -111,19 +111,29 @@ keep_lists <- function(lines) {
     body <- rest[seq_len(stop_at)]
     keep_at <- grep("^  keep ", body)
     vars <- character()
-    for (at in keep_at) {
-      text <- body[at]
-      while (!grepl(";", text, fixed = TRUE) && at < length(body)) {
-        at <- at + 1L
-        text <- paste(text, body[at])
+    if (length(keep_at)) {
+      for (at in keep_at) {
+        text <- body[at]
+        while (!grepl(";", text, fixed = TRUE) && at < length(body)) {
+          at <- at + 1L
+          text <- paste(text, body[at])
+        }
+        text <- gsub(";", "", sub("^  keep ", "", text), fixed = TRUE)
+        vars <- c(vars, strsplit(trimws(text), " ", fixed = TRUE)[[1L]])
       }
-      text <- sub("^  keep ", "", text)
-      text <- gsub(";", "", text, fixed = TRUE)
-      vars <- c(vars, strsplit(trimws(text), " ", fixed = TRUE)[[1L]])
+    } else {
+      reads <- grep("^  set ", body, value = TRUE)
+      for (read in reads) {
+        text <- gsub(";", "", sub("^  set ", "", read), fixed = TRUE)
+        for (source in strsplit(trimws(text), " ", fixed = TRUE)[[1L]]) {
+          vars <- c(vars, steps[[source]])
+        }
+      }
     }
-    out[[written]] <- unique(vars[nzchar(vars)])
+    steps[[written]] <- unique(vars[nzchar(vars)])
+    order <- c(order, written)
   }
-  out
+  steps
 }
 
 # Pull `data=<name>` out of a `proc sort data=<name> out=...;` line.
@@ -240,4 +250,53 @@ testthat::test_that("guards run on source records, not on expanded copies", {
   keeps <- keep_lists(lines)
   testthat::expect_false("column_order" %in% keeps[[guarded]])
   testthat::expect_false("row_order" %in% keeps[[guarded]])
+})
+
+testthat::test_that("continuous guards also run before the membership join", {
+  # The same broadcast problem applied here: the guard used to sort _TFL_CIN_*,
+  # which already has one row per source record per header column.
+  bundle <- new_metadata_bundle(
+    populations = list(list(id = "p", label = "Population", expression = "1")),
+    headers = list(list(id = "h", source_data = "adam.adsl", orientation = "landscape",
+                        columns = list(
+                          list(id = "a", label = "A", condition = "1", display_order = 1L,
+                               width = 1, alignment = "center"),
+                          list(id = "b", label = "B", condition = "1", display_order = 2L,
+                               width = 1, alignment = "center")))),
+    tables = list(list(id = "t1", population_id = "p", header_id = "h", template_id = "t")),
+    templates = list(list(id = "t", body = list(chunks = list(continuous_chunk("distinct_subject")))))
+  )
+  result <- generate_table_source(bundle, "t1", include_duplicate_check = TRUE)
+  testthat::expect_true(result$passed)
+  lines <- strsplit(result$source, "\n", fixed = TRUE)[[1]]
+  guard_start <- grep("out=_TFL_GUARD_", lines)
+  testthat::expect_length(guard_start, 1L)
+  guarded <- sorted_input(lines[guard_start])
+  testthat::expect_match(guarded, "_TFL_CPRE_", fixed = TRUE)
+  keeps <- keep_lists(lines)
+  testthat::expect_false("column_order" %in% keeps[[guarded]])
+  testthat::expect_true("USUBJID" %in% keeps[[guarded]])
+})
+
+testthat::test_that("nested guards read the node level table, not the merge", {
+  # The hierarchical membership join broadcasts each level record per header
+  # column, so a guard on the merged source would count broadcast copies.
+  path <- file.path("assets", "demo_metadata.zip")
+  skip_if_not(file.exists(path), "demo bundle is not available")
+  imported <- application_import_bundle(
+    new_empty_workspace(), readBin(path, "raw", n = file.info(path)$size))
+  testthat::expect_true(imported$passed)
+  generated <- application_generate_source(imported$workspace, "ae_by_soc_pt",
+                                           include_duplicate_check = TRUE)
+  testthat::expect_true(generated$passed)
+  lines <- strsplit(generated$value, "
+", fixed = TRUE)[[1]]
+  guard_start <- grep("out=_TFL_GUARD_", lines)
+  testthat::expect_length(guard_start, 1L)
+  guarded <- sorted_input(lines[guard_start])
+  guards <- keep_lists(lines)
+  testthat::expect_false("column_order" %in% guards[[guarded]])
+  feeder <- grep(paste0("set ", guarded, "$"), lines, value = TRUE)
+  testthat::expect_length(feeder, 1L)
+  testthat::expect_match(feeder[[1L]], "_TFL_HLEVEL_", fixed = TRUE)
 })

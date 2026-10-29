@@ -77,10 +77,10 @@ testthat::test_that("compatible continuous chunks share one duplicate guard and 
   )
   result <- generate_table_source(bundle, "t1")
   testthat::expect_true(result$passed)
-  # Duplicate checking moved from the combined source to the per-block counting
-  # input, so the guard sorts _TFL_CIN_001 instead of _TFL_CPRE_001.
+  # The guard runs on the combined pre-merge input, because the membership
+  # join below duplicates each source record once per header column.
   testthat::expect_equal(length(regmatches(result$source,
-                                           gregexpr("proc sort data=_TFL_CIN_001 out=_TFL_GUARD_C001", result$source,
+                                           gregexpr("proc sort data=_TFL_CPRE_001 out=_TFL_GUARD_C001", result$source,
                                                     fixed = TRUE))[[1L]]), 1L)
   testthat::expect_match(result$source, "by chunk_order USUBJID;", fixed = TRUE)
   testthat::expect_equal(length(regmatches(result$source,

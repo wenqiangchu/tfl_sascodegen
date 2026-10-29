@@ -54,10 +54,14 @@ categorical_chunk_source <- function(plan, entry) {
   # Nested blocks carry a node_key; the same subject legitimately appears in
   # several nodes, so node identity has to be part of the duplicate key.
   guard_position_keys <- c("chunk_order", if (!is.null(plan$nodes_dataset)) "node_key")
+  # Nested blocks must read the node-scoped level table rather than the merged
+  # source, which the membership join has already broadcast across header
+  # columns; counting that table would report broadcast copies as duplicates.
+  guard_source <- if (!is.null(plan$node_source_dataset)) plan$node_source_dataset else chunk$source_data
   guard <- if (isTRUE(plan$include_duplicate_check) && length(check_keys)) c(
     "/* Keep one row per filtered source record for duplicate checking. */",
     paste0("data ", guard_dataset, ";"),
-    paste0("  set ", chunk$source_data, ";"),
+    paste0("  set ", guard_source, ";"),
     if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
     paste0("  chunk_order = ", entry$chunk_order, ";"),
     paste0("  keep ", paste(unique(c(guard_position_keys, check_keys)), collapse = " "), ";"),

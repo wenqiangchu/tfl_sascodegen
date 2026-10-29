@@ -92,6 +92,9 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
     header_columns_dataset = plan$header_columns_dataset,
     membership_dataset = sprintf("_TFL_HMEM_%03d", plan$batch_order),
     membership_expanded_source = TRUE,
+    # The node-scoped level table still has one row per source record; the
+    # HMERGE table above it has already been broadcast across header columns.
+    node_source_dataset = sprintf("_TFL_HLEVEL_%03d_%03d", plan$batch_order, level_order),
     subject_key = subject_key_constant(),
     nodes_dataset = hierarchical_nodes_dataset(plan$batch_order, level_order),
     global_denominator_source = global_denominator_source,
