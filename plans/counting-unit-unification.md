@@ -499,13 +499,13 @@ guard 排序的就是 filtered source。现在后者为 `_TFL_KGRD_*`（`K` = ca
 
   第二轮把这条注释改成「分母计数与 header membership 仍用它」，仍然不成立：
   continuous 本身不计算分母，header membership 也不读 `_TFL_CUNIT_*`。
-  `_TFL_CUNIT_*` 只有三个消费者——precision 排序、`PROC MEANS`、诊断 WARNING——
-  都不读 `USUBJID`。
+  `_TFL_CUNIT_*` 用于后续 precision 排序和连续统计分析，均不读取其中的
+  `USUBJID`。诊断 WARNING 在生成该表的 materialization 步骤中根据排序后的
+  输入发出，不是该表的消费者。
 
-  最终结论：`USUBJID` 此前是无条件保留的，而它本来就已经在 `unit_keys` 里
-  （`distinct_subject` 时即 `USUBJID`；`distinct_key` 时才显式声明）。因此改为
-  只保留 `unit_keys`，并删掉因果解释：materialization 之后本批次没有任何阶段
-  读取 subject，它留下的唯一理由是它就是计数键。附带效果是
+  最终结论：`USUBJID` 不需要无条件保留。`distinct_subject` 的 `unit_keys` 为
+  `USUBJID`；`distinct_key` 只有显式将 `USUBJID` 纳入声明键时才保留它。因此
+  输出只保留声明的 `unit_keys`，不再附加额外的 subject 字段。附带效果是
   `distinct_key: [VISIT, PARAMCD]` 不再多带一列 `USUBJID`。
 - categorical 顶层原注释为 `/* Filter once and emit categorical counting events. */`。
   检查开启时源数据实际被读两次：一次给 guard 投影，一次给计数事件。注释改为

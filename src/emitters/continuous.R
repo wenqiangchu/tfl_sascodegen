@@ -223,9 +223,8 @@ continuous_counting_unit_source <- function(plan) {
       "    output;",
       "  end;",
       "  keep chunk_order column_order analysis_value source_row node_key",
-      # The counting-unit keys have to survive because they identify the row. No
-      # later stage in this batch reads the subject, so it is kept only when the
-      # declared unit is the subject itself.
+      # Retain the declared counting-unit keys as row identifiers.
+      # Keep USUBJID only when it is part of that key.
       "       ", paste(unit_keys, collapse = " "), ";",
       "run;"
     ),
