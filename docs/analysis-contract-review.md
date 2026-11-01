@@ -1,18 +1,18 @@
 # 分析契约讨论记录
 
-日期：2026-10-30。本文区分已确认的行为、已修复的缺陷与待确认的模型方案，
-不将讨论建议写成已批准的新 schema。
+日期：2026-10-30，状态更新至 2026-11-01。本文区分已确认的行为、已修复的缺陷与
+待确认的模型方案，不将讨论建议写成已批准的新 schema。
 
 ## 1. 当前确认状态
 
 | 事项 | 状态 |
 | --- | --- |
-| 统一 primitive 与 hierarchical denominator | 三个 scope 与 scope/unit/expression/distinct_key 四字段已确认；来源细则、迁移和 emitter 契约待确认，尚未实现 |
+| 统一 primitive 与 hierarchical denominator | 已实现 `scope/unit/expression/distinct_key`；来源规则、v2 迁移和 emitter 契约已落地并通过全量测试 |
 | 保留实际分类分子，分母为零时仅 pct 不可估计 | 已确认并修复 |
 | 模板编辑和 Save 保留已声明的 result_sort | 已有契约的维护缺陷，已修复 |
-| SOC 下显示严重程度分布与 PT，PT 下显示严重程度分布 | 业务需求已确认；表示方式和记录选择字段待确认 |
+| SOC 下显示严重程度分布与 PT，PT 下显示严重程度分布 | 已由线性 hierarchical levels 和 analysis blocks 表达；最高程度由调用方预处理 |
 | 同一受试者在 SOC/PT 内取最高严重程度 | 已确认通过 `custom_code.before` 或预先准备的 ADaM source 实现，不新增字段 |
-| 用自定义 SAS format 定义节点值域和显示标签 | P-2d 核心契约已确认；parser/UI 已实现，hierarchical emitter 正在实现 |
+| 用自定义 SAS format 定义节点值域和显示标签 | P-2d parser、UI、hierarchical emitter 已实现；format 运行期由调用方 SAS 环境提供 |
 
 ## 2. 两种列需求的区别
 
@@ -272,8 +272,8 @@ metadata、节点身份、source/anchor 范围、排序/遍历和布局，涉及
 
 这说明「分子单位」与「分母单位」表面独立，键契约实际上耦合。用户随后已认可
 scope/unit/expression/distinct_key 统一对象，独立分母键包含在批准范围内；具体来源
-细则、迁移和 emitter 契约尚待确认，见 [统一分母契约](denominator-contract-design.md)。
-本轮尚未实现新模型。
+细则、迁移和 emitter 契约已按[统一分母契约](denominator-contract-design.md)落地。
+该统一模型已在当前实现中落地；本段保留原始错配作为设计背景。
 
 ## 6. 零计数与零分母
 
@@ -283,6 +283,6 @@ scope/unit/expression/distinct_key 统一对象，独立分母键包含在批准
 | 有受试者，但 SEX 全缺失；分母为 non_missing(SEX) | denominator=0，但 Missing row 的 numerator 可以非零 |
 | 自定义分母谓词不匹配任何记录 | denominator=0，不能据此改写独立 row condition 的实际 numerator |
 
-当前程序先计算 row counting events，通过 FREQ 和 expected-cell join 得到实际
+当前程序先计算 row counting events，通过 PROC MEANS 和 expected-cell join 得到实际
 numerator；本次只移除了 denominator=0 分支中覆盖 numerator 的赋值。pct 在分母
 为零时不可估计，仍渲染为 NE。这不增加数据级验证，也不改变 population membership。

@@ -47,7 +47,10 @@ hierarchical source 中保留原始事件，并派生 `SOC_MAX_SEV` 与 `PT_MAX_
 parser、UI、hierarchical emitter 与 render，属于较大重构。本轮不继续展开该方向的
 方案讨论。当前 `parent_level` 的值不改变生成器按 levels sequence 处理的行为。
 
-## P-2d：format 节点目录（核心设计已决定，边界待定义）
+## P-2d：format 节点目录（已关闭）
+
+P-2d 的设计边界和实现已完成，完整 test suite 已通过。应用仍不执行 SAS；
+`PRELOADFMT`、`COMPLETETYPES`、`CLASSDATA=` 的实际运行结果由调用方 SAS 环境验证。
 
 用户确认动态 level 可以引用调用方提供的 SAS format。format 必须已经在调用方的
 format catalog 中定义，或由 `custom_code.before` 定义；应用不读取 catalog，也不
