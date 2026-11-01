@@ -10,6 +10,11 @@
 population、header、table、template、chunk 以及内存态编辑工作区，不规定任何
 仓库、目录、物理路径或具体实现语言。
 
+分析契约更新（2026-10-31）：分类分子保留实际计数，不因分母为零而改写为零；
+分母为零时只有百分比不可估计。统一分母模型及实施规则已批准并实现，bundle
+schema_version 固定为 2，严格接受 v2，不自动转换 v1。format 节点目录和最高严重程度
+记录选择的具体字段仍在单独设计。
+
 本文的目标是让实现可以从空白工作区开始：
 
 1. 导入一个 metadata bundle 文件；
@@ -118,7 +123,7 @@ templates/<template_id>.yaml
 `manifest.yaml` 只包含：
 
 ~~~yaml
-schema_version: 1
+schema_version: 2
 ~~~
 
 `populations.yaml` 的根字段为 `populations`，`headers.yaml` 的根字段为
@@ -128,7 +133,7 @@ schema_version: 1
 下面的 YAML 片段展示各文件中的逻辑内容，不表示单一文件布局：
 
 ~~~yaml
-schema_version: 1
+schema_version: 2
 
 populations:
   - id: safety
@@ -177,6 +182,7 @@ templates:
         - id: demog_001
           type: continuous_summary
           source_data: ADAM.ADSL
+          counting_unit: distinct_subject
           analysis_variable: AGE
           rows:
             - id: demog_001_001
@@ -471,6 +477,7 @@ id: demog_001
 type: continuous_summary
 source_data: ADAM.ADSL
 filter: 'not missing(AGE)'
+counting_unit: distinct_subject
 rows:
   - <RowMetadata>
 ~~~
@@ -481,6 +488,8 @@ rows:
 | type | registered type ID | 四类 chunk 之一，或实现注册的扩展类型。 |
 | source_data | non-empty string | 外部 SAS 数据集或 custom code 创建的数据集引用；作为 opaque SAS source text 原样保留。 |
 | filter | string，可选 | SAS logical expression，作用于当前 chunk source。 |
+| counting_unit | enum，primitive 必填 | record、distinct_subject 或 distinct_key；hierarchical 在 analysis block 声明该字段。 |
+| distinct_key | 字段序列，可选 | primitive counting_unit 为 distinct_key 时必填，其他单位不得声明；不包含排序方向。 |
 | rows | sequence | primitive chunk 的静态行；hierarchical chunk 的行位于 analysis blocks。 |
 
 chunk 不携带数据集路径、上传内容或运行结果。
@@ -543,8 +552,9 @@ statistic 对象为 `ChunkStatisticValue`：
 
 continuous 和 categorical 都必须转换到该结构。categorical 的 denominator、numerator
 和 overlap guard 计数可以保留在 emitter-private 对象中；公共结果只保存 `n` 或
-`pct`，其中 `pct = 100 * n / denominator`，denominator 为零时 `n=0` 且 `pct`
-不可估计。上述对象只在生成期存在，不作为文件字段导出，也不表示平台已经得到真实
+`pct`，其中 `pct = 100 * n / denominator`。`n` 始终保留实际匹配单位数；
+denominator 为零时 `pct` 不可估计，不能据此把非零 `n` 改为零。没有匹配计数
+事件时 `n=0`。上述对象只在生成期存在，不作为文件字段导出，也不表示平台已经得到真实
 统计值。
 
 统一的逻辑展示结果为 `ChunkRenderResult`，至少包含：
@@ -587,6 +597,7 @@ id: demog_001
 type: continuous_summary
 source_data: ADAM.ADSL
 filter: 'not missing(AGE)'
+counting_unit: distinct_subject
 analysis_variable: AGE
 rows:
   - id: demog_001_001
@@ -604,14 +615,16 @@ rows:
 
 - analysis_variable 是待分析的 SAS numeric variable。
 - 支持的 statistic ID 为 n、mean、sd、median、q1、q3、min、max。
-- 首期目标分析粒度固定为 subject，subject key 固定为 USUBJID；平台不读取数据
-  验证该前提。
-- n 表示当前 header column 中 analysis variable 非缺失的唯一 subject
-  数。
+- `counting_unit` 必填，取值为 record、distinct_subject 或 distinct_key；
+  distinct_key 需声明字段序列。subject membership 的关联键固定为 USUBJID。
+- n 表示当前 header column 中 analysis variable 非缺失的计数单位数；
+  distinct_subject 时才是非缺失值的唯一 subject 数。
 - mean、sd、分位数、min、max 通常排除 SAS numeric missing values。
 - sd 表示 sample standard deviation；分母为 n-1。
-- 同一个 subject 出现多条记录时，平台不自动取第一条、最大值或平均值。调用方
-  必须在外部准备符合预期粒度的数据，或在 custom before 中明确整理。
+- record 保留每条源记录。distinct_subject/distinct_key 在每个计数单位内归约为
+  一个值；多个非缺失值时写入 WARNING，保留输入顺序首个非缺失值继续分析。
+  这不替代 SAP 的分析记录选择规则。最高严重程度等业务选择仍需明确的数据准备
+  或后续批准的记录选择契约，不由计数键或行条件隐式完成。
 
 emitter 固定使用 `PROC MEANS` 生成上述统计量；不显式设置 `PCTLDEF`，直接采用
 SAS 默认的 percentile definition。missing、n=0、n=1、rounding、digits 和最终字符
@@ -623,10 +636,12 @@ cell 的字段类型按 P0-8 的 emitter contract 处理。
 id: demog_002
 type: categorical_summary_nonexclusive
 source_data: ADAM.ADSL
-filter: 'not missing(SEX)'
+counting_unit: distinct_subject
 denominator:
-  type: non_missing
-  variable: SEX
+  scope: chunk_source
+  unit: distinct_subject
+  expression: 'not missing(SEX)'
+
 rows:
   - id: demog_002_001
     type: analysis
@@ -641,15 +656,18 @@ rows:
 
 字段和语义：
 
-- denominator.type 为 header_population、non_missing 或 custom。
-- non_missing 需要 variable；custom 需要 SAS expression。
-- analysis row 的 condition 定义分子。
-- 多个 row condition 可以命中同一个 counting unit；该类型不要求互斥。
+- denominator 必须声明 `scope` 和 `unit`，可带 `expression`；unit 为 `distinct_key`
+  时必须提供独立的 `distinct_key` 字段序列。
+- primitive scope 仅为 `header_population` 或 `chunk_source`；Header scope 只允许
+  `distinct_subject`。chunk_source 可使用三种计数单位。
+- 分母 expression 是 SAS logical expression，只筛选分母，不隐式过滤分子。
+- analysis row 的 condition 定义分子。多个 row condition 可以命中同一计数单位。
 - 支持 n 和 pct。通常 pct = 100 * numerator / denominator。
-- header_population 使用当前 header column 的 population subjects；non_missing
-  和 custom 在 filtered source 上构造分母。
-- denominator 为零时，已确认 `n=0`、`pct` 为 not estimable，最终显示为 `NE`；具体
-  SAS 字段和 DATA/PROC 实现按 P0-8 的 emitter contract 生成。
+- Header 分母按 population、当前 column condition 和 denominator expression 筛选
+  Header source，然后按 USUBJID 去重。chunk_source 基于完整 chunk filter 后的 source，
+  限定当前 Header 列，不受动态层级 missing_policy 或 row condition 限制。
+- 分母为零时只有 `pct` 不可估计并显示 `NE`；`n` 保留实际计数。没有匹配计数事件时
+  `n=0`。具体 SAS DATA/PROC 实现按当前 emitter contract 生成。
 
 SAS emitter 按 P0-8 的 DATA step/PROC 实现 denominator、subject counting unit、
 百分比精度和字符格式。平台不读取数据，也不检查 numerator 是否超过 denominator。
@@ -660,8 +678,10 @@ SAS emitter 按 P0-8 的 DATA step/PROC 实现 denominator、subject counting un
 id: demog_003
 type: categorical_summary_exclusive
 source_data: ADAM.ADSL
+counting_unit: distinct_subject
 denominator:
-  type: header_population
+  scope: header_population
+  unit: distinct_subject
 rows:
   - id: demog_003_001
     type: analysis
@@ -806,19 +826,29 @@ continuous unit 冲突不得通过最大值、最小值、平均值或其他隐�
 调用方需要根据 SAS log 判断结果是否可接受，或在 `custom_code.before` 或外部
 数据准备中派生唯一分析记录。
 
-hierarchical categorical block 的 denominator 可声明：
+categorical primitive chunk 和 hierarchical categorical block 共用分母对象：
 
 ~~~yaml
 denominator:
-  scope: header_population | current_group | non_missing | custom
+  scope: header_population | chunk_source | current_group
   unit: record | distinct_subject | distinct_key
-  variable: <required for non_missing>
-  expression: '<required for custom>'
+  expression: '<optional SAS logical expression>'
+  distinct_key:
+    - <required when unit is distinct_key>
 ~~~
 
-scope 表示生成代码应使用的业务范围，不由 generator 隐式推断。层级排序、
-动态节点发现、record-to-subject 广播和最终单 stub row 的 SAS 实现按 P0-8 的
-hierarchical emitter contract 执行。
+Primitive categorical chunk 仅允许 header_population 和 chunk_source；hierarchical
+categorical block 可额外使用 current_group。header_population 只允许
+`distinct_subject`。Header 分母表达式在 population-filtered Header source 上与
+当前 column condition 同时判断，符合条件后按 USUBJID 去重。chunk_source 基于完整
+chunk filter 后的 source，按 Header membership 限定当前列，不继承动态层级缺失筛选。
+expression 只过滤分母；distinct_key 独立于分子键，不能承担最高严重程度记录选择。
+
+Bundle 与 manifest 固定使用 schema_version=2，严格接受和导出 v2。v1 返回
+`bundle_schema_unsupported`，不自动转换；旧 bundle 按
+[迁移对照](docs/denominator-contract-design.md#51-语义对照) 显式更新。缺少可确定的
+独立 denominator distinct_key 时，须先补充业务键。分母为零时只有 pct 不可估计，显示
+NE；n 保留实际匹配的计数。
 
 ## 10. SAS 表达式与缺失值语义
 
@@ -843,8 +873,8 @@ step WHERE/IF 可接受的语法为基准：
 - SAS 数值缺失参与比较时有其自身排序规则；如果业务意图是“非缺失值”，
   必须显式写 not missing(variable)，不能依赖比较结果排除缺失。
 - 连续统计通常排除缺失值；分类 row condition 返回缺失时通常不进入分子。
-- denominator 为零的 categorical cell 使用 `n=0` 与 `pct` not estimable，并在 render
-  中显示为 `NE`；其他统计量不可估计或 source 没有符合记录时，按对应 emitter contract
+- denominator 为零的 categorical cell 保留实际 `n`，`pct` not estimable 并在 render
+  中显示为 `NE`；实际不存在计数事件时 `n=0`。其他统计量不可估计或 source 没有符合记录时，按对应 emitter contract
   生成 SAS numeric missing/`NE` 结果。平台只生成相应代码，不读取数据或执行代码。
 
 表达式是 opaque SAS source text。平台不把 TRUE、NA、!is.na(x)、== 等其他语言
@@ -966,8 +996,10 @@ study 或 artifact path。
 - chunk card 按 registry 渲染公共字段和专属字段；
 - primitive chunk 编辑 source_data、SAS filter、analysis variable 或
   denominator；
-- hierarchical chunk 编辑 source contract、levels、analysis blocks 和
+- hierarchical chunk 编辑 source_data、filter、levels、analysis blocks 和
   nested rows；
+- `result_sort` 当前通过导入 metadata 声明；模板表单采集和 Save 必须保留它，
+  位置 ID 重编号时同步更新分析和行引用，不能因无专属控件而删除。
 - rows 支持 label/analysis、SAS condition、statistics、digits、cell format；
 - chunk、level、block、row 支持新增、删除、上移、下移；
 - 位置 ID 由 sequence 自动重编号，不能手工改写；
@@ -1119,8 +1151,8 @@ categorical batch 的规范化输入至少包含：
 每条记录表示一个 counting event；各 chunk 的 filter、denominator、row condition 和
 counting unit 在规范化阶段处理。`categorical_summary_nonexclusive` 与
 `categorical_summary_exclusive` 分别形成自己的 batch，并各自只调用一次 `PROC FREQ`。
-expected-cell skeleton 负责补回零计数；分母为零时 `n=0`、`pct` 为 not estimable，
-最终显示为 `NE`。规范化数据集和 raw 数据集使用确定性的 `_TFL_` 类型/序号命名并
+expected-cell skeleton 负责补回没有计数事件的零计数；分母为零时保留实际 `n`，
+`pct` 为 not estimable 并显示为 `NE`。规范化数据集和 raw 数据集使用确定性的 `_TFL_` 类型/序号命名并
 位于 `WORK` 库；用户 ID 不进入物理名称。
 
 ### 13.4 Chunk 生成顺序与 Table 内批处理
@@ -1167,7 +1199,7 @@ code-owned 实现，不成为用户 YAML 契约：
 
 | Chunk | 已确认的 SAS 实现 | 已确认的 logical output |
 | --- | --- | --- |
-| continuous_summary | `PROC MEANS` 默认 percentile、兼容 batch 的规范化输入（`chunk_order`/`column_order`/`analysis_value`）、排序、subject 去重假设、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段；batch identity 不改变 logical-cell identity |
+| continuous_summary | `PROC MEANS` 默认 percentile、兼容 batch 的规范化输入（`chunk_order`/`column_order`/`analysis_value`）、排序、显式 counting-unit materialization、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段；batch identity 不改变 logical-cell identity |
 | categorical_summary_nonexclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段；batch identity 不改变 logical-cell identity |
 | categorical_summary_exclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、按 typed counting unit 生成非阻断 overlap guard 和固定字段顺序的 `WARNING: [USER] ...` | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |

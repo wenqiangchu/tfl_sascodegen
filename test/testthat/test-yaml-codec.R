@@ -1,6 +1,6 @@
 valid_bundle_yaml <- function() {
   paste(
-    "schema_version: 1",
+    "schema_version: 2",
     "populations:",
     "  - id: safety",
     "    label: Safety population",
@@ -55,7 +55,7 @@ testthat::test_that("valid YAML decodes and canonical round-trips", {
   bytes <- canonical_yaml_bytes(result$workspace)
   testthat::expect_s3_class(bytes, "CanonicalBytes")
   text <- as.character(bytes)
-  testthat::expect_match(text, "schema_version: 1\\n")
+  testthat::expect_match(text, "schema_version: 2\\n")
   testthat::expect_match(text, "source_data: '&ADSL'")
   testthat::expect_true(grepl("before: |", text, fixed = TRUE))
   testthat::expect_false(grepl("\\r", text))
@@ -97,8 +97,8 @@ testthat::test_that("archive boundary rejects missing and unknown entries", {
 
 testthat::test_that("strict structure reports unknown fields and type discriminators", {
   input <- gsub(
-    "schema_version: 1",
-    "schema_version: 1\nextra: true",
+    "schema_version: 2",
+    "schema_version: 2\nextra: true",
     valid_bundle_yaml(), fixed = TRUE
   )
   result <- parse_bundle_yaml(input)
@@ -202,7 +202,7 @@ testthat::test_that("hierarchical source and result-sort fields round-trip", {
 
 testthat::test_that("feature scanner ignores controls in quoted and literal text", {
   text <- paste(
-    "schema_version: 1",
+    "schema_version: 2",
     "populations:",
     "  - id: p",
     "    label: \"contains &anchor and !tag\"",
@@ -258,7 +258,7 @@ testthat::test_that("ZIP metadata archive requires manifest and catalogs", {
   staging <- tempfile("tfl_missing_archive_")
   dir.create(staging)
   on.exit(unlink(staging, recursive = TRUE, force = TRUE), add = TRUE)
-  writeLines("schema_version: 1", file.path(staging, "manifest.yaml"), useBytes = TRUE)
+  writeLines("schema_version: 2", file.path(staging, "manifest.yaml"), useBytes = TRUE)
   zip_path <- tempfile(fileext = ".zip")
   on.exit(unlink(zip_path, force = TRUE), add = TRUE)
   zip::zipr(zip_path, files = "manifest.yaml", recurse = FALSE,

@@ -560,70 +560,15 @@ parse_row_value <- function(value, path, collector, definition) {
 
 `%||%` <- function(left, right) if (is.null(left)) right else left
 
-parse_primitive_denominator <- function(value, path, collector) {
-  allowed <- c("type", "variable", "expression")
-  if (!check_mapping(value, path, collector, allowed, "type")) return(NULL)
-  denominator_type <- parse_string_value(get_field(value, "type"),
-                                         error_path_field(path, "type"), collector, "type")
-  if (!is.null(denominator_type) &&
-      !denominator_type %in% c("header_population", "non_missing", "custom")) {
-    add_value_error(collector, error_path_field(path, "type"),
-                    sprintf("Denominator type '%s' is not supported.", denominator_type))
-    denominator_type <- NULL
-  }
-  variable <- NULL
-  expression <- NULL
-  if (identical(denominator_type, "non_missing")) {
-    variable <- parse_string_value(get_field(value, "variable"),
-                                   error_path_field(path, "variable"), collector,
-                                   "variable", non_empty = TRUE)
-    if (has_field(value, "expression")) {
-      add_error(collector, "import", "bundle_unknown_field",
-                "Field 'expression' is not declared for a non_missing denominator.",
-                error_path_field(path, "expression"))
-    }
-  } else if (identical(denominator_type, "custom")) {
-    expression <- parse_string_value(get_field(value, "expression"),
-                                     error_path_field(path, "expression"), collector,
-                                     "expression", non_empty = TRUE)
-    if (has_field(value, "variable")) {
-      add_error(collector, "import", "bundle_unknown_field",
-                "Field 'variable' is not declared for a custom denominator.",
-                error_path_field(path, "variable"))
-    }
-  } else if (identical(denominator_type, "header_population")) {
-    for (field in c("variable", "expression")) {
-      if (has_field(value, field)) {
-        add_error(collector, "import", "bundle_unknown_field",
-                  sprintf("Field '%s' is not declared for a header_population denominator.", field),
-                  error_path_field(path, field))
-      }
-    }
-  }
-  if (is.null(denominator_type) ||
-      (identical(denominator_type, "non_missing") && is.null(variable)) ||
-      (identical(denominator_type, "custom") && is.null(expression))) return(NULL)
-  result <- list(type = denominator_type)
-  if (!is.null(variable)) result$variable <- variable
-  if (!is.null(expression)) result$expression <- expression
-  result
-}
-
-# Primitive chunks use the explicit value-parser name at their dispatch site.
-parse_primitive_denominator_value <- parse_primitive_denominator
-
-
-
-parse_hierarchical_denominator_value <- function(value, path, collector) {
-  allowed <- c("scope", "unit", "variable", "expression")
-  required <- c("scope", "unit")
-  if (!check_mapping(value, path, collector, allowed, required)) return(NULL)
+parse_denominator_value <- function(value, path, collector,
+                                    scopes = c("header_population", "chunk_source")) {
+  allowed <- c("scope", "unit", "expression", "distinct_key")
+  if (!check_mapping(value, path, collector, allowed, c("scope", "unit"))) return(NULL)
   scope <- parse_string_value(get_field(value, "scope"), error_path_field(path, "scope"),
                               collector, "scope")
-  if (!is.null(scope) && !scope %in% c("header_population", "current_group",
-                                       "non_missing", "custom")) {
+  if (!is.null(scope) && !scope %in% scopes) {
     add_value_error(collector, error_path_field(path, "scope"),
-                    sprintf("Denominator scope '%s' is not supported.", scope))
+                    sprintf("Denominator scope '%s' is not supported for this analysis.", scope))
     scope <- NULL
   }
   unit <- parse_string_value(get_field(value, "unit"), error_path_field(path, "unit"),
@@ -633,41 +578,23 @@ parse_hierarchical_denominator_value <- function(value, path, collector) {
                     sprintf("Counting unit '%s' is not supported.", unit))
     unit <- NULL
   }
-  variable <- NULL
   expression <- NULL
-  if (identical(scope, "non_missing")) {
-    variable <- parse_string_value(get_field(value, "variable"),
-                                   error_path_field(path, "variable"), collector,
-                                   "variable", non_empty = TRUE)
-    if (has_field(value, "expression")) {
-      add_error(collector, "import", "bundle_unknown_field",
-                "Field 'expression' is not declared for a non_missing denominator.",
-                error_path_field(path, "expression"))
-    }
-  } else if (identical(scope, "custom")) {
+  if (has_field(value, "expression")) {
     expression <- parse_string_value(get_field(value, "expression"),
                                      error_path_field(path, "expression"), collector,
                                      "expression", non_empty = TRUE)
-    if (has_field(value, "variable")) {
-      add_error(collector, "import", "bundle_unknown_field",
-                "Field 'variable' is not declared for a custom denominator.",
-                error_path_field(path, "variable"))
-    }
-  } else if (!is.null(scope)) {
-    for (field in c("variable", "expression")) {
-      if (has_field(value, field)) {
-        add_error(collector, "import", "bundle_unknown_field",
-                  sprintf("Field '%s' is not declared for this denominator scope.", field),
-                  error_path_field(path, field))
-      }
-    }
   }
-  if (is.null(scope) || is.null(unit) ||
-      (identical(scope, "non_missing") && is.null(variable)) ||
-      (identical(scope, "custom") && is.null(expression))) return(NULL)
+  distinct_key <- parse_distinct_key_value(value, path, collector, unit)
+  validate_counting_unit_pair(collector, path, unit, distinct_key)
+  if (identical(scope, "header_population") && !is.null(unit) &&
+      !identical(unit, "distinct_subject")) {
+    add_value_error(collector, error_path_field(path, "unit"),
+                    "Header population denominators require the distinct_subject unit.")
+  }
+  if (is.null(scope) || is.null(unit)) return(NULL)
   result <- list(scope = scope, unit = unit)
-  if (!is.null(variable)) result$variable <- variable
   if (!is.null(expression)) result$expression <- expression
+  if (!is.null(distinct_key)) result$distinct_key <- distinct_key
   result
 }
 
@@ -927,8 +854,9 @@ parse_analysis_block_value <- function(value, path, collector, registry) {
                   error_path_field(path, "denominator"))
       }
     } else {
-      denominator <- parse_hierarchical_denominator_value(
-        get_field(value, "denominator"), error_path_field(path, "denominator"), collector
+      denominator <- parse_denominator_value(
+        get_field(value, "denominator"), error_path_field(path, "denominator"), collector,
+        scopes = c("header_population", "chunk_source", "current_group")
       )
       if (has_field(value, "analysis_variable")) {
         add_error(collector, "import", "bundle_unknown_field",
@@ -1145,7 +1073,7 @@ parse_chunk_value <- function(value, path, collector, registry) {
     result$analysis_variable <- analysis_variable
     result$rows <- rows
   } else if (type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
-    denominator <- parse_primitive_denominator_value(
+    denominator <- parse_denominator_value(
       get_field(value, "denominator"), error_path_field(path, "denominator"), collector
     )
     rows_raw <- parse_sequence_raw(get_field(value, "rows"), error_path_field(path, "rows"),
@@ -1232,7 +1160,7 @@ parse_bundle_value <- function(value, registry = default_chunk_registry()) {
     get_field(value, "schema_version"), error_path_field(root_path, "schema_version"),
     collector, "schema_version", min_value = 1
   )
-  if (!is.null(schema_version) && !identical(as.integer(schema_version), 1L)) {
+  if (!is.null(schema_version) && !identical(as.integer(schema_version), 2L)) {
     add_error(collector, "import", "bundle_schema_unsupported",
               sprintf("Schema version '%s' is not supported.", schema_version),
               error_path_field(root_path, "schema_version"))
@@ -1295,7 +1223,7 @@ parse_bundle_value <- function(value, registry = default_chunk_registry()) {
 }
 
 new_metadata_bundle <- function(
-    schema_version = 1L,
+    schema_version = 2L,
     populations = list(),
     headers = list(),
     tables = list(),

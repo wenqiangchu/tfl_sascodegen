@@ -138,11 +138,9 @@ chunk_batch_signature <- function(definition, chunk) {
                                 "categorical_summary_exclusive")) {
     signature$chunk_key_contract <- list(
       numerator_keys = primitive_counting_keys(chunk),
-      denominator_type = chunk$denominator$type,
-      denominator_unit = chunk$denominator$unit %||% "distinct_subject",
-      denominator_keys = primitive_counting_keys(
-        chunk, chunk$denominator$unit %||% "distinct_subject"
-      )
+      denominator_scope = chunk$denominator$scope,
+      denominator_unit = chunk$denominator$unit,
+      denominator_keys = denominator_counting_keys(chunk$denominator)
     )
   }
   signature
@@ -211,11 +209,7 @@ build_logical_result_map <- function(chunk, chunk_order, header_columns,
           indent_level = as.integer(row$indent_level %||% 0L),
           digits_mode = if (is.null(digits)) "none" else if (is.character(digits)) "relative" else "absolute",
           digits_value = if (is.null(digits)) 0 else as.numeric(digits),
-          use_header_n = as.integer(
-            identical(chunk$denominator$type, "header_population") &&
-              (chunk$denominator$scope %||% "header_population") == "header_population" &&
-              (chunk$denominator$unit %||% "distinct_subject") == "distinct_subject"
-          ),
+          use_header_n = as.integer(denominator_uses_header_n(chunk$denominator)),
           cell_format = row$cell_format %||% ""
         )
       }
@@ -275,6 +269,7 @@ plan_primitive_batches <- function(resolved, include_duplicate_check = TRUE) {
       }), recursive = FALSE),
       header_columns = resolved$header$columns,
       header_columns_dataset = "_TFL_HCOLS_001",
+      header_population_dataset = "_TFL_POP_001",
       membership_dataset = "_TFL_MEM_001",
       include_duplicate_check = isTRUE(include_duplicate_check),
       definition = group$definition

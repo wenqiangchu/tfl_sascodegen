@@ -247,10 +247,10 @@ custom code 原样保存，不作语法、安全性或依赖验证。
 ### 类型专属内容
 
 - **Continuous summary**：`analysis_variable`、rows、statistics、cell format；
-- **Categorical summary**：结构化 denominator；`non_missing` 时显示 variable，
-  `custom` 时显示 SAS expression；rows 允许 condition、statistics 和 cell format；
+- **Categorical summary**：结构化 denominator scope、unit、独立 distinct key 和
+  SAS expression；rows 允许 condition、statistics 和 cell format；
 - **Hierarchical summary**：
-  - source contract；
+  - source_data 与 filter；
   - 有序 levels，每个 level 显式选择 parent level；
   - level 的新增、删除、排序；
   - analysis blocks 的新增、删除、排序和类型选择；
@@ -258,6 +258,10 @@ custom code 原样保存，不作语法、安全性或依赖验证。
   - nested rows/statistics 的新增、删除、排序；
   - 多层 parent-child 关系编辑；
   - `same_row`/`below` placement、missing policy、order variable/direction 等字段。
+
+2026-10-30 补充：`result_sort` 当前通过导入 metadata 声明。虽然暂无专属表单控件，
+模板采集和 Save 必须保留该字段，位置 ID 重编号必须同步更新其分析与行引用。
+无关字段编辑不能删除已经声明的排序契约。
 
 hierarchical 的运行时 group values、node key、runtime row ID 和动态 label 只在
 生成 SAS 时产生，不写回 template metadata。

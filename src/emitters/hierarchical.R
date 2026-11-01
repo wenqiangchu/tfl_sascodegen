@@ -71,17 +71,6 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
   chunk$id <- paste0(parent$id, ":", block$id)
   chunk$source_data <- hierarchical_membership_dataset(plan$batch_order, level_order)
   chunk$filter <- NULL
-  global_denominator_source <- NULL
-  if (!identical(block$type, "continuous_summary")) {
-    scope <- block$denominator$scope
-    chunk$denominator$type <- switch(scope,
-      header_population = "header_population", current_group = "header_population",
-      non_missing = "non_missing", custom = "custom"
-    )
-    if (scope == "header_population" && block$denominator$unit != "distinct_subject") {
-      global_denominator_source <- sprintf("_TFL_HSRC_%03d", plan$batch_order)
-    }
-  }
   batch_order <- as.integer(plan$nested_batch_start + block_order)
   structure(c(list(
     batch_order = batch_order, chunk_type = definition$type_id, chunk_orders = 1L,
@@ -90,6 +79,8 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
     result_map = build_logical_result_map(chunk, 1L, resolved$header$columns, analysis_id = block$id),
     header_columns = resolved$header$columns,
     header_columns_dataset = plan$header_columns_dataset,
+    header_population_dataset = plan$header_population_dataset,
+    chunk_source_dataset = sprintf("_TFL_HSRC_%03d", plan$batch_order),
     membership_dataset = sprintf("_TFL_HMEM_%03d", plan$batch_order),
     membership_expanded_source = TRUE,
     # The node-scoped level table still has one row per source record; the
@@ -97,7 +88,6 @@ hierarchical_nested_plan <- function(plan, block, block_order, resolved) {
     node_source_dataset = sprintf("_TFL_HLEVEL_%03d_%03d", plan$batch_order, level_order),
     subject_key = subject_key_constant(),
     nodes_dataset = hierarchical_nodes_dataset(plan$batch_order, level_order),
-    global_denominator_source = global_denominator_source,
     include_duplicate_check = isTRUE(plan$include_duplicate_check),
     grouping_variables = "node_key", definition = definition
   ), batch_dataset_names(definition, batch_order)), class = c("PrimitiveBatchPlan", "list"))

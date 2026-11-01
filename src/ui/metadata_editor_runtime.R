@@ -93,10 +93,15 @@ metadata_editor_server_impl <- function(input, output, session) {
         chunk$counting_unit <- as.character(input[[paste0(p,"counting_unit")]] %||% chunk$counting_unit %||% "distinct_subject")
         chunk <- assign_distinct_key(chunk, split_keys(
           input[[paste0(p,"distinct_key")]] %||% paste(chunk$distinct_key %||% character(), collapse=",")))
-        dtype <- as.character(input[[paste0(p,"den_type")]] %||% chunk$denominator$type %||% "header_population")
-        den <- list(type=dtype)
-        if (identical(dtype,"non_missing")) den$variable <- as.character(input[[paste0(p,"den_variable")]] %||% "")
-        if (identical(dtype,"custom")) den$expression <- as.character(input[[paste0(p,"den_expression")]] %||% "")
+        den <- list(
+          scope = as.character(input[[paste0(p,"den_scope")]] %||% chunk$denominator$scope %||% "header_population"),
+          unit = as.character(input[[paste0(p,"den_unit")]] %||% chunk$denominator$unit %||% "distinct_subject")
+        )
+        den_expression <- trim_optional(input[[paste0(p,"den_expression")]] %||% chunk$denominator$expression)
+        if (!is.null(den_expression)) den$expression <- den_expression
+        den_keys <- split_keys(input[[paste0(p,"den_distinct_key")]] %||%
+                                 paste(chunk$denominator$distinct_key %||% character(), collapse=","))
+        if (length(den_keys)) den$distinct_key <- den_keys
         chunk$denominator <- den; chunk$rows <- collect_rows(chunk$rows, p)
       } else if (identical(chunk$type,"hierarchical_summary")) {
         chunk$levels <- lapply(seq_along(chunk$levels %||% list()), function(j) {
@@ -110,6 +115,9 @@ metadata_editor_server_impl <- function(input, output, session) {
           for (field in c("parent_level","label_variable","node_analysis_id","missing_label")) {
             v <- trim_optional(input[[paste0(lp,field)]] %||% old[[field]]); if (!is.null(v)) z[[field]] <- v
           }
+          # Sorting has no form control; preserve the imported contract so an
+          # unrelated edit cannot remove it. Reindexing updates its references.
+          if (!is.null(old$result_sort)) z$result_sort <- clone_metadata_value(old$result_sort)
           z
         })
         chunk$analysis_blocks <- lapply(seq_along(chunk$analysis_blocks %||% list()), function(b) {
@@ -124,8 +132,11 @@ metadata_editor_server_impl <- function(input, output, session) {
             scope <- as.character(input[[paste0(bp,"den_scope")]] %||% old$denominator$scope %||% "current_group")
             unit <- as.character(input[[paste0(bp,"den_unit")]] %||% old$denominator$unit %||% "record")
             z$denominator <- list(scope=scope,unit=unit)
-            if (identical(scope,"non_missing")) z$denominator$variable <- as.character(input[[paste0(bp,"den_variable")]] %||% "")
-            if (identical(scope,"custom")) z$denominator$expression <- as.character(input[[paste0(bp,"den_expression")]] %||% "")
+            den_expression <- trim_optional(input[[paste0(bp,"den_expression")]] %||% old$denominator$expression)
+            if (!is.null(den_expression)) z$denominator$expression <- den_expression
+            den_keys <- split_keys(input[[paste0(bp,"den_distinct_key")]] %||%
+                                     paste(old$denominator$distinct_key %||% character(),collapse=","))
+            if (length(den_keys)) z$denominator$distinct_key <- den_keys
           }
           z$rows <- collect_rows(old$rows, bp); z
         })

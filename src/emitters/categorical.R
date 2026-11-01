@@ -25,10 +25,6 @@ categorical_combined_pre_dataset <- function(batch_order) {
   sprintf("_TFL_KPRE_%03d", batch_order)
 }
 
-categorical_batch_chunks_dataset <- function(batch_order) {
-  sprintf("_TFL_KCHUNKS_%03d", batch_order)
-}
-
 categorical_batch_merged_dataset <- function(batch_order) {
   sprintf("_TFL_KMERGE_%03d", batch_order)
 }
@@ -38,14 +34,10 @@ categorical_chunk_source <- function(plan, entry) {
   source_dataset <- categorical_source_dataset(plan$batch_order, entry$chunk_order)
   merged_dataset <- categorical_merged_dataset(plan$batch_order, entry$chunk_order)
   input_dataset <- categorical_chunk_input_dataset(plan$batch_order, entry$chunk_order)
-  denominator <- chunk$denominator
-  eligibility <- switch(denominator$type,
-    header_population = if ((denominator$unit %||% "distinct_subject") == "distinct_subject") "1" else "not missing(source_row)",
-    non_missing = paste0("not missing(source_row) and not missing(", denominator$variable, ")"),
-    custom = paste0("not missing(source_row) and (", denominator$expression, ")")
-  )
   numerator_keys <- primitive_counting_keys(chunk)
-  denominator_keys <- primitive_counting_keys(chunk, denominator$unit %||% "distinct_subject")
+  filtered_source <- if (is.null(plan$nodes_dataset)) {
+    primitive_source_filter(plan, entry, source_dataset, "categorical")
+  } else character()
   # Duplicate checking is per chunk and runs on real source records, before any
   # header, denominator, analysis-row or scaffold expansion. The guard needs its
   # own chunk_order column, so it reads a small key-only projection rather than
@@ -58,12 +50,11 @@ categorical_chunk_source <- function(plan, entry) {
   # Nested blocks must read the node-scoped level table rather than the merged
   # source, which the membership join has already broadcast across header
   # columns; counting that table would report broadcast copies as duplicates.
-  guard_source <- if (!is.null(plan$node_source_dataset)) plan$node_source_dataset else chunk$source_data
+  guard_source <- if (!is.null(plan$node_source_dataset)) plan$node_source_dataset else source_dataset
   guard <- if (isTRUE(plan$include_duplicate_check) && length(check_keys)) c(
     "/* Keep one row per filtered source record for duplicate checking. */",
     paste0("data ", guard_dataset, ";"),
     paste0("  set ", guard_source, ";"),
-    if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
     paste0("  chunk_order = ", entry$chunk_order, ";"),
     paste0("  keep ", paste(unique(c(guard_position_keys, check_keys)), collapse = " "), ";"),
     "run;",
@@ -83,40 +74,31 @@ categorical_chunk_source <- function(plan, entry) {
   if (!is.null(plan$nodes_dataset)) return(paste(c(
     guard,
     primitive_source_input(plan, entry, source_dataset, merged_dataset, "categorical"),
-    "/* Normalize denominator and numerator counting events. */",
+    "/* Normalize numerator counting events within the anchor node. */",
     paste0("data ", input_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
     paste0("  set ", merged_dataset, ";"),
     paste0("  chunk_order = ", entry$chunk_order, ";"),
-    paste0("  denominator_eligible = ", eligibility, ";"),
-    "  if denominator_eligible then do; row_order = 0; output; end;",
     "  if not missing(source_row) then do;",
     row_lines,
     "  end;",
     paste0("  keep chunk_order row_order column_order node_key ",
-           paste(unique(c(numerator_keys, denominator_keys)), collapse = " "), ";"),
+           paste(numerator_keys, collapse = " "), ";"),
     "run;"
   ), collapse = "\n"))
   paste(c(
-    "/* Emit categorical counting events from the filtered chunk source. */",
-    # The guard above already read the source once to project its keys; this step
-    # reads it again for the counting events, so the source is read twice when
-    # checking is enabled.
+    filtered_source,
     guard,
+    "/* Emit numerator counting events from the filtered chunk source. */",
     paste0("data ", pre_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
-    paste0("  set ", chunk$source_data, ";"),
-    if (!is.null(chunk$filter)) paste0("  if not (", chunk$filter, ") then delete;"),
-    "  source_row = _n_;",
+    paste0("  set ", source_dataset, ";"),
     paste0("  chunk_order = ", entry$chunk_order, ";"),
-    paste0("  denominator_eligible = ", eligibility, ";"),
-    paste0("  if denominator_eligible then do; row_order = 0; output ", pre_dataset, "; end;"),
     "  if not missing(source_row) then do;",
     row_lines,
     "  end;",
     paste0("  keep ", paste(unique(c("chunk_order", "USUBJID", "source_row", "row_order",
-                                      "node_key", "denominator_eligible", numerator_keys,
-                                      denominator_keys)), collapse = " "), ";"),
+                                      "node_key", numerator_keys)), collapse = " "), ";"),
     "run;"
   ), collapse = "\n")
 }
@@ -124,7 +106,6 @@ categorical_chunk_source <- function(plan, entry) {
 categorical_batch_source_input <- function(plan) {
   suffix <- sprintf("%03d", plan$batch_order)
   pre <- categorical_combined_pre_dataset(plan$batch_order)
-  chunks <- categorical_batch_chunks_dataset(plan$batch_order)
   merged <- categorical_batch_merged_dataset(plan$batch_order)
   input_names <- vapply(plan$chunk_orders, function(order) {
     categorical_chunk_pre_dataset(plan$batch_order, order)
@@ -135,55 +116,27 @@ categorical_batch_source_input <- function(plan) {
     primitive_counting_keys(chunk)
   }), use.names = FALSE))
   extra_keys <- setdiff(extra_keys, c("chunk_order", "USUBJID", "source_row"))
-  header_orders <- vapply(seq_along(plan$chunks), function(index) {
-    if (identical(plan$chunks[[index]]$denominator$type, "header_population")) {
-      plan$chunk_orders[[index]]
-    } else NA_integer_
-  }, integer(1L))
-  header_orders <- header_orders[!is.na(header_orders)]
-  # The scaffold rows must line up with the event rows in the UNION ALL, so they
-  # have to carry the declared distinct keys as well. The keys are taken from the
-  # event side through a never-matching join rather than written as literal
-  # missing values, so both branches get the same column type as well as count.
-  scaffold <- if (length(header_orders)) c(
-    "  union all",
-    "  select b.chunk_order, m.USUBJID, m.header_column_id, m.column_order,",
-    "         . as source_row, 0 as row_order, '' as node_key, 1 as denominator_eligible",
-    if (length(extra_keys)) paste0("         , t.", extra_keys, collapse = "\n"),
-    paste0("  from ", chunks, " as b cross join ", plan$membership_dataset, " as m"),
-    paste0("    left join ", pre, " as t on 0 = 1"),
-    paste0("  where b.chunk_order in (", paste(header_orders, collapse = ", "), ")")
-  ) else character()
   c(
     "/* Combine normalized categorical events before one membership merge. */",
     paste0("data ", pre, ";"),
     paste0("  set ", paste(input_names, collapse = " "), ";"),
     "run;",
     "/* Expand events once through the shared header membership. */",
-    paste0("data ", chunks, ";"),
-    "  length chunk_order 8;",
-    unlist(lapply(plan$chunk_orders, function(order) c(
-      paste0("  chunk_order = ", order, "; output;")
-    )), use.names = FALSE),
-    "  keep chunk_order;",
-    "run;",
     "proc sql noprint;",
     paste0("  create table ", merged, " as"),
     "  select s.chunk_order, m.USUBJID, m.header_column_id, m.column_order,",
-    "         s.source_row, s.row_order, s.node_key, s.denominator_eligible",
+    "         s.source_row, s.row_order, s.node_key",
     # Declared distinct keys must survive the join, otherwise later BY lists
     # reference variables that no longer exist.
     if (length(extra_keys)) paste0("         , s.", extra_keys, collapse = "\n"),
     paste0("  from ", pre, " as s inner join ", plan$membership_dataset, " as m"),
     "    on s.USUBJID = m.USUBJID",
-    scaffold,
     "  ;",
     "quit;",
     paste0("data ", plan$input_dataset, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
     paste0("  set ", merged, ";"),
     "  keep chunk_order row_order column_order node_key USUBJID source_row ",
-    "       denominator_eligible",
     if (length(extra_keys)) paste0(" ", paste(extra_keys, collapse = " ")),
     ";",
     "run;"
@@ -214,24 +167,75 @@ categorical_exclusive_guard_source <- function(plan, dataset, keys) {
   )
 }
 
-categorical_global_denominator_source <- function(plan, keys) {
-  if (is.null(plan$global_denominator_source)) return(character())
-  suffix <- sprintf("%03d", plan$batch_order)
+categorical_denominator_source <- function(plan, entry) {
+  chunk <- entry$chunk
+  denominator <- chunk$denominator
+  suffix <- sprintf("%03d_%03d", plan$batch_order, entry$chunk_order)
+  qualified <- paste0("_TFL_KDQUAL_", suffix)
+  units <- paste0("_TFL_KDUNIT_", suffix)
+  events <- paste0("_TFL_KDEN_", suffix)
+  current_group <- identical(denominator$scope, "current_group")
+  keys <- denominator_counting_keys(denominator)
+  position_keys <- c("column_order", if (current_group) "node_key")
+  qualification <- if (!is.null(denominator$expression)) {
+    paste0("  if not (", denominator$expression, ") then delete;")
+  } else character()
+  if (identical(denominator$scope, "header_population")) {
+    input <- c(
+      "/* Qualify header subjects while the population source variables are available. */",
+      paste0("data ", qualified, ";"),
+      paste0("  set ", if (is.null(denominator$expression)) plan$membership_dataset else
+               plan$header_population_dataset, ";"),
+      if (!is.null(denominator$expression)) unlist(lapply(seq_along(plan$header_columns), function(index) {
+        column <- plan$header_columns[[index]]
+        paste0("  if (", column$condition, ") and (",
+               denominator$expression, ") then do; column_order = ",
+               index, "; output; end;")
+      }), use.names = FALSE),
+      if (is.null(denominator$expression)) unlist(lapply(seq_along(plan$header_columns), function(index) {
+        column <- plan$header_columns[[index]]
+        paste0("  if (", column$condition, ") then do; column_order = ", index, "; output; end;")
+      }), use.names = FALSE),
+      "  keep column_order USUBJID;",
+      "run;"
+    )
+  } else {
+    # Full-source denominators are joined before any level excludes records.
+    # Current-group input is already an inner membership join at the anchor.
+    merged <- if (current_group) chunk$source_data else paste0("_TFL_KDMERGE_", suffix)
+    source <- if (!is.null(plan$chunk_source_dataset)) plan$chunk_source_dataset else
+      categorical_source_dataset(plan$batch_order, entry$chunk_order)
+    input <- c(
+      if (!current_group) c(
+        "/* Expand the complete filtered source through header membership for this denominator. */",
+        "proc sql noprint;",
+        paste0("  create table ", merged, " as"),
+        "  select s.*, m.column_order",
+        paste0("  from ", source, " as s inner join ", plan$membership_dataset, " as m"),
+        "    on s.USUBJID = m.USUBJID;",
+        "quit;"
+      ),
+      "/* Apply denominator qualification before projecting and collapsing its identity keys. */",
+      paste0("data ", qualified, ";"),
+      paste0("  set ", merged, ";"),
+      qualification,
+      paste0("  keep ", paste(unique(c(position_keys, keys)), collapse = " "), ";"),
+      "run;"
+    )
+  }
   c(
-    "/* Header-population record/key denominators use the full filtered container source. */",
-    "proc sql noprint;",
-    paste0("  create table _TFL_GDEN_INPUT_", suffix, " as"),
-    "  select s.*, m.column_order",
-    paste0("  from ", plan$global_denominator_source, " as s inner join _TFL_MEM_001 as m"),
-    paste0("    on s.", subject_key_constant(), " = m.USUBJID;"),
-    "quit;",
-    paste0("proc sort data=_TFL_GDEN_INPUT_", suffix, " out=_TFL_GDEN_UNITS_", suffix, " nodupkey;"),
-    paste0("  by column_order ", paste(keys, collapse = " "), ";"),
-    "run;",
-    paste0("data _TFL_GDEN_", suffix, ";"),
+    input,
+    if (!identical(denominator$unit, "record")) c(
+      paste0("proc sort data=", qualified, " out=", units, " nodupkey;"),
+      paste0("  by ", paste(unique(c(position_keys, keys)), collapse = " "), ";"),
+      "run;"
+    ),
+    "/* Emit one denominator event per qualified unit independently of numerator rows. */",
+    paste0("data ", events, ";"),
     "  length node_key $&_TFL_NODE_LEN;",
-    paste0("  set _TFL_GDEN_UNITS_", suffix, ";"),
-    "  chunk_order = 1; row_order = 0; node_key = '';",
+    paste0("  set ", if (identical(denominator$unit, "record")) qualified else units, ";"),
+    if (!current_group) "  node_key = '';",
+    paste0("  chunk_order = ", entry$chunk_order, "; row_order = 0;"),
     "  keep chunk_order row_order column_order node_key;",
     "run;"
   )
@@ -241,12 +245,11 @@ categorical_batch_analysis_source <- function(plan, exclusive = FALSE) {
   suffix <- sprintf("%03d", plan$batch_order)
   chunk <- plan$chunks[[1L]]
   numerator_keys <- primitive_counting_keys(chunk)
-  denominator_keys <- primitive_counting_keys(chunk, chunk$denominator$unit %||% "distinct_subject")
   group_vars <- c("chunk_order", "column_order", "node_key")
   input_names <- vapply(plan$chunk_orders, function(order) {
     categorical_chunk_input_dataset(plan$batch_order, order)
   }, character(1L))
-  has_global <- !is.null(plan$global_denominator_source)
+  has_global <- !identical(chunk$denominator$scope, "current_group")
   by_match <- "k.chunk_order = r.chunk_order and k.row_order = r.row_order and k.column_order = r.column_order"
   denominator_match <- "k.chunk_order = d.chunk_order and k.column_order = d.column_order and d.row_order = 0"
   if (!is.null(plan$nodes_dataset)) {
@@ -260,21 +263,19 @@ categorical_batch_analysis_source <- function(plan, exclusive = FALSE) {
       paste0("  set ", paste(input_names, collapse = " "), ";"),
       "run;"
     ),
-    "/* Count declared units independently for denominator and numerator events. */",
-    # record counting keys every row on its own source_row, so NODUPKEY is a
-    # no-op there rather than a whole-table collapse. Later stages still need
-    # one row per source record.
-    paste0("proc sort data=", plan$input_dataset, "(where=(row_order = 0)) out=_TFL_KDEN_", suffix, " nodupkey;"),
-    paste0("  by ", paste(c(group_vars, denominator_keys), collapse = " "), ";"),
-    "run;",
+    "/* Collapse numerator units within each analysis row and column. */",
     paste0("proc sort data=", plan$input_dataset, "(where=(row_order > 0)) out=_TFL_KNUM_", suffix, " nodupkey;"),
     paste0("  by ", paste(c(group_vars, "row_order", numerator_keys), collapse = " "), ";"),
     "run;",
     if (exclusive) categorical_exclusive_guard_source(plan, paste0("_TFL_KNUM_", suffix), numerator_keys),
-    categorical_global_denominator_source(plan, denominator_keys),
+    unlist(lapply(seq_along(plan$chunks), function(index) {
+      categorical_denominator_source(plan, list(chunk_order = plan$chunk_orders[[index]],
+                                                chunk = plan$chunks[[index]]))
+    }), use.names = FALSE),
     paste0("data _TFL_KEVENT_", suffix, ";"),
-    paste0("  set ", if (has_global) paste0("_TFL_GDEN_", suffix) else paste0("_TFL_KDEN_", suffix),
-           " _TFL_KNUM_", suffix, ";"),
+    paste0("  set ", paste(sprintf("_TFL_KDEN_%03d_%03d", plan$batch_order, plan$chunk_orders),
+                              collapse = " "), " _TFL_KNUM_", suffix, ";"),
+    "  keep chunk_order row_order column_order node_key;",
     "run;",
     "/* Analyze compatible categorical events once. */",
     paste0("proc freq data=_TFL_KEVENT_", suffix, " noprint;"),
@@ -297,7 +298,7 @@ categorical_batch_analysis_source <- function(plan, exclusive = FALSE) {
     paste0("data ", plan$statistic_dataset, ";"),
     paste0("  set _TFL_KJOIN_", suffix, ";"),
     "  if denominator > 0 then pct = 100 * numerator / denominator;",
-    "  else do; numerator = 0; pct = .; end;",
+    "  else pct = .;",
     "  if statistic_id = 'n' then do; value = numerator; estimable = 1; end;",
     "  else do; value = pct; estimable = denominator > 0; end;",
     "  base_digits = 0;",

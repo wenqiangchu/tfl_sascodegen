@@ -3,6 +3,9 @@
 本文记录当前项目中已经获得用户确认的设计决定、被拒绝的替代方案，以及
 仍然未决的问题。讨论中的建议不会自动成为批准决定。
 
+本文件早期 bundle 决定中的 `schema_version: 1` 记录属于当时的历史契约；统一分母
+实施决定已将当前 canonical bundle 升级为严格 v2，详见文末对应记录。
+
 ## 第 1 组：应用入口、Bundle 导入导出与 SAS 输出
 
 状态：已确认；serialization 于 2026-09-05 修订为 ZIP 多文件 bundle，并保留
@@ -13,7 +16,7 @@
 1. 使用根目录的薄 `app.R` 作为 Shiny 启动入口；生产代码按职责放在
    `src/` 子目录。
 2. Metadata bundle 采用 ZIP 压缩包，内部 YAML 文件使用 schema version 1；
-   保留最小 `manifest.yaml`，仅包含 `schema_version: 1`。压缩包固定包含
+   保留最小 `manifest.yaml`，仅包含 `schema_version: 2`。压缩包固定包含
    `populations.yaml`、`headers.yaml`，并使用 `tables/<table_id>.yaml` 和
    `templates/<template_id>.yaml` 保存独立对象文件。集合按文件名 ID 字典序形成
    顶层 sequence，每个对象显式保存 `id`；下载扩展名为 `.zip`。
@@ -182,7 +185,7 @@ population 和 header 条件均保留为 SAS source text。
    exclusive 是独立 type，要求每个声明的 counting unit 最多命中一个 analysis
    row，但不要求所有 unit 必须命中 row。`counting_unit` 必须显式声明为
    `record`、`distinct_subject` 或 `distinct_key`，不得由实现推断。
-8. hierarchical 使用有序 `levels`、`analysis_blocks`、显式 source contract、
+8. hierarchical 使用有序 `levels`、`analysis_blocks`、共享 source_data/filter、
    missing policy、`same_row`/`below` placement 和 nested denominator scope；
    动态节点在所有展示 header columns 的联合 eligible source 上发现，static
    analysis 先于 dynamic children，运行时 group value、node key 和 row ID 不写回
@@ -203,7 +206,7 @@ population 和 header 条件均保留为 SAS source text。
 - 让 hierarchical 复制 continuous/categorical 统计逻辑：未采用，以避免两套统计
   语义漂移。
 - 在平台或 generator 中隐式去重、选择记录、聚合或把动态运行值写回 metadata：未
-  采用，调用方必须通过显式 source contract 或 custom code 提供所需数据。
+  采用，调用方必须通过明确的分析记录准备或 custom code 提供所需数据。
 - 将 Analysis 与 Render 合并，或让 chunk 直接写报表文件：未采用，以保持统计、
   展示和产品输出边界独立。
 
@@ -300,7 +303,7 @@ SAS source text 的边界。
    - canonical 下载中的每个 YAML 文件均固定为 UTF-8、无 BOM、LF；导入接受有效 UTF-8 的 BOM 或
      CRLF，并在内存中规范化后按 canonical 规则导出；无效 UTF-8 导入失败；
    - ZIP 必须包含 `manifest.yaml`、`populations.yaml` 和 `headers.yaml`；manifest
-     只包含 `schema_version: 1`。`tables/` 和 `templates/` 下只允许直接的 `.yaml`
+     只包含 `schema_version: 2`。`tables/` 和 `templates/` 下只允许直接的 `.yaml`
      文件，文件名 stem 必须与内部对象 `id` 一致；未知 entry、重复 entry、非法
      路径、嵌套目录和符号链接均失败；对象文件按 ID 字典序形成顶层 sequence；
    - 跨对象引用是否存在不在结构导入阶段强制解析，继续沿用“结构严格、引用可
@@ -639,7 +642,7 @@ regression fixture 边界；这些细节不进入用户 YAML。
    analysis variable 不直接做无条件 `SET`。
 5. `categorical_summary_nonexclusive` 与 `categorical_summary_exclusive` 是不同的
    batch type，各自使用一次 `PROC FREQ`。最终 expected-cell skeleton 负责补回未被
-   FREQ 产生的零计数；denominator 为零时 `n` 为 0，`pct` 为 not estimable 并渲染为
+   FREQ 产生的零计数；denominator 为零时保留实际 `n`，`pct` 为 not estimable 并渲染为
    `NE`。该补全不改变 nonexclusive 的 row overlap 语义，也不替 exclusive 隐藏
    overlap warning。
 6. 规范化对象使用确定性的 `_TFL_` 系统前缀和类型/序号命名，位于 SAS `WORK` 库；
@@ -676,7 +679,7 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
 2. continuous 和 categorical 都必须转换到上述公共结构。categorical 的 denominator、
    numerator 和 overlap guard 所需计数可以保留在 emitter-private 中间对象；公共结果
    只保存 `n` 或 `pct` 的 logical statistic。`pct` raw value 为显式的
-   `100 * n / denominator`；denominator 为零时 `n=0`、`pct` 不可估计。
+   `100 * n / denominator`；denominator 为零时保留实际 `n`，只有 `pct` 不可估计。
 3. `ChunkRenderResult` 是统一的 logical cell 结果，每行至少包含 `chunk_id`、`row_id`、
    `label`、`indent_level`、`header_column_id` 和非缺失字符型 `cell_text`。每个
    row/header column 组合恰好一行；label row 对每个展示列输出空字符串。
@@ -827,7 +830,7 @@ long-form raw statistic 和 render 结果；hierarchical 只增加节点与运�
 
    expected-cell skeleton 显式覆盖每个 batch chunk、每个 header column、denominator
    行和声明的 analysis rows；与 FREQ raw count 合并后，缺失 count 补为 0。分母
-   大于 0 时 `pct=100*n/denominator`，分母为 0 时 `n=0`、`pct` 的
+   大于 0 时 `pct=100*n/denominator`，分母为 0 时保留实际 `n`，`pct` 的
    `estimable=0`，render 为 `NE`。该补全不改变 nonexclusive overlap，也不隐藏
    exclusive warning。
 
@@ -1353,3 +1356,70 @@ portrait 或 landscape；canonical YAML 位于 source_data 之后。导入不推
 Header editor 必须明确选择；Table 仍不含此字段。Report 使用它计算 Letter 页面
 可用宽度，QC 沿用同一 metadata 结构但不应用 Report 页宽检查。本次补齐便携契约
 中的遗漏，不修改 schema、生成器或 UI 行为。
+
+## 分析契约澄清：实际人数与模板排序保留
+
+状态：用户已确认（2026-10-30）。本节覆盖早期「分母为零就将分子置零」的规则。
+
+1. 分类 `n` 来自实际匹配的计数事件，不因 denominator 为零而被覆盖为零。
+   denominator 为零时只有 `pct` 不可估计，渲染为 `NE`。没有匹配计数事件时，
+   expected-cell join 将缺少的计数补为零；这是计数为空的结果，不是根据分母改写分子。
+2. Header 中不存在受试者的列，经过 membership join 后没有分析事件，自然得到
+   `n=0`。非缺失分母或自定义分母为空，与该列完全没有受试者是不同的情况。
+3. `result_sort` 是已声明的分析契约。模板表单暂未提供其专属编辑控件，但采集、
+   无关字段编辑和 Save 必须保留它；位置 ID 重编号同步更新 metric 的分析与行引用。
+4. 基线分类作为 Header 列、基线后分类作为 row condition，可以在已经准备好
+   受试者分析记录的交叉表中使用。Header 当前按 subject 成员关系分列，不能据此
+   宣称该交叉表无法表达。
+
+统一 denominator 的字段方案随后已获用户认可，状态见下节。自定义 format 节点目录、
+最高严重程度记录选择和父层级行为的具体方案尚未批准，不在本节引入新字段。
+业务例子、现有三处错配及待确认方案见 [分析契约讨论记录](analysis-contract-review.md)。
+
+## 统一分母：已批准模型
+
+状态：模型已确认，尚未实现。2026-10-31 从 session
+`01a182b8-5fd8-7271-bc73-8ed5ddafc291` 恢复批准记录，用户原话为
+「好的，我觉得这个优化方案是合理清晰的」。
+
+### 已批准
+
+1. primitive 与 hierarchical categorical 共用 denominator 对象，字段为 scope、
+   unit、可选 expression，以及 unit=distinct_key 时必填的独立 distinct_key。
+2. scope 分为 header_population（当前列的人群）、chunk_source（完整 chunk filter
+   后并限定当前列的 source）、current_group（当前 anchor 节点并限定当前列的 source）。
+3. unit 分为 distinct_subject、record、distinct_key；分母身份不借用分子配置。
+4. 资格筛选通过 expression 组合，不再把 non_missing/custom 当作 scope；缺省
+   expression 表示不额外筛选。最高严重程度选择不由计数键承担，不增加父节点范围。
+
+### 最初批准时的待确认项（已由下一节关闭）
+
+Header 资格条件的变量来源与去重顺序、scope/unit 与宿主组合限制、旧配置迁移和
+schema_version 策略，以及 emitter 的显式输入输出。具体建议见
+[统一分母契约](denominator-contract-design.md)，其中第 3 至第 6 节尚未批准。
+
+以上记录是目标模型批准时的状态快照；实施细则见下节，更新后的交付状态以当前代码
+和测试为准。
+
+## 统一分母：实施规则
+
+状态：用户于 2026-10-31 明确确认并要求继续实现，见 session
+`01a19004-a9fc-73b2-987d-498188be499d`。
+
+1. Header population 分母资格表达式在 `_TFL_POP_001` 上判断，以保留 Header source
+   变量；先按 Header column condition 展开，再按 subject 去重。此 scope 只允许
+   `distinct_subject`。表达式和列条件使用 SAS 语法。
+2. Primitive categorical 只允许 `header_population` 和 `chunk_source`；
+   `current_group` 仅允许 hierarchical categorical block。chunk_source 使用完整
+   chunk filter 后的 source、限定 Header membership，但不继承动态层级缺失筛选。
+3. 分母有独立的 scope、unit、distinct_key 和 expression。资格过滤与分子条件完全
+   分离，distinct denominator key 不传播到分子事件；筛选先于分母单位去重。
+4. Record 分母只计真实源记录，不将 header scaffold 当作分析数据；不同分母条件仍可
+   保持同类 categorical analysis 共用一次 PROC FREQ。
+5. Bundle 升至 schema_version=2。只导入和导出 v2；v1 返回既有 unsupported-version
+   transport error，不做自动转换。旧 bundle 由用户显式迁移后再导入。
+6. 既有 generator/container/emitter/render 边界保持；分母的资格投影、单位投影和
+   row_order=0 事件由当前 categorical emitter 显式生成，并只在 SAS WORK 中存活。
+
+该决定完成后，P-2a 已关闭。format node catalog、最高严重程度记录选择和
+parent-level 分母仍是独立未决事项。

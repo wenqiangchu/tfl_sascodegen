@@ -25,7 +25,7 @@ categorical_chunk <- function(unit, distinct_key = NULL) {
   chunk <- list(
     id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl",
     counting_unit = unit,
-    denominator = list(type = "header_population"),
+    denominator = list(scope = "header_population", unit = "distinct_subject"),
     rows = list(list(
       id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
       statistics = list(list(id = "n")), cell_format = "{n}"
@@ -85,7 +85,7 @@ testthat::test_that("per-block guards omit column_order while dedup keys keep it
                                                      collapse = " "), fixed = TRUE))
   # Header expansion would otherwise report one source duplicate once per column.
   testthat::expect_match(result$source,
-                         "by chunk_order column_order node_key USUBJID;", fixed = TRUE)
+                         "by chunk_order column_order node_key row_order USUBJID;", fixed = TRUE)
 })
 
 testthat::test_that("duplicate checking can be switched off entirely", {
@@ -403,11 +403,7 @@ projection_columns <- function(parts) {
   }, character(1L), USE.NAMES = FALSE)
 }
 
-testthat::test_that("declared keys reach both branches of the membership union", {
-  # The scaffold branch supplies denominator rows for a header-population chunk.
-  # It runs through the same UNION ALL as the event branch, so it has to project
-  # the same columns in the same shape; otherwise SAS cannot build the merged
-  # table at all. Key count must not matter, so several key sets are exercised.
+testthat::test_that("denominator identity stays independent from numerator keys", {
   key_sets <- list(
     c("USUBJID", "VISIT"),
     c("USUBJID", "K1", "K2", "K3", "K4", "K5")
@@ -415,26 +411,20 @@ testthat::test_that("declared keys reach both branches of the membership union",
   for (keys in key_sets) {
     for (check in c(TRUE, FALSE)) {
       chunk <- categorical_chunk("distinct_key", keys)
-      chunk$denominator <- list(type = "header_population")
+      chunk$denominator <- list(scope = "header_population", unit = "distinct_subject")
       result <- generate_table_source(base_bundle(chunk), "t1",
                                       include_duplicate_check = check)
       testthat::expect_true(result$passed)
       lines <- strsplit(result$source, "\n", fixed = TRUE)[[1]]
-      union_at <- grep("^\\s*union all$", lines)
-      testthat::expect_length(union_at, 1L)
-      event_at <- max(grep("^\\s*select ", lines[seq_len(union_at)]))
-      scaffold_at <- union_at + grep("^\\s*select ", lines[union_at:length(lines)])[1L] - 1L
-
-      event_cols <- projection_columns(select_projection(lines, event_at))
-      scaffold_cols <- projection_columns(select_projection(lines, scaffold_at))
-
-      # Same columns, same order: a UNION ALL matches positionally.
-      testthat::expect_identical(scaffold_cols, event_cols)
-      # Declared keys other than USUBJID have to appear on both sides.
-      declared <- setdiff(keys, "USUBJID")
-      testthat::expect_true(all(declared %in% event_cols))
-      testthat::expect_true(all(declared %in% scaffold_cols))
-      testthat::expect_length(declared, length(keys) - 1L)
+      testthat::expect_false(grepl("union all", result$source, fixed = TRUE))
+      testthat::expect_match(result$source, "by column_order USUBJID;", fixed = TRUE)
+      testthat::expect_match(result$source,
+        paste0("by chunk_order column_order node_key row_order ",
+               paste(keys, collapse = " "), ";"), fixed = TRUE)
+      denominator_keys <- sub("(?s).*data _TFL_KDQUAL_001_001;\\n(.*?)\\nrun;.*", "\\1",
+                              result$source, perl = TRUE)
+      testthat::expect_false(grepl("VISIT", paste(
+        strsplit(denominator_keys, "\\n", fixed=TRUE)[[1L]], collapse=" "), fixed=TRUE))
     }
   }
 })

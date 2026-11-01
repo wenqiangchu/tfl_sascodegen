@@ -422,20 +422,12 @@ render_row_yaml <- function(value, indent) {
   context$lines
 }
 
-render_primitive_denominator_yaml <- function(value, indent) {
-  context <- new_yaml_lines()
-  yaml_emit_scalar(context, indent, "type", value$type)
-  if (!is.null(value$variable)) yaml_emit_scalar(context, indent, "variable", value$variable)
-  if (!is.null(value$expression)) yaml_emit_scalar(context, indent, "expression", value$expression)
-  context$lines
-}
-
-render_hierarchical_denominator_yaml <- function(value, indent) {
+render_denominator_yaml <- function(value, indent) {
   context <- new_yaml_lines()
   yaml_emit_scalar(context, indent, "scope", value$scope)
   yaml_emit_scalar(context, indent, "unit", value$unit)
-  if (!is.null(value$variable)) yaml_emit_scalar(context, indent, "variable", value$variable)
   if (!is.null(value$expression)) yaml_emit_scalar(context, indent, "expression", value$expression)
+  if (!is.null(value$distinct_key)) yaml_emit_scalar_sequence(context, indent, "distinct_key", value$distinct_key)
   context$lines
 }
 
@@ -479,7 +471,7 @@ render_analysis_block_yaml <- function(value, indent) {
   }
   if (!is.null(value$analysis_variable)) yaml_emit_scalar(context, indent, "analysis_variable", value$analysis_variable)
   if (!is.null(value$denominator)) yaml_emit_mapping(context, indent, "denominator", value$denominator,
-                                                     render_hierarchical_denominator_yaml)
+                                                     render_denominator_yaml)
   yaml_emit_sequence(context, indent, "rows", value$rows, render_row_yaml)
   context$lines
 }
@@ -503,7 +495,7 @@ render_chunk_yaml <- function(value, indent) {
       yaml_emit_scalar_sequence(context, indent, "distinct_key", value$distinct_key, "string")
     }
     yaml_emit_mapping(context, indent, "denominator", value$denominator,
-                      render_primitive_denominator_yaml)
+                      render_denominator_yaml)
     yaml_emit_sequence(context, indent, "rows", value$rows, render_row_yaml)
   } else if (identical(value$type, "hierarchical_summary")) {
     yaml_emit_sequence(context, indent, "levels", value$levels, render_level_yaml)
@@ -622,7 +614,7 @@ parse_manifest_yaml <- function(text) {
     get_field(parsed$value, "schema_version"),
     "$.manifest.yaml.schema_version", collector, "schema_version", min_value = 1
   )
-  if (!is.null(schema_version) && !identical(as.integer(schema_version), 1L)) {
+  if (!is.null(schema_version) && !identical(as.integer(schema_version), 2L)) {
     add_error(collector, "import", "bundle_schema_unsupported",
               sprintf("Schema version '%s' is not supported.", schema_version),
               "$.manifest.yaml.schema_version")

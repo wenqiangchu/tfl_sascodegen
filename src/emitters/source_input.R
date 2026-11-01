@@ -93,6 +93,18 @@ primitive_counting_keys <- function(chunk, unit = chunk$counting_unit %||% "dist
          stop("Unsupported counting unit.", call. = FALSE))
 }
 
+denominator_counting_keys <- function(denominator) {
+  primitive_counting_keys(list(counting_unit = denominator$unit,
+                              distinct_key = denominator$distinct_key))
+}
+
+denominator_uses_header_n <- function(denominator) {
+  !is.null(denominator) &&
+    identical(denominator$scope, "header_population") &&
+    identical(denominator$unit, "distinct_subject") &&
+    is.null(denominator$expression)
+}
+
 primitive_check_keys <- function(chunk, unit = chunk$counting_unit %||% "distinct_subject") {
   # Which keys deserve a duplicate warning. record counts each source row on its
   # own, so source_row is unique by construction and a check could never fire.

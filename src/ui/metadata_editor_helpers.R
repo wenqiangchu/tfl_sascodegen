@@ -27,7 +27,8 @@ new_chunk_seed <- function(type) {
     return(list(
       id = "chunk_001", type = type, source_data = "adam.adsl",
       counting_unit = "distinct_subject",
-      denominator = list(type = "header_population"), rows = list(row)
+      denominator = list(scope = "header_population", unit = "distinct_subject"),
+      rows = list(row)
     ))
   }
   level <- list(

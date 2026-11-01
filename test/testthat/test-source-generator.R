@@ -157,7 +157,7 @@ testthat::test_that("interleaved batch types retain template order in logical ma
   chunks <- bundle$templates[[1L]]$body$chunks
   categorical <- list(
     id = "sex", type = "categorical_summary_nonexclusive", source_data = "adam.adsl", counting_unit = "distinct_subject",
-    denominator = list(type = "header_population"),
+    denominator = list(scope = "header_population", unit = "distinct_subject"),
     rows = list(list(
       id = "female", type = "analysis", label = "Female", condition = "SEX = 'F'",
       statistics = list(list(id = "n")), cell_format = "{n}"
