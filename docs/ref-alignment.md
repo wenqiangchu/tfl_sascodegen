@@ -34,8 +34,9 @@
 1. 所有 population/header/filter/denominator/row condition 从 R expression 改为
    SAS expression；平台保存原文、生成器拼接原文，不执行或翻译表达式。
 2. ref 的 R data frame、`dplyr`、R quantile、R round 和 `reporter` package 只是实现
-   例子，不能成为 SAS 契约。当前 emitter 已选择 `PROC MEANS`、`PROC FREQ`、SAS
-   `ROUND` 和 `PUTN`；具体 DATA step 和内部对象仍属于实现细节。
+   例子，不能成为 SAS 契约。当前 emitter 使用 `PROC MEANS`、SAS `ROUND` 和
+   `PUTN`；分类频数以 `N(flag)` 配合完整 `CLASSDATA=` 目录计算。具体 DATA step
+   和内部对象仍属于实现细节。
 3. ref 的直接 R binding、`.tfl_*` 临时对象、`init.R`、`tfl_runtime.R`、Rscript 和
    RTF artifact 不进入当前产品；SAS source 的 section 和中间 dataset 名称需要
    另行定义。

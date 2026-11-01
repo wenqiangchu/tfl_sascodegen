@@ -237,15 +237,17 @@ Header N 仅可在 header_population + distinct_subject 且没有额外资格筛
 | _TFL_KDUNIT_<batch>_<chunk> | 按 column_order、必要 node_key、独立分母键形成的单位 | categorical 独占；distinct 单位使用 typed NODUPKEY，record 直接保留真实记录。 |
 | _TFL_KDEN_<batch>_<chunk> | chunk_order、row_order=0、column_order、node_key，每单位一个事件 | categorical 独占；Header/chunk_source 的 node_key 为空，current_group 为实际节点。 |
 | _TFL_KPRE_* / _TFL_KIN_* / _TFL_KNUM_* | 现有分子事件及其身份键，row_order>0 | categorical 独占；不带独立分母键，不生成 Header 假记录。 |
-| _TFL_KEVENT_<batch> / _TFL_KRAW_<batch> | 合并已归约的分母、分子位置事件；由一次 PROC FREQ 计数 | categorical 独占；raw 交付现有 expected-cell join 和 render。 |
+| _TFL_KCLASS_<batch> | 从完整展示位置派生分子位置及 row_order=0 的分母位置后去重；全局分母使用空 node_key，current_group 保留节点 | categorical 独占；作为 CLASSDATA 提供给 PROC MEANS，EXCLUSIVE 不得过滤合法分母事件。 |
+| _TFL_KEVENT_<batch> / _TFL_KRAW_<batch> | 合并已归约的分母、分子位置事件并设置 flag=1；由一次 PROC MEANS 的 N(flag) 计数 | categorical 独占；raw 交付现有 expected-cell join 和 render。 |
 
-Header 没有额外条件时仍可复用 _TFL_HN_001；有条件时读取 _TFL_POP_001，按
+Header 没有额外条件时复用 _TFL_HN_001；该分支的分母事件直接使用 membership 已确定的
+column_order，不在已投影的 membership 上重新计算 Header 条件。有条件时读取 _TFL_POP_001，按
 Header column condition 和分母 expression 输出合格 subject 后去重。source 范围
 使用 membership inner join，空 scaffold 不产生事件；current_group 使用已有
 HMERGE 的真实记录。原始 typed keys 在事件合并前完成归约，避免分母键和分子键
 互相污染。新分母表都属于当前 chunk/block，不修改共享输入。
 
 batch signature 保留分子键及分母 scope/unit/key；expression 在每个 chunk 独立
-处理，条件不同仍可复用一次 FREQ。nested 非 current_group 分母按列计算一次，
+处理，条件不同仍可复用一次 MEANS。nested 非 current_group 分母按列计算一次，
 在 expected-cell join 中用空 node_key 广播到各现有节点；不复制分析记录或产生新节点。
 最终输出、n/NE、exclusive overlap、duplicate-check 和渲染责任沿用既有契约。

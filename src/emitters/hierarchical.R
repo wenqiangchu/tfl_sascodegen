@@ -24,7 +24,7 @@ hierarchical_text_lengths_source <- function(plan) {
   chunk <- plan$chunks[[1L]]
   suffix <- sprintf("%03d", plan$batch_order)
   c(
-    "/* Size node text from SAS WORK descriptors without allocating maximum-length fields per source record. */",
+    "/* Size node text from SAS WORK descriptors; caller formats may require full-width fields. */",
     "data _null_;",
     "  length _tfl_format $64;",
     paste0("  _tfl_dsid = open('_TFL_HSRC_", suffix, "', 'i');"),
@@ -184,6 +184,10 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
       (identical(level$missing_policy, "error")) c(
         paste0("  if missing(", level$variable, ") then delete;")
       ) else character(),
+    if (identical(level$missing_policy, "label")) c(
+      "  /* Parent seeds establish the parent domain, not observed missing children. */",
+      paste0("  if missing(", level$variable, ") and _tfl_n = 0 then delete;")
+    ),
     paste0("  node_label = vvalue(", level$variable, ");"),
     if (identical(level$missing_policy, "label"))
       paste0("  if missing(", level$variable, ") then node_label = ",

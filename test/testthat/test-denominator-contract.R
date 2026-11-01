@@ -123,6 +123,55 @@ testthat::test_that("header qualification uses retained header variables before 
   testthat::expect_true(all(vapply(map, `[[`, integer(1L), "use_header_n") == 0L))
 })
 
+testthat::test_that("unconditional header denominators reuse resolved membership columns", {
+  for (nested in c(FALSE, TRUE)) {
+    bundle <- denominator_bundle(list(scope = "header_population", unit = "distinct_subject"),
+                                 nested = nested)
+    bundle$headers[[1L]]$columns[[1L]]$condition <- "put(TRT01A, $trtfmt.) = 'Drug A'"
+    result <- generate_table_source(bundle, "t", include_duplicate_check = FALSE)
+    testthat::expect_true(result$passed)
+    suffix <- if (nested) "002" else "001"
+    qualified <- denominator_step(result$source, paste0("_TFL_KDQUAL_", suffix, "_001"))
+    membership <- if (nested) "_TFL_HMEM_001" else "_TFL_MEM_001"
+    testthat::expect_match(qualified, paste0("set ", membership, ";"), fixed = TRUE)
+    testthat::expect_match(qualified, "keep column_order USUBJID;", fixed = TRUE)
+    # Membership already owns both qualification and overlapping column expansion.
+    testthat::expect_false(grepl("TRT01A|trtfmt|column_order =|output;", qualified))
+  }
+})
+
+testthat::test_that("the MEANS catalog admits denominator positions as well as display rows", {
+  cases <- list(
+    list(scope = "header_population", unit = "distinct_subject", expression = "EVALFL = 'Y'"),
+    list(scope = "chunk_source", unit = "record"),
+    list(scope = "current_group", unit = "distinct_subject")
+  )
+  for (nested in c(FALSE, TRUE)) {
+    for (den in cases) {
+      local <- identical(den$scope, "current_group")
+      if (local && !nested) next
+      source <- denominator_generated(den, nested = nested)
+      suffix <- if (nested) "002" else "001"
+      catalog <- denominator_step(source, paste0("_TFL_KCLASS_", suffix))
+      # Keep the original result position before deriving its denominator position.
+      testthat::expect_match(catalog,
+        paste0("set _TFL_KEY_", suffix, "(keep=chunk_order row_order column_order node_key);"),
+        fixed = TRUE)
+      testthat::expect_match(catalog, "output;\n  row_order = 0;", fixed = TRUE)
+      testthat::expect_equal(length(gregexpr("output;", catalog, fixed = TRUE)[[1L]]), 2L)
+      testthat::expect_identical(grepl("node_key = '';", catalog, fixed = TRUE), !local)
+      events <- denominator_step(source, paste0("_TFL_KDEN_", suffix, "_001"))
+      testthat::expect_match(events, "row_order = 0;", fixed = TRUE)
+      testthat::expect_identical(grepl("node_key = '';", events, fixed = TRUE), !local)
+      testthat::expect_match(source,
+        paste0("proc sort data=_TFL_KCLASS_", suffix, " nodupkey;"), fixed = TRUE)
+      testthat::expect_match(source,
+        paste0("classdata=_TFL_KCLASS_", suffix, " nway completetypes exclusive noprint;"),
+        fixed = TRUE)
+    }
+  }
+})
+
 testthat::test_that("independent denominator keys are qualified outside numerator events", {
   source <- denominator_generated(list(scope = "chunk_source", unit = "distinct_key",
                                       expression = "EVALFL = 'Y'", distinct_key = "CYCLE"))

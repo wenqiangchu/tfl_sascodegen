@@ -261,8 +261,9 @@ mock emitter 完成完整 source assembly。
   `PROC MEANS`；
 - `categorical_summary_nonexclusive` 的 denominator、numerator、n/pct 和 render；
 - categorical 兼容 batch 的 source/chunk 规范化、共同 analysis 维度和单次
-  `PROC FREQ`；
-- expected-cell skeleton 的零计数补全、分母为零的 `NE` 映射，以及 batch input/raw
+  `PROC MEANS` `N(flag)` 计数；
+- expected-cell skeleton 派生含 row_order=0 分母位置的 `CLASSDATA=` 完整目录、
+  零计数输出、分母为零的 `NE` 映射，以及 batch input/raw
   object 的确定性 `_TFL_` 命名；
 - `ChunkStatisticValue` 到 `ChunkRenderResult` 的统一转换、`cell_format` placeholder
   替换和 hierarchical 运行时行展平；

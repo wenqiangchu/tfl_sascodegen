@@ -12,8 +12,9 @@ population、header、table、template、chunk 以及内存态编辑工作区，
 
 分析契约更新（2026-10-31）：分类分子保留实际计数，不因分母为零而改写为零；
 分母为零时只有百分比不可估计。统一分母模型及实施规则已批准并实现，bundle
-schema_version 固定为 2，严格接受 v2，不自动转换 v1。format 节点目录和最高严重程度
-记录选择的具体字段仍在单独设计。
+schema_version 固定为 2，严格接受 v2，不自动转换 v1。format 节点目录已通过
+`levels[].format` 实现；SOC/PT 最高严重程度不增加字段，由调用方通过
+`custom_code.before` 或外部数据准备实现。层级继续保留线性结构。
 
 本文的目标是让实现可以从空白工作区开始：
 
@@ -200,7 +201,7 @@ templates:
 
 | 字段 | 类型 | 语义 |
 | --- | --- | --- |
-| `manifest.yaml.schema_version` | integer | bundle 格式版本；当前固定为 1。 |
+| `manifest.yaml.schema_version` | integer | bundle 格式版本；当前固定为 2，严格接受 v2。 |
 | `populations.yaml.populations` | sequence | 可复用 population 定义。 |
 | `headers.yaml.headers` | sequence | 可复用 header 定义。 |
 | `tables/<table_id>.yaml` | mapping | 单个 table 定义；table 是生成入口。 |
@@ -783,11 +784,17 @@ format 值域是该 level 的完整节点目录。未观察的格式化值仍需
 格式化值组合是允许的。目录展开必须在 expected-cell skeleton、层级排序和 render
 之前完成。
 
-分类频数统一使用 `PROC MEANS`/`PROC SUMMARY` 的 `CLASS ... / PRELOADFMT` 和
-`COMPLETETYPES`。每个进入某个分类计数输入的记录先设置 `flag=1`，再以 `N(flag)`
+动态节点目录使用 `PROC MEANS` 的 `CLASS ... / PRELOADFMT` 和 `COMPLETETYPES`。
+分类频数另由 `PROC MEANS` 使用完整分析组合目录 `CLASSDATA=` 及 `EXCLUSIVE` 计算；
+该目录同时包含展示行位置和 `row_order=0` 的分母位置。全局分母使用空 node key，
+current_group 分母使用实际 node key。每个分类计数事件先设置 `flag=1`，再以 `N(flag)`
 计数；不符合 row condition 或分母条件的记录在进入对应输入前排除，而不是设置为 0。
 distinct counting unit 仍须在计数前按既有规则归约。零频 class 组合直接由过程输出，
 不再使用 PROC FREQ 结果与 expected-cell 完整骨架 merge 的补零路径。
+
+父节点目录占位记录只参与节点值域展开，不进入真实分析记录。`missing_policy=label`
+只为当前父节点下真实存在的缺失值生成 Missing 节点；占位记录形成的零频缺失类别应
+排除，普通非缺失 format 类别即使频数为零仍保留。
 
 指定 format 时，`order_variable` 不参与节点排序；节点顺序按 format 的存储顺序生成，
 调用方需要保留声明顺序时应在 PROC FORMAT 中使用 `NOTSORTED`。未指定 format 时沿用
@@ -1192,8 +1199,9 @@ categorical batch 的规范化输入至少包含：
 
 每条记录表示一个 counting event；各 chunk 的 filter、denominator、row condition 和
 counting unit 在规范化阶段处理。`categorical_summary_nonexclusive` 与
-`categorical_summary_exclusive` 分别形成自己的 batch，并各自只调用一次 `PROC FREQ`。
-expected-cell skeleton 负责补回没有计数事件的零计数；分母为零时保留实际 `n`，
+`categorical_summary_exclusive` 分别形成自己的 batch，并各自只调用一次 `PROC MEANS`。
+expected-cell skeleton 及对应分母位置构成 `CLASSDATA=` 目录，由过程输出零频组合；
+后续 join 关联逻辑结果元数据和分母。分母为零时保留实际 `n`，
 `pct` 为 not estimable 并显示为 `NE`。规范化数据集和 raw 数据集使用确定性的 `_TFL_` 类型/序号命名并
 位于 `WORK` 库；用户 ID 不进入物理名称。
 
@@ -1207,7 +1215,7 @@ expected-cell skeleton 负责补回没有计数事件的零计数；分母为零
    和 analysis variable 不同并不妨碍合批，但必须先映射为共同的 batch analysis 维度，
    并保留 chunk/row/header/statistic identity；不兼容 chunk 分入不同 batch；
 4. 一个 continuous batch 生成一次 `PROC MEANS`，一个 categorical batch 生成一次
-   `PROC FREQ`。批处理只复用过程调用，不改变每个 chunk 自己的 denominator、row
+   `PROC MEANS`。批处理只复用过程调用，不改变每个 chunk 自己的 denominator、row
    condition、counting unit、digits、`NE` 或 warning 契约；
 5. `hierarchical_summary` 不跨 container 合批。其动态节点发现与 node scope 保持独立；
    同 container、同 anchor level、sequence 相邻且 counting unit、typed distinct_key
@@ -1242,8 +1250,8 @@ code-owned 实现，不成为用户 YAML 契约：
 | Chunk | 已确认的 SAS 实现 | 已确认的 logical output |
 | --- | --- | --- |
 | continuous_summary | `PROC MEANS` 默认 percentile、兼容 batch 的规范化输入（`chunk_order`/`column_order`/`analysis_value`）、排序、显式 counting-unit materialization、mean/sd、missing、digits/rounding | 每个 row × header column 的 numeric/raw 和字符 cell 字段；batch identity 不改变 logical-cell identity |
-| categorical_summary_nonexclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段；batch identity 不改变 logical-cell identity |
-| categorical_summary_exclusive | `PROC FREQ`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`）、按 typed counting unit 生成非阻断 overlap guard 和固定字段顺序的 `WARNING: [USER] ...` | 同上，以及 counting unit 语义 |
+| categorical_summary_nonexclusive | `PROC MEANS` 的 `N(flag)`、完整 `CLASSDATA=`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`，嵌套时含 `node_key`）、denominator、分子条件、n/pct、百分比 scale、missing | numerator、denominator、n、pct 和最终 cell 字段；batch identity 不改变 logical-cell identity |
+| categorical_summary_exclusive | `PROC MEANS` 的 `N(flag)`、完整 `CLASSDATA=`、兼容 batch 的规范化输入（`chunk_order`/`row_order`/`column_order`，嵌套时含 `node_key`）、按 typed counting unit 生成非阻断 overlap guard 和固定字段顺序的 `WARNING: [USER] ...` | 同上，以及 counting unit 语义 |
 | hierarchical_summary | 动态节点发现、排序、record grain、嵌套 primitive、行展平 | group path、indent、row order、header cells 的字段结构 |
 
 实现不得根据 YAML 注入 handler，也不得把 PROC、percentile definition 或物理临时

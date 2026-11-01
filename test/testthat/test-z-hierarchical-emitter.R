@@ -294,6 +294,43 @@ testthat::test_that("format levels generate complete parent-scoped node catalogs
   testthat::expect_match(source, "flag = 1;", fixed = TRUE)
 })
 
+testthat::test_that("formatted missing labels require real records rather than parent seeds", {
+  for (policy in c("label", "exclude", "error")) {
+    bundle <- hierarchical_report_fixture()
+    level <- bundle$templates[[1L]]$body$chunks[[1L]]$levels[[2L]]
+    level$format <- "$category_fmt"
+    level$missing_policy <- policy
+    if (policy == "label") level$missing_label <- "Missing"
+    bundle$templates[[1L]]$body$chunks[[1L]]$levels[[2L]] <- level
+    result <- generate_table_source(bundle, "t1")
+    testthat::expect_true(result$passed)
+    step <- function(dataset) {
+      match <- regmatches(result$source,
+        regexec(paste0("(?s)data ", dataset, ";\\n(.*?)\\nrun;"),
+                result$source, perl = TRUE))[[1L]]
+      testthat::expect_length(match, 2L)
+      match[[2L]]
+    }
+    input <- step("_TFL_HFMTIN_001_002")
+    testthat::expect_match(input, "parent_node_key = _tfl_parent_key;", fixed = TRUE)
+    testthat::expect_match(input, "call missing(PT);\n    flag = .;", fixed = TRUE)
+    testthat::expect_match(input, "parent_node_key = node_key; flag = 1;", fixed = TRUE)
+    catalog <- step("_TFL_HFCATS_001_002")
+    if (policy == "label") {
+      # Ordinary zero-frequency format classes survive; only unobserved missing is removed.
+      testthat::expect_match(catalog, "if missing(PT) and _tfl_n = 0 then delete;", fixed = TRUE)
+      testthat::expect_match(catalog, "if missing(PT) then node_label = 'Missing';", fixed = TRUE)
+      testthat::expect_false(grepl("if _tfl_n = 0 then delete;", catalog, fixed = TRUE))
+    } else {
+      testthat::expect_match(catalog, "if missing(PT) then delete;", fixed = TRUE)
+    }
+    # Seeds are catalog-only: actual level membership is assigned from real records.
+    observed <- step("_TFL_HFOBS_001_002")
+    testthat::expect_match(observed, "set _TFL_HLEVEL_001_001;", fixed = TRUE)
+    testthat::expect_false(grepl("_tfl_parent|_TFL_HFMTIN", observed))
+  }
+})
+
 testthat::test_that("same-row analysis uses dynamic node labels without duplicate label rows", {
   bundle <- hierarchical_report_fixture()
   chunk <- bundle$templates[[1L]]$body$chunks[[1L]]

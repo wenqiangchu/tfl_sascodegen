@@ -214,10 +214,16 @@ format 不足以让一个从未出现的访视自动产生 node_key；批准的�
 `PROC MEANS` 的 format 预载和完整类型输出建立节点及零频组合，再将其直接提供给
 后续统计和 render。
 
-分类计数和节点目录均由 PROC MEANS 的 CLASS、PRELOADFMT、COMPLETETYPES 以及
-`flag=1` 的计数输入生成。format 产生的零频 class 组合直接进入统计输出，不再采用
+节点目录由 PROC MEANS 的 CLASS、PRELOADFMT、COMPLETETYPES 生成；分类计数使用
+该目录与 metadata/header 构成的完整 CLASSDATA，以及 `flag=1` 的计数输入。
+CLASSDATA 同时覆盖展示位置与 row_order=0 的分母位置，全局分母保留空 node_key，
+current_group 分母保留实际 node_key。零频 class 组合直接由过程输出，不再采用
 PROC FREQ 原始结果与 expected-cell 完整骨架的补零路径。类别目录仍不是带假受试者的
 分析记录；零频组合是过程输出，不向计数源注入 dummy observations。
+
+节点目录输入允许使用 `flag=.` 的父节点占位记录，以展开没有实际观测的父节点；
+它们不进入分析计数源。missing_policy=label 时，仅保留有真实缺失记录支持的 Missing
+节点，排除占位记录带来的零频缺失类别；普通非缺失 format 零频类别仍完整保留。
 
 已决定：在 `levels[]` 增加可选字符串字段 `format`，保存不带末尾句点的 SAS format
 名称；字符型 format 使用 `$` 前缀。emitter 负责补句点并生成 FORMAT 绑定。字段不

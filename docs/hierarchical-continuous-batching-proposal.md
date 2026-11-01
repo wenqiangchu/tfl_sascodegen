@@ -188,7 +188,7 @@ block 中止，较早 block 的 precision 可能已存在，但该组的 PROC ME
 | 同 level 相邻两个 continuous blocks，使用不同变量 | 一个 membership merge、一个 MEANS；两套统计值及 analysis/row identity 独立。 |
 | 三个 compatible blocks | procedure 为 1；逐 member 映射，无重复或丢失 logical cells。 |
 | counting unit 不同、distinct key 字段或顺序不同 | 分为不同组；typed key 不被统一转换。 |
-| 不同 level、不同 container、被 categorical 隔开 | 不合并；categorical denominator、FREQ 和顺序保持。 |
+| 不同 level、不同 container、被 categorical 隔开 | 不合并；categorical denominator、MEANS 计数和顺序保持。 |
 | 三种 counting unit 各自的兼容组 | 每种模式分别覆盖两个 blocks，唯一非缺失值及全 missing unit 保持原语义。 |
 | 后一个 block 冲突，含两个相等的非缺失记录 | 原 guard 中止，共享 MEANS 与后处理未执行；前一个 block 的合法值不能掩盖冲突。 |
 | 不同变量精度、absolute/relative digits、重叠 Header 列 | base_digits 按 block/node 独立，precision 不交叉影响。 |

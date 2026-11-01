@@ -182,7 +182,9 @@ categorical_denominator_source <- function(plan, entry) {
   } else character()
   if (identical(denominator$scope, "header_population")) {
     input <- c(
-      "/* Qualify header subjects while the population source variables are available. */",
+      if (is.null(denominator$expression))
+        "/* Reuse resolved membership columns without re-evaluating source predicates. */" else
+        "/* Qualify header subjects while the population source variables are available. */",
       paste0("data ", qualified, ";"),
       paste0("  set ", if (is.null(denominator$expression)) plan$membership_dataset else
                plan$header_population_dataset, ";"),
@@ -191,10 +193,6 @@ categorical_denominator_source <- function(plan, entry) {
         paste0("  if (", column$condition, ") and (",
                denominator$expression, ") then do; column_order = ",
                index, "; output; end;")
-      }), use.names = FALSE),
-      if (is.null(denominator$expression)) unlist(lapply(seq_along(plan$header_columns), function(index) {
-        column <- plan$header_columns[[index]]
-        paste0("  if (", column$condition, ") then do; column_order = ", index, "; output; end;")
       }), use.names = FALSE),
       "  keep column_order USUBJID;",
       "run;"
@@ -280,9 +278,15 @@ categorical_batch_analysis_source <- function(plan, exclusive = FALSE) {
     "run;",
     "/* Build the logical class catalog before PROC MEANS supplies zero combinations. */",
     expected_cell_skeleton_source(plan),
-    paste0("proc sort data=_TFL_KEY_", suffix,
-           "(keep=chunk_order row_order column_order node_key) out=_TFL_KCLASS_", suffix,
-           " nodupkey;"),
+    "/* Include denominator positions so EXCLUSIVE retains their counting events. */",
+    paste0("data _TFL_KCLASS_", suffix, ";"),
+    paste0("  set _TFL_KEY_", suffix, "(keep=chunk_order row_order column_order node_key);"),
+    "  output;",
+    "  row_order = 0;",
+    if (has_global) "  node_key = '';",
+    "  output;",
+    "run;",
+    paste0("proc sort data=_TFL_KCLASS_", suffix, " nodupkey;"),
     "  by chunk_order row_order column_order node_key;",
     "run;",
     "/* Analyze compatible categorical events once with PROC MEANS. */",

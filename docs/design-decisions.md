@@ -1415,14 +1415,15 @@ schema_version 策略，以及 emitter 的显式输入输出。具体建议见
 3. 分母有独立的 scope、unit、distinct_key 和 expression。资格过滤与分子条件完全
    分离，distinct denominator key 不传播到分子事件；筛选先于分母单位去重。
 4. Record 分母只计真实源记录，不将 header scaffold 当作分析数据；不同分母条件仍可
-   保持同类 categorical analysis 共用一次 PROC FREQ。
+   保持同类 categorical analysis 共用一次 PROC MEANS。
 5. Bundle 升至 schema_version=2。只导入和导出 v2；v1 返回既有 unsupported-version
    transport error，不做自动转换。旧 bundle 由用户显式迁移后再导入。
 6. 既有 generator/container/emitter/render 边界保持；分母的资格投影、单位投影和
    row_order=0 事件由当前 categorical emitter 显式生成，并只在 SAS WORK 中存活。
 
-该决定完成后，P-2a 已关闭。format node catalog 和 parent-level 分母仍是独立
-未决事项；SOC/PT 最高严重程度的实现边界见下一节。
+该决定完成后，P-2a 已关闭。nested categorical block 的 parent-level 分母由
+`current_group` scope 表达；format node catalog 和零频节点已在 P-2d 实施。SOC/PT
+最高严重程度的实现边界见下一节。
 
 ## SOC/PT 最高严重程度记录：使用现有配置，不新增字段
 
@@ -1492,8 +1493,8 @@ format 的子 level 要在每个已存在的父节点下展开完整值域。父
 格式化值组合是允许的。
 
 `PROC FREQ` 没有 `CLASS` 语句，`TABLES` 的 `SPARSE` 不能替代 format 值域预载。
-分类频数统一使用 `PROC MEANS`/`PROC SUMMARY` 的 `CLASS ... / PRELOADFMT` 和
-`COMPLETETYPES`。每个进入某个分类计数输入的记录先设置 `flag=1`，再以 `N(flag)`
+节点目录使用 `PROC MEANS` 的 `CLASS ... / PRELOADFMT` 和 `COMPLETETYPES`；分类频数
+使用包含展示及分母位置的 `CLASSDATA=`。每个分类计数事件先设置 `flag=1`，再以 `N(flag)`
 计数；不符合 row condition 或分母条件的记录在进入对应输入前排除，而不是设置为 0。
 distinct counting unit 仍须在计数前按既有规则归约。用户不采用 PROC FREQ 结果再与
 完整骨架 merge 的补零路径。
@@ -1511,3 +1512,21 @@ parser 的结构规则是：`format` 必须是非空字符串，且不得以句�
 调用方需要保留 PROC FORMAT 的声明顺序时使用 `NOTSORTED`。未指定 format 时沿用
 `label_variable`、`order_variable` 和 `order_direction`。`result_sort` 仍可在统计完成
 后覆盖最终展示顺序。
+
+### 2026-11-02 审阅修复：目录、分母与真实缺失值
+
+用户批准修复审阅问题 1–4，沿用以上契约，不新增 metadata 字段：
+
+1. 分类 CLASSDATA 从展示位置保留原位置，再派生 row_order=0 的分母位置并去重。
+   header_population/chunk_source 分母使用空 node_key，current_group 保留实际 node_key，
+   避免 PROC MEANS EXCLUSIVE 排除合法分母事件。
+2. 无 expression 的 Header 分母直接使用 membership 已确定的 column_order；仅在有
+   expression、读取完整 Header population 源时计算 Header 条件。
+3. 父节点占位记录 flag=. 只建立目录中的父域。missing_policy=label 时排除
+   missing(variable) 且 N(flag)=0 的类别，保留真实缺失记录及非缺失 format 零频类别。
+   特殊 missing format 仍不在支持范围内。
+4. 可移植契约与当前 emitter 映射统一为 schema_version=2、PROC MEANS，并记录 format
+   和最高严重程度方案已决定；历史决策章节继续作为历史记录保留。
+
+验证针对生成源码、bundle 和 UI 契约，不执行 SAS 或真实分析数据。完全空输入下的
+format 根目录行为仍需在调用方 SAS 环境验证。
