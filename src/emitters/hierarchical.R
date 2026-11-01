@@ -23,33 +23,50 @@ hierarchical_membership_dataset <- function(batch_order, level_order) {
 hierarchical_text_lengths_source <- function(plan) {
   chunk <- plan$chunks[[1L]]
   suffix <- sprintf("%03d", plan$batch_order)
+  formatted <- which(vapply(chunk$levels, function(level) !is.null(level$format), logical(1L)))
   c(
-    "/* Size node text from SAS WORK descriptors; caller formats may require full-width fields. */",
+    "/* Size node text from source descriptors and compiled format widths before discovering nodes. */",
     "data _null_;",
     "  length _tfl_format $64;",
+    if (length(formatted)) c(
+      "  /* Compile PUT result attributes without reading observations or evaluating values. */",
+      paste0("  if 0 then set _TFL_HSRC_", suffix, "(keep=",
+             paste(unique(vapply(chunk$levels[formatted], `[[`, "", "variable")), collapse = " "), ");"),
+      vapply(formatted, function(index) {
+        level <- chunk$levels[[index]]
+        paste0("  if 0 then ", sprintf("_tfl_fmt_value_%03d", index), " = put(",
+               level$variable, ", ", level$format, ".);")
+      }, character(1L))
+    ),
     paste0("  _tfl_dsid = open('_TFL_HSRC_", suffix, "', 'i');"),
     "  _tfl_key_length = 1; _tfl_label_length = &_TFL_LABEL_LEN;",
     "  if _tfl_dsid > 0 then do;",
-    unlist(lapply(chunk$levels, function(level) c(
-      if (!is.null(level$format)) c(
-        "    _tfl_key_length = 32767;",
-        "    _tfl_label_length = 32767;"
-      ) else character(),
-      paste0("    _tfl_varnum = varnum(_tfl_dsid, ", sas_character_literal(level$variable), ");"),
-      "    if _tfl_varnum > 0 then do;",
-      "      if vartype(_tfl_dsid, _tfl_varnum) = 'C' then _tfl_value_length = varlen(_tfl_dsid, _tfl_varnum) + 2;",
-      "      else _tfl_value_length = 18;",
-      "    end;",
-      "    else _tfl_value_length = 32767;",
-      "    _tfl_key_length + _tfl_value_length + 32;",
-      paste0("    _tfl_varnum = varnum(_tfl_dsid, ", sas_character_literal(level$label_variable %||% level$variable), ");"),
-      "    if _tfl_varnum > 0 then do;",
-      "      _tfl_format = varfmt(_tfl_dsid, _tfl_varnum);",
-      "      _tfl_format_width = input(compress(scan(_tfl_format, 1, '.'), '0123456789', 'k'), ?? best32.);",
-      "      _tfl_label_length = max(_tfl_label_length, varlen(_tfl_dsid, _tfl_varnum), _tfl_format_width, 32);",
-      "    end;",
-      "    else _tfl_label_length = 32767;"
-    )), use.names = FALSE),
+    unlist(lapply(seq_along(chunk$levels), function(index) {
+      level <- chunk$levels[[index]]
+      if (!is.null(level$format)) return(c(
+        paste0("    _tfl_value_length = max(vlength(", sprintf("_tfl_fmt_value_%03d", index), "), ",
+               if (identical(level$missing_policy, "label")) nchar(level$missing_label, type = "bytes") else 0L,
+               ") + 2;"),
+        "    _tfl_key_length + _tfl_value_length + 32;",
+        "    _tfl_label_length = max(_tfl_label_length, _tfl_value_length - 2);"
+      ))
+      c(
+        paste0("    _tfl_varnum = varnum(_tfl_dsid, ", sas_character_literal(level$variable), ");"),
+        "    if _tfl_varnum > 0 then do;",
+        "      if vartype(_tfl_dsid, _tfl_varnum) = 'C' then _tfl_value_length = varlen(_tfl_dsid, _tfl_varnum) + 2;",
+        "      else _tfl_value_length = 18;",
+        "    end;",
+        "    else _tfl_value_length = 32767;",
+        "    _tfl_key_length + _tfl_value_length + 32;",
+        paste0("    _tfl_varnum = varnum(_tfl_dsid, ", sas_character_literal(level$label_variable %||% level$variable), ");"),
+        "    if _tfl_varnum > 0 then do;",
+        "      _tfl_format = varfmt(_tfl_dsid, _tfl_varnum);",
+        "      _tfl_format_width = input(compress(scan(_tfl_format, 1, '.'), '0123456789', 'k'), ?? best32.);",
+        "      _tfl_label_length = max(_tfl_label_length, varlen(_tfl_dsid, _tfl_varnum), _tfl_format_width, 32);",
+        "    end;",
+        "    else _tfl_label_length = 32767;"
+      )
+    }), use.names = FALSE),
     "    _tfl_rc = close(_tfl_dsid);",
     "  end;",
     "  else do; _tfl_key_length = 32767; _tfl_label_length = 32767; end;",
@@ -60,6 +77,7 @@ hierarchical_text_lengths_source <- function(plan) {
     "  call symputx('_TFL_NODE_LEN', max(&_TFL_NODE_LEN, _tfl_key_length), 'G');",
     "  call symputx('_TFL_LABEL_LEN', max(&_TFL_LABEL_LEN, _tfl_label_length), 'G');",
     "  call symputx('_TFL_RUNTIME_LEN', min(32767, max(&_TFL_RUNTIME_LEN, _tfl_key_length + 2 * &_TFL_ID_LEN + 96)), 'G');",
+    "  stop;",
     "run;"
   )
 }
@@ -233,6 +251,7 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
     "  group_path = catt(parent_node_key, level_component);",
     "  node_key = group_path;",
     paste0("  hierarchy_level = ", level_order, ";"),
+    if (level_order > 1L) "  drop node_order_path;",
     "run;",
     "proc sql noprint;",
     paste0("  create table ", assigned, " as"),

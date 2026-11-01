@@ -34,7 +34,7 @@ template_sort_fixture <- function() {
   )
 }
 
-testthat::test_that("template collection and save preserve imported result sorting", {
+template_contract_ui_environment <- function() {
   ui_environment <- new.env(parent = globalenv())
   suppressPackageStartupMessages(library(shiny))
   suppressPackageStartupMessages(library(shinydashboard))
@@ -42,6 +42,11 @@ testthat::test_that("template collection and save preserve imported result sorti
   ui_files <- list.files(file.path(project_root, "src", "ui"),
                          pattern = "[.]R$", full.names = TRUE)
   invisible(lapply(ui_files, source, local = ui_environment))
+  ui_environment
+}
+
+testthat::test_that("template collection and save preserve imported result sorting", {
+  ui_environment <- template_contract_ui_environment()
   fixture <- template_sort_fixture()
   decorated <- ui_environment$decorate_template_ui_ids(fixture$templates[[1L]])
 
@@ -52,11 +57,6 @@ testthat::test_that("template collection and save preserve imported result sorti
     active_draft(list(operation = "update", original = fixture$templates[[1L]]))
     template_value(decorated)
     session$setInputs(template_stub_header = "Updated SOC")
-    session$setInputs(chunk_1_den_scope = "chunk_source")
-    session$setInputs(chunk_1_den_unit = "distinct_key")
-    session$setInputs(chunk_1_den_distinct_key = "USUBJID, CYCLE")
-    session$setInputs(chunk_1_den_expression = "DENFL = 'Y'")
-    session$setInputs(chunk_1_level_1_format = "visit_fmt")
 
     collected <- collect_template_from_ui(strip_ids = TRUE)
     expected <- fixture$templates[[1L]]$body$chunks[[1L]]$levels[[1L]]$result_sort
@@ -80,4 +80,62 @@ testthat::test_that("template collection and save preserve imported result sorti
     testthat::expect_identical(sort$column_order, c(1L, 0L))
     testthat::expect_identical(sort$direction, "desc")
   })
+})
+
+testthat::test_that("primitive and nested denominator edits survive save and bundle export", {
+  ui_environment <- template_contract_ui_environment()
+  cases <- list(
+    list(nested = TRUE, denominator = list(
+      scope = "current_group", unit = "distinct_key", expression = "EVALFL = 'Y'",
+      distinct_key = c("USUBJID", "VISITNUM"))),
+    list(nested = TRUE, denominator = list(scope = "header_population", unit = "distinct_subject")),
+    list(nested = FALSE, denominator = list(
+      scope = "header_population", unit = "distinct_subject", expression = "EVALFL = 'Y'")),
+    list(nested = FALSE, denominator = list(
+      scope = "chunk_source", unit = "distinct_key", expression = "EVALFL = 'Y'",
+      distinct_key = c("USUBJID", "AESEQ")))
+  )
+  for (case in cases) {
+    fixture <- template_sort_fixture()
+    chunk <- fixture$templates[[1L]]$body$chunks[[1L]]
+    if (!case$nested) {
+      chunk <- chunk$analysis_blocks[[1L]]
+      chunk$anchor_level <- chunk$placement <- NULL
+      chunk$source_data <- "work.events"
+      fixture$templates[[1L]]$body$chunks[[1L]] <- chunk
+    }
+    prefix <- if (case$nested) "chunk_1_block_1_" else "chunk_1_"
+    controls <- if (case$nested) {
+      ui_environment$block_ui(chunk$analysis_blocks[[1L]], "chunk_1_", 1L, chunk)
+    } else ui_environment$chunk_card_ui(chunk, 1L)
+    expected <- case$denominator
+    inputs <- list(expected$scope, expected$unit,
+                   paste(expected$distinct_key %||% character(), collapse = ", "),
+                   expected$expression %||% "")
+    names(inputs) <- paste0(prefix, c("den_scope", "den_unit", "den_distinct_key", "den_expression"))
+    for (id in names(inputs)) {
+      testthat::expect_match(as.character(controls), paste0('id="', id, '"'), fixed = TRUE)
+    }
+    extract_denominator <- function(template) {
+      value <- template$body$chunks[[1L]]
+      if (case$nested) value <- value$analysis_blocks[[1L]]
+      value$denominator
+    }
+    testthat::expect_false(identical(extract_denominator(fixture$templates[[1L]]), expected))
+    shiny::testServer(ui_environment$metadata_editor_server_impl, {
+      workspace(new_metadata_workspace(fixture))
+      metadata_loaded(TRUE)
+      active_editor(list(document_type = "template", document_id = "tpl"))
+      active_draft(list(operation = "update", original = fixture$templates[[1L]]))
+      template_value(ui_environment$decorate_template_ui_ids(fixture$templates[[1L]]))
+      do.call(session$setInputs, inputs)
+      testthat::expect_identical(extract_denominator(collect_template_from_ui(strip_ids = TRUE)), expected)
+      save_active("template")
+      saved <- workspace_saved_snapshot(workspace())
+      testthat::expect_identical(extract_denominator(saved$templates[[1L]]), expected)
+      imported <- parse_bundle_archive(canonical_archive_bytes(saved))
+      testthat::expect_true(imported$passed)
+      testthat::expect_identical(extract_denominator(imported$workspace$templates[[1L]]), expected)
+    })
+  }
 })

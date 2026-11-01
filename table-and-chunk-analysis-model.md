@@ -803,6 +803,11 @@ distinct counting unit 仍须在计数前按既有规则归约。零频 class �
 `OTHER`、特殊 missing 和 multilabel format 的专门语义不在当前版本范围内；需要这些
 效果时由调用方在分析前自行准备数据或 format 结果。
 
+生成程序在节点发现前按 format 输出宽度计算字符字段长度，不因设置 format 就将
+所有节点字段分配为 32767 字节。定长使用 SAS 编译时的格式化结果长度，并兼顾
+`missing_label`、逐层节点键编码和 metadata 标签宽度；不依赖源数据中是否有观测。
+应用仍不读取或检查 format catalog。SAS 单字符变量的 32767 字节上限继续适用。
+
 `levels` sequence 定义一条线性 level chain。每个父节点仍可对应多个由数据决定的
 同层子节点：例如 `SOC -> PT` 时，一个 SOC 下可以有多个 PT。当前 metadata 不支持
 同一个父 level 下定义多个不同的动态 child levels（树形分支）；单独填写

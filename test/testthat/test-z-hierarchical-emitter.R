@@ -294,6 +294,80 @@ testthat::test_that("format levels generate complete parent-scoped node catalogs
   testthat::expect_match(source, "flag = 1;", fixed = TRUE)
 })
 
+testthat::test_that("formatted hierarchy text bounds use compiled format widths before node discovery", {
+  bundle <- hierarchical_report_fixture()
+  chunk <- bundle$templates[[1L]]$body$chunks[[1L]]
+  chunk$levels[[1L]]$variable <- "AVISITN"
+  chunk$levels[[1L]]$format <- "visit_fmt"
+  chunk$levels[[1L]]$label_variable <- "IGNORED_LABEL"
+  chunk$levels[[2L]]$format <- "$category_fmt"
+  chunk$levels[[2L]]$missing_policy <- "label"
+  chunk$levels[[2L]]$missing_label <- strrep("M", 700L)
+  plan <- list(batch_order = 1L, chunks = list(chunk))
+  sizing <- paste(hierarchical_text_lengths_source(plan), collapse = "\n")
+  testthat::expect_match(sizing,
+    "if 0 then set _TFL_HSRC_001(keep=AVISITN PT);", fixed = TRUE)
+  testthat::expect_match(sizing,
+    "if 0 then _tfl_fmt_value_001 = put(AVISITN, visit_fmt.);", fixed = TRUE)
+  testthat::expect_match(sizing,
+    "if 0 then _tfl_fmt_value_002 = put(PT, $category_fmt.);", fixed = TRUE)
+  testthat::expect_match(sizing,
+    "_tfl_value_length = max(vlength(_tfl_fmt_value_002), 700) + 2;", fixed = TRUE)
+  testthat::expect_match(sizing, "_tfl_key_length + _tfl_value_length + 32;", fixed = TRUE)
+  testthat::expect_match(sizing,
+    "_tfl_label_length = max(_tfl_label_length, _tfl_value_length - 2);", fixed = TRUE)
+  testthat::expect_false(grepl("IGNORED_LABEL", sizing, fixed = TRUE))
+  # The descriptor-only probe also runs on an empty source; no SET consumes a row.
+  testthat::expect_false(grepl("(?m)^\\s*set ", sizing, perl = TRUE))
+  # A never-executed SET cannot reach EOF; explicitly stop after publishing widths.
+  testthat::expect_match(sizing, "  stop;\nrun;", fixed = TRUE)
+  testthat::expect_false(grepl("(?m)^\\s*_tfl_(key|label)_length = 32767;", sizing, perl = TRUE))
+  bundle$templates[[1L]]$body$chunks[[1L]] <- chunk
+  result <- generate_table_source(bundle, "t1")
+  testthat::expect_true(result$passed)
+  testthat::expect_lt(regexpr(sizing, result$source, fixed = TRUE)[[1L]],
+                      regexpr("data _TFL_HFMTIN_001_001;", result$source, fixed = TRUE)[[1L]])
+
+  # Each level has its own probe, even when two formats use the same raw variable.
+  chunk$levels[[2L]]$variable <- "AVISITN"
+  chunk$levels[[2L]]$format <- "visit_group_fmt"
+  plan$chunks <- list(chunk)
+  sizing <- paste(hierarchical_text_lengths_source(plan), collapse = "\n")
+  testthat::expect_match(sizing, "keep=AVISITN);", fixed = TRUE)
+  testthat::expect_match(sizing,
+    "_tfl_fmt_value_002 = put(AVISITN, visit_group_fmt.);", fixed = TRUE)
+  plain <- hierarchical_report_fixture()$templates[[1L]]$body$chunks[[1L]]
+  plan$chunks <- list(plain)
+  testthat::expect_false(grepl("_tfl_fmt_value_", paste(hierarchical_text_lengths_source(plan),
+                                                    collapse = "\n"), fixed = TRUE))
+})
+
+testthat::test_that("formatted levels replace inherited ordering before another child consumes it", {
+  bundle <- hierarchical_report_fixture()
+  chunk <- bundle$templates[[1L]]$body$chunks[[1L]]
+  chunk$levels[[1L]]$format <- "$soc_fmt"
+  chunk$levels[[2L]]$format <- "$pt_fmt"
+  chunk$levels[[3L]] <- list(id = "l3", variable = "SEV", order_variable = "SEVN",
+                            order_direction = "asc", node_role = "label", missing_policy = "exclude")
+  bundle$templates[[1L]]$body$chunks[[1L]] <- chunk
+  result <- generate_table_source(bundle, "t1")
+  testthat::expect_true(result$passed)
+  step <- function(dataset) {
+    match <- regmatches(result$source, regexec(paste0("(?s)data ", dataset,
+      ";\\n(.*?)\\nrun;"), result$source, perl = TRUE))[[1L]]
+    testthat::expect_length(match, 2L)
+    match[[2L]]
+  }
+  testthat::expect_false(grepl("drop node_order_path;", step("_TFL_HFOBS_001_001"), fixed = TRUE))
+  testthat::expect_match(step("_TFL_HFOBS_001_002"), "drop node_order_path;", fixed = TRUE)
+  testthat::expect_match(result$source,
+    "select o.*, n.node_order_path from _TFL_HFOBS_001_002 as o left join _TFL_HNODES_001_002 as n",
+    fixed = TRUE)
+  child <- step("_TFL_HVALUE_001_003")
+  testthat::expect_match(child, "set _TFL_HLEVEL_001_002;", fixed = TRUE)
+  testthat::expect_match(child, "parent_order_path = node_order_path;", fixed = TRUE)
+})
+
 testthat::test_that("formatted missing labels require real records rather than parent seeds", {
   for (policy in c("label", "exclude", "error")) {
     bundle <- hierarchical_report_fixture()

@@ -70,7 +70,7 @@ tables/<table_id>.yaml
 templates/<template_id>.yaml
 ~~~
 
-`manifest.yaml` 只包含 `schema_version: 1`；catalog 使用各自的根字段，table/template
+`manifest.yaml` 只包含 `schema_version: 2`；catalog 使用各自的根字段，table/template
 文件根节点分别是对象本身。对象文件按 ID 字典序装载，文件名 stem 必须与内部 ID 一致。
 独立 template 文件可复制到其他 bundle 复用；ZIP entry 的未知文件、非法路径、重复
 entry、嵌套目录和符号链接均拒绝。每个 YAML entry 仍使用本项目的 strict single-document

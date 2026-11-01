@@ -1530,3 +1530,35 @@ parser 的结构规则是：`format` 必须是非空字符串，且不得以句�
 
 验证针对生成源码、bundle 和 UI 契约，不执行 SAS 或真实分析数据。完全空输入下的
 format 根目录行为仍需在调用方 SAS 环境验证。
+
+### 2026-11-02 独立审阅后续修复：编辑覆盖、路径与字段长度
+
+用户批准修复独立审阅的后续事项；不新增 metadata 字段，不改变 format 值域、节点身份、
+缺失策略或应用不检查 format catalog 的约定。
+
+1. UI 回归使用实际 primitive 与 nested block 控件 ID，输入不同于初始值的新分母配置，
+   检查 collect、Save 和 bundle 导出回读。原有无关编辑保留配置的测试继续独立存在。
+   `block_ui` 按现有 `level_ui` 的形式展开，控件 ID、选项和默认值保持同一契约。
+2. 非根 format level 的 observed 中间表丢弃继承的父 `node_order_path`；当前层 assigned
+   表只从当前节点目录关联该字段，供后续 level 使用，避免 SQL 同名列。
+3. 节点长度在所有 level discovery 前一次性确定。对有 format 的各 level，在现有
+   SAS `DATA _NULL_` 中通过 `IF 0 THEN SET` 载入变量类型，编译独立的
+   `IF 0 THEN probe = PUT(variable, format.)` 表达式；`VLENGTH(probe)` 读取 SAS
+   按 format 输出宽度分配的字符长度。探针只存在于该 DATA step，既不读取观测，也
+   不枚举 catalog 或写入数据集；末尾显式 `STOP`，避免未执行 SET 的循环。
+4. 格式化标签宽度与该 level 的 `missing_label` 字节长度取最大值；节点键再累加
+   各层值宽度、类型前缀及既有长度编码余量。标签长度继续兼容 metadata 文本宽度。
+   未指定 format 的 level 沿用源描述符定长。实际身份、标签和运行期行字段仍由显式
+   `LENGTH` 声明，SAS 单字符变量 32767 字节的既有限制保持；不额外缩短显示值。
+   同一原始变量用于多个 format 时，每层拥有独立探针。
+5. 例：两个 format 输出宽度分别为 40、80 字节，且 metadata 标签不超过默认
+   256 字节时，现有键编码余量对应 key 长度 `1+(40+2+32)+(80+2+32)=189`，
+   label 长度 256；不再仅因设置 format 就将这些字段全部设为 32767。这是长度
+   规则的算例，不是 SAS 性能测量。
+6. `ref-alignment.md` 的 manifest 说明同步为严格 v2。
+
+依据：SAS 官方 [PUT](https://support.sas.com/documentation/cdl/en/lrdict/64316/HTML/default/a000199354.htm)
+规定首次接收 PUT 结果的变量默认按 format 宽度定长；
+[VLENGTH](https://support.sas.com/documentation/cdl/en/lrdict/64316/HTML/default/a000245990.htm)
+返回变量编译时分配的长度，包含尾部空白容量。定长不依赖实际观测或观测中出现的类别。
+format 名称、定义和原始变量类型仍由调用方保证；应用不新增存在性或类型检查。
