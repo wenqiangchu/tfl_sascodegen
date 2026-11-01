@@ -60,6 +60,49 @@ collection_buttons <- function(prefix,kind,table_name) tagList(actionButton(past
 
 statistics_controls <- function(prefix) NULL
 
-level_ui <- function(level,prefix,index,chunk) { p<-paste0(prefix,"level_",index,"_"); ids<-vapply(chunk$levels %||% list(),function(x)x$id,character(1)); tags$div(class="well",chunk_field_row(chunk_field(4,readonly_editor_input(paste0(p,"id"),"Level ID",level$id)),chunk_field(4,selectInput(paste0(p,"parent_level"),"Parent level",c("",ids),selected=level$parent_level %||% "")),chunk_field(4,textInput(paste0(p,"variable"),"Variable",level$variable))),chunk_field_row(chunk_field(4,textInput(paste0(p,"label_variable"),"Label variable",level$label_variable %||% "")),chunk_field(4,textInput(paste0(p,"order_variable"),"Order variable",level$order_variable)),chunk_field(4,selectInput(paste0(p,"order_direction"),"Order direction",c("asc","desc"),selected=level$order_direction))),chunk_field_row(chunk_field(4,selectInput(paste0(p,"node_role"),"Node role",c("label","analysis"),selected=level$node_role)),chunk_field(4,textInput(paste0(p,"node_analysis_id"),"Node analysis ID",level$node_analysis_id %||% "")),chunk_field(4,selectInput(paste0(p,"missing_policy"),"Missing policy",c("exclude","label","error"),selected=level$missing_policy))),chunk_field_row(chunk_field(8,textInput(paste0(p,"missing_label"),"Missing label",level$missing_label %||% ""))) ) }
+level_ui <- function(level, prefix, index, chunk) {
+  p <- paste0(prefix, "level_", index, "_")
+  ids <- vapply(chunk$levels %||% list(), function(x) x$id, character(1))
+  has_format <- !is.null(level$format) && nzchar(level$format)
+  format_note <- tags$small(
+    class = "help-block",
+    if (has_format) {
+      "Format supplies the node value, label, and display order; order and label variables are ignored."
+    } else {
+      "Optional. The format must be defined by the calling SAS environment."
+    }
+  )
+  tags$div(
+    class = "well",
+    chunk_field_row(
+      chunk_field(4, readonly_editor_input(paste0(p, "id"), "Level ID", level$id)),
+      chunk_field(4, selectInput(paste0(p, "parent_level"), "Parent level",
+                                 c("", ids), selected = level$parent_level %||% "")),
+      chunk_field(4, textInput(paste0(p, "variable"), "Variable", level$variable))
+    ),
+    chunk_field_row(
+      chunk_field(4, textInput(paste0(p, "format"), "Format", level$format %||% "")),
+      chunk_field(4, textInput(paste0(p, "label_variable"), "Label variable",
+                                   level$label_variable %||% "")),
+      chunk_field(4, textInput(paste0(p, "order_variable"), "Order variable",
+                                 level$order_variable %||% ""))
+    ),
+    format_note,
+    chunk_field_row(
+      chunk_field(4, selectInput(paste0(p, "order_direction"), "Order direction",
+                                 c("asc", "desc"), selected = level$order_direction %||% "asc")),
+      chunk_field(4, selectInput(paste0(p, "node_role"), "Node role",
+                                 c("label", "analysis"), selected = level$node_role)),
+      chunk_field(4, textInput(paste0(p, "node_analysis_id"), "Node analysis ID",
+                                level$node_analysis_id %||% ""))
+    ),
+    chunk_field_row(
+      chunk_field(4, selectInput(paste0(p, "missing_policy"), "Missing policy",
+                                 c("exclude", "label", "error"), selected = level$missing_policy)),
+      chunk_field(8, textInput(paste0(p, "missing_label"), "Missing label",
+                               level$missing_label %||% ""))
+    )
+  )
+}
 
 block_ui <- function(block,prefix,index,chunk) { p<-paste0(prefix,"block_",index,"_"); types<-c("continuous_summary","categorical_summary_nonexclusive","categorical_summary_exclusive"); levels<-vapply(chunk$levels %||% list(),function(x)x$id,character(1)); tags$div(class="well",chunk_field_row(chunk_field(4,readonly_editor_input(paste0(p,"id"),"Block ID",block$id)),chunk_field(4,selectInput(paste0(p,"anchor_level"),"Anchor level",levels,selected=block$anchor_level)),chunk_field(4,selectInput(paste0(p,"placement"),"Placement",c("same_row","below"),selected=block$placement))),chunk_field_row(chunk_field(4,selectInput(paste0(p,"type"),"Type",types,selected=block$type)),chunk_field(4,selectInput(paste0(p,"counting_unit"),"Counting unit",c("record","distinct_subject","distinct_key"),selected=block$counting_unit)),chunk_field(4,textInput(paste0(p,"distinct_key"),"Distinct key",paste(block$distinct_key %||% character(),collapse=", ")))),if(block$type=="continuous_summary") chunk_field_row(chunk_field(4,textInput(paste0(p,"analysis_variable"),"Analysis variable",block$analysis_variable %||% "")) ) else tagList(chunk_field_row(chunk_field(4,selectInput(paste0(p,"den_scope"),"Denominator scope",c("header_population","chunk_source","current_group"),selected=block$denominator$scope %||% "current_group")),chunk_field(4,selectInput(paste0(p,"den_unit"),"Denominator unit",c("record","distinct_subject","distinct_key"),selected=block$denominator$unit %||% "record")),chunk_field(4,textInput(paste0(p,"den_distinct_key"),"Denominator distinct key",paste(block$denominator$distinct_key %||% character(),collapse=", ")))),chunk_field_row(chunk_field(12,textAreaInput(paste0(p,"den_expression"),"Denominator expression",block$denominator$expression %||% "",rows=2L)))),h4("Rows / statistics"),collection_buttons(p,"row","rows")) }

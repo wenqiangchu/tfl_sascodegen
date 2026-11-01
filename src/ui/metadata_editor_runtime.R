@@ -106,12 +106,16 @@ metadata_editor_server_impl <- function(input, output, session) {
       } else if (identical(chunk$type,"hierarchical_summary")) {
         chunk$levels <- lapply(seq_along(chunk$levels %||% list()), function(j) {
           old <- chunk$levels[[j]]; lp <- paste0(p,"level_",j,"_")
+          format_name <- trim_optional(input[[paste0(lp,"format")]] %||% old$format)
+          order_variable <- trim_optional(input[[paste0(lp,"order_variable")]] %||% old$order_variable)
+          order_direction <- trim_optional(input[[paste0(lp,"order_direction")]] %||% old$order_direction)
           z <- list(id=old$id,
             variable=as.character(input[[paste0(lp,"variable")]] %||% old$variable %||% ""),
-            order_variable=as.character(input[[paste0(lp,"order_variable")]] %||% old$order_variable %||% ""),
-            order_direction=as.character(input[[paste0(lp,"order_direction")]] %||% old$order_direction %||% "asc"),
             node_role=as.character(input[[paste0(lp,"node_role")]] %||% old$node_role %||% "label"),
             missing_policy=as.character(input[[paste0(lp,"missing_policy")]] %||% old$missing_policy %||% "exclude"))
+          if (!is.null(format_name)) z$format <- format_name
+          if (!is.null(order_variable)) z$order_variable <- order_variable
+          if (!is.null(order_direction)) z$order_direction <- order_direction
           for (field in c("parent_level","label_variable","node_analysis_id","missing_label")) {
             v <- trim_optional(input[[paste0(lp,field)]] %||% old[[field]]); if (!is.null(v)) z[[field]] <- v
           }

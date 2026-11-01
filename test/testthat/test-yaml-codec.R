@@ -200,6 +200,36 @@ testthat::test_that("hierarchical source and result-sort fields round-trip", {
   testthat::expect_match(encoded, "result_sort:\\n")
 })
 
+testthat::test_that("format levels round-trip without order fields", {
+  bundle <- new_metadata_bundle(
+    templates = list(list(
+      id = "format_template",
+      body = list(chunks = list(list(
+        id = "format_hierarchy", type = "hierarchical_summary", source_data = "ADAE",
+        levels = list(list(
+          id = "visit", variable = "AVISITN", format = "visit_fmt",
+          node_role = "label", missing_policy = "exclude"
+        )),
+        analysis_blocks = list(list(
+          id = "counts", anchor_level = "visit", placement = "below",
+          type = "categorical_summary_nonexclusive", counting_unit = "record",
+          denominator = list(scope = "header_population", unit = "distinct_subject"),
+          rows = list(list(
+            id = "n", type = "analysis", label = "N", condition = "1",
+            statistics = list(list(id = "n")), cell_format = "{n}"
+          ))
+        ))
+      )))
+    ))
+  )
+  encoded <- canonical_yaml_text(bundle)
+  decoded <- parse_bundle_yaml(encoded)
+  testthat::expect_true(decoded$passed)
+  testthat::expect_identical(decoded$workspace, bundle)
+  testthat::expect_match(encoded, "format: 'visit_fmt'", fixed = TRUE)
+  testthat::expect_false(grepl("order_variable:", encoded, fixed = TRUE))
+})
+
 testthat::test_that("feature scanner ignores controls in quoted and literal text", {
   text <- paste(
     "schema_version: 2",

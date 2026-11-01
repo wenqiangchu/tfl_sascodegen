@@ -157,7 +157,7 @@ testthat::test_that("nested chunk and current-group denominators keep different 
   testthat::expect_false(grepl("node_key = '';", denominator_step(local, "_TFL_KDEN_002_001"), fixed = TRUE))
 })
 
-testthat::test_that("compatible chunks keep different denominator conditions within one FREQ", {
+testthat::test_that("compatible chunks keep different denominator conditions within one MEANS", {
   bundle <- denominator_bundle(list(scope = "chunk_source", unit = "distinct_subject",
                                     expression = "EVALFL = 'Y'"))
   other <- bundle$templates[[1L]]$body$chunks[[1L]]
@@ -167,7 +167,7 @@ testthat::test_that("compatible chunks keep different denominator conditions wit
   generated <- generate_table_source(bundle, "t", include_duplicate_check = FALSE)
   testthat::expect_true(generated$passed)
   source <- generated$source
-  testthat::expect_length(gregexpr("proc freq ", source, fixed = TRUE)[[1L]], 1L)
+  testthat::expect_length(gregexpr("proc means ", source, fixed = TRUE)[[1L]], 1L)
   testthat::expect_match(denominator_step(source, "_TFL_KDQUAL_001_001"), "EVALFL = 'Y'", fixed = TRUE)
   testthat::expect_match(denominator_step(source, "_TFL_KDQUAL_001_002"), "ANL01FL = 'Y'", fixed = TRUE)
   testthat::expect_match(source, "set _TFL_KDEN_001_001 _TFL_KDEN_001_002 _TFL_KNUM_001;", fixed = TRUE)

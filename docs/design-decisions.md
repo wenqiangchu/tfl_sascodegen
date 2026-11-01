@@ -1421,5 +1421,93 @@ schema_version 策略，以及 emitter 的显式输入输出。具体建议见
 6. 既有 generator/container/emitter/render 边界保持；分母的资格投影、单位投影和
    row_order=0 事件由当前 categorical emitter 显式生成，并只在 SAS WORK 中存活。
 
-该决定完成后，P-2a 已关闭。format node catalog、最高严重程度记录选择和
-parent-level 分母仍是独立未决事项。
+该决定完成后，P-2a 已关闭。format node catalog 和 parent-level 分母仍是独立
+未决事项；SOC/PT 最高严重程度的实现边界见下一节。
+
+## SOC/PT 最高严重程度记录：使用现有配置，不新增字段
+
+状态：用户已确认通过现有 `custom_code.before` 或预先准备的 ADaM source 实现，
+不新增 `record_selection` 或排序字段。
+
+当前 metadata 的 `filter`、`distinct_key`、hierarchical `order_variable` 和
+`result_sort` 没有“按排序键取同一分析单位的第一条记录”的语义。排序与取首条必须
+在分析 row condition 之前完成。
+
+推荐的实现是在 `custom_code.before` 中保留原始事件，并派生：
+
+- `SOC_MAX_SEV`：按 `USUBJID + SOC` 计算最高严重程度；
+- `PT_MAX_SEV`：按 `USUBJID + SOC + PT` 计算最高严重程度。
+
+hierarchical chunk 的 `source_data` 指向派生 source；SOC block 使用
+`SOC_MAX_SEV` row conditions，PT block 使用 `PT_MAX_SEV` row conditions，
+`counting_unit` 继续使用 `distinct_subject`。这样两个层级分别选择最高程度，
+不会因先选 PT 记录而改变 SOC 的选择范围。
+
+若必须保留物理 worst record，则 preparation 分别按 `USUBJID + SOC` 和
+`USUBJID + SOC + PT` 排序后使用 SAS `FIRST.` 生成两个派生源。不能对共享 source
+全局去重成每个 subject 一条。严重程度并列、缺失值和过滤规则由调用方在
+`custom_code.before` 中明确；应用不执行或验证这些 SAS 规则。
+
+## Hierarchical 当前范围：保留线性层级，树形分支留作未来方向
+
+状态：用户已决定保留当前线性层级，不在本轮进行树形分支设计或重构。
+
+当前 `levels` sequence 定义一条有序 level chain，例如 `SOC -> PT`。这不表示每个
+SOC 只能有一个 PT：一个父节点可产生多个由数据决定的同层子节点。SOC/PT 的同行
+频数和严重程度分布使用现有 `same_row`/`below` analysis blocks 与固定 rows 表达，
+不需要把这些分析行建成动态 level。
+
+树形分支指同一个父 level 下挂接多个不同的动态子 level，例如 `SOC -> PT` 和
+`SOC -> Severity`。只有当这些不同维度本身都需要动态节点值域和独立父节点范围时，
+才考虑该扩展。多个 sibling 子 level 需要明确各自的节点身份、source/anchor 范围、
+排序与遍历、analysis block 挂接和输出布局。
+
+树形 level graph 可以作为未来扩展方向，但会跨 metadata parser、编辑器、hierarchical
+emitter、节点身份和 render/layout 重构。当前不继续探讨方案；`parent_level` 的值不
+改变生成器依照 `levels` sequence 构造线性链的现有行为。
+
+## Format 动态节点目录：调用方提供值域，未观察值显示为零
+
+状态：用户已确认并批准核心语义、metadata 字段、format 名称语法、排序规则和分类
+频数过程。当前 format 只负责提供完整节点列表和原始值到显示值的映射；ranges、
+`OTHER`、特殊 missing、multilabel 的专门语义不属于当前版本，需要这些效果时由调用方
+在分析前自行准备数据或 format 结果。
+
+本节批准的分类过程规则更新并覆盖 P0-4/P0-6/P0-7 中关于分类频数必须使用
+`PROC FREQ` 的历史实现描述；连续统计仍使用 `PROC MEANS`。分类计数事件统一设置
+`flag=1`，由 `PROC MEANS` 的 `N(flag)` 产生频数，format 值域由
+`PRELOADFMT`/`COMPLETETYPES` 提供。逻辑 class catalog 可作为 `CLASSDATA=` 提供给
+PROC MEANS，使零频组合由过程直接输出；它不再作为 FREQ 原始结果之后的补零 merge。
+
+动态 level 可以引用调用方 format catalog 中已有的 format，或由
+`custom_code.before` 定义的 format。应用不读取 catalog，也不检查 format 是否存在、
+原始变量类型是否匹配或格式化结果是否为字符型；这些由调用方约定保证。指定 format
+后，动态节点使用 format 产生的字符型格式化值同时作为节点身份、节点值和显示标签；
+此时不使用 `label_variable`。未指定 format 时，才使用 `label_variable`（或其缺省
+变量）作为显示标签。原始变量可以是 numeric 或 character。
+
+format 定义完整的动态节点值域。未观察的格式化值仍生成节点并显示频数 0；指定了
+format 的子 level 要在每个已存在的父节点下展开完整值域。父节点自身没有观测时，
+只有父 level 的 format 值域将它纳入时才存在。父子 level 都使用 format 时，完整的
+格式化值组合是允许的。
+
+`PROC FREQ` 没有 `CLASS` 语句，`TABLES` 的 `SPARSE` 不能替代 format 值域预载。
+分类频数统一使用 `PROC MEANS`/`PROC SUMMARY` 的 `CLASS ... / PRELOADFMT` 和
+`COMPLETETYPES`。每个进入某个分类计数输入的记录先设置 `flag=1`，再以 `N(flag)`
+计数；不符合 row condition 或分母条件的记录在进入对应输入前排除，而不是设置为 0。
+distinct counting unit 仍须在计数前按既有规则归约。用户不采用 PROC FREQ 结果再与
+完整骨架 merge 的补零路径。
+
+`levels[]` 增加可选字符串字段 `format`，保存不带末尾句点的 SAS format 名称；字符型
+format 使用 `$` 前缀。emitter 负责补句点并生成 FORMAT 绑定。字段不保存 catalog
+路径，应用不读取 catalog，也不检查 format 是否存在或原始变量类型是否匹配。
+
+parser 的结构规则是：`format` 必须是非空字符串，且不得以句点结尾；不解析名称是否
+为 SAS 合法 format。未指定 format 时，`order_variable` 和 `order_direction` 仍为必填；
+指定 format 时，这两个字段可以省略，也可以保留，生成时均忽略。`label_variable` 始终
+可选，指定 format 时忽略。
+
+指定 format 时，`order_variable` 不参与节点排序；节点顺序按 format 的存储顺序生成。
+调用方需要保留 PROC FORMAT 的声明顺序时使用 `NOTSORTED`。未指定 format 时沿用
+`label_variable`、`order_variable` 和 `order_direction`。`result_sort` 仍可在统计完成
+后覆盖最终展示顺序。

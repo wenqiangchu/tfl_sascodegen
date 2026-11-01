@@ -13,7 +13,7 @@ template_sort_fixture <- function() {
       chunks = list(list(
         id = "c", type = "hierarchical_summary", source_data = "work.events",
         levels = list(list(
-          id = "l", variable = "SOC", order_variable = "SOC",
+          id = "l", variable = "SOC", format = "visit_fmt", order_variable = "SOC",
           order_direction = "asc", node_role = "label", missing_policy = "exclude",
           result_sort = list(
             metric = list(analysis_id = "a", row_id = "r", statistic_id = "n"),
@@ -56,12 +56,15 @@ testthat::test_that("template collection and save preserve imported result sorti
     session$setInputs(chunk_1_den_unit = "distinct_key")
     session$setInputs(chunk_1_den_distinct_key = "USUBJID, CYCLE")
     session$setInputs(chunk_1_den_expression = "DENFL = 'Y'")
+    session$setInputs(chunk_1_level_1_format = "visit_fmt")
 
     collected <- collect_template_from_ui(strip_ids = TRUE)
     expected <- fixture$templates[[1L]]$body$chunks[[1L]]$levels[[1L]]$result_sort
     expected_denominator <- fixture$templates[[1L]]$body$chunks[[1L]]$analysis_blocks[[1L]]$denominator
     testthat::expect_identical(collected$body$chunks[[1L]]$analysis_blocks[[1L]]$denominator,
                                expected_denominator)
+    testthat::expect_identical(collected$body$chunks[[1L]]$levels[[1L]]$format,
+                               "visit_fmt")
     testthat::expect_identical(collected$body$chunks[[1L]]$levels[[1L]]$result_sort,
                                expected)
 

@@ -1,4 +1,4 @@
-testthat::test_that("default categorical emitter generates event input and one FREQ batch", {
+testthat::test_that("default categorical emitter generates event input and one MEANS batch", {
   bundle <- new_metadata_bundle(
     populations = list(list(id = "p", label = "Population", expression = "1")),
     headers = list(list(id = "h", source_data = "adam.adsl", orientation = "landscape", columns = list(
@@ -19,13 +19,16 @@ testthat::test_that("default categorical emitter generates event input and one F
   result <- generate_table_source(bundle, "t1")
   testthat::expect_true(result$passed)
   testthat::expect_length(regmatches(result$source,
-                                     gregexpr("proc freq", result$source, fixed = TRUE))[[1L]], 1L)
+                                     gregexpr("proc means", result$source, fixed = TRUE))[[1L]], 1L)
   testthat::expect_match(result$source, "row_order = 0;", fixed = TRUE)
   testthat::expect_match(result$source, "data _TFL_KDEN_001_001;", fixed = TRUE)
   testthat::expect_match(result$source, "row_order = 1;", fixed = TRUE)
   testthat::expect_match(result$source,
     "if (SEX = 'F') then do; row_order = 1; output _TFL_KPRE_001_001; end;", fixed = TRUE)
-  testthat::expect_match(result$source, "tables chunk_order*row_order*column_order / out=", fixed = TRUE)
+  testthat::expect_match(result$source, "class chunk_order row_order column_order / missing;", fixed = TRUE)
+  testthat::expect_match(result$source, "flag = 1;", fixed = TRUE)
+  testthat::expect_match(result$source,
+    "classdata=_TFL_KCLASS_001 nway completetypes exclusive noprint", fixed = TRUE)
   testthat::expect_match(result$source, "pct = 100 * numerator / denominator", fixed = TRUE)
   testthat::expect_match(result$source, "estimable = 0", fixed = TRUE)
   testthat::expect_match(result$source, "data _TFL_KPRE_001_001;", fixed = TRUE)
@@ -121,7 +124,7 @@ testthat::test_that("exclusive categorical emitter adds a nonblocking overlap gu
   testthat::expect_true(result$passed)
   testthat::expect_match(result$source, "exclusive_overlap", fixed = TRUE)
   testthat::expect_match(result$source, "WARNING: [USER] exclusive_overlap", fixed = TRUE)
-  testthat::expect_match(result$source, "proc freq", fixed = TRUE)
+  testthat::expect_match(result$source, "proc means", fixed = TRUE)
   unchecked <- generate_table_source(bundle, "t1", include_duplicate_check = FALSE)
   testthat::expect_true(unchecked$passed)
   testthat::expect_false(grepl("_TFL_GUARD_|duplicate_key", unchecked$source))

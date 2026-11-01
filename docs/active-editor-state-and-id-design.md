@@ -257,7 +257,16 @@ custom code 原样保存，不作语法、安全性或依赖验证。
   - 结构化 denominator；
   - nested rows/statistics 的新增、删除、排序；
   - 多层 parent-child 关系编辑；
-  - `same_row`/`below` placement、missing policy、order variable/direction 等字段。
+  - `same_row`/`below` placement、missing policy、format、order variable/direction 等字段。
+
+P-2d approved editor rule：hierarchical `level.format` is an optional SAS format name
+without the trailing period; a character format uses the `$` prefix. When `format` is
+present, its formatted value is the node identity, node value, and display label;
+`label_variable`, `order_variable`, and `order_direction` are retained if present but
+ignored by generation. When `format` is absent, the existing label and order fields keep
+their current meaning. The editor must preserve imported ignored fields during unrelated
+edits and explain that format order controls display order; callers use `NOTSORTED` when
+they need the declaration order of a PROC FORMAT definition.
 
 2026-10-30 补充：`result_sort` 当前通过导入 metadata 声明。虽然暂无专属表单控件，
 模板采集和 Save 必须保留该字段，位置 ID 重编号必须同步更新其分析与行引用。

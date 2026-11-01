@@ -192,7 +192,7 @@ default_chunk_registry <- local({
       require_condition = TRUE,
       analysis_contract = list(
         statistics = c("n", "pct"),
-        procedure = "PROC FREQ",
+        procedure = "PROC MEANS",
         percentage_scale = 100,
         row_overlap = "allowed"
       ),
@@ -207,7 +207,7 @@ default_chunk_registry <- local({
       require_condition = TRUE,
       analysis_contract = list(
         statistics = c("n", "pct"),
-        procedure = "PROC FREQ",
+        procedure = "PROC MEANS",
         percentage_scale = 100,
         row_overlap = "warning"
       ),

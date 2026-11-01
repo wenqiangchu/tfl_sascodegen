@@ -11,8 +11,8 @@
 | 保留实际分类分子，分母为零时仅 pct 不可估计 | 已确认并修复 |
 | 模板编辑和 Save 保留已声明的 result_sort | 已有契约的维护缺陷，已修复 |
 | SOC 下显示严重程度分布与 PT，PT 下显示严重程度分布 | 业务需求已确认；表示方式和记录选择字段待确认 |
-| 同一受试者在 SOC/PT 内取最高严重程度 | 业务需求已明确；当前无内建排序选记录入口 |
-| 用自定义 SAS format 定义节点值域和显示标签 | 用户提出的方向；字段、分组语义和过程适配待确认 |
+| 同一受试者在 SOC/PT 内取最高严重程度 | 已确认通过 `custom_code.before` 或预先准备的 ADaM source 实现，不新增字段 |
+| 用自定义 SAS format 定义节点值域和显示标签 | P-2d 核心契约已确认；parser/UI 已实现，hierarchical emitter 正在实现 |
 
 ## 2. 两种列需求的区别
 
@@ -129,9 +129,9 @@ proc sql;
 quit;
 ```
 
-hierarchical source_data 可以引用 work.ae_analysis。若希望通过 metadata 配置排序
-键并自动选记录，而不编写 preparation，则需下面的独立记录选择对象；当前
-distinct_key 本身没有升降序或「保留首条」配置。
+hierarchical source_data 可以引用 work.ae_analysis。当前不新增 metadata 记录选择
+对象；需要显式排序并取首条时，由 `custom_code.before` 或调用方预先准备的 ADaM
+source 生成派生源。
 
 示意 SAS，仅说明选记录规则，不是当前生成器已提供的接口：
 
@@ -161,42 +161,46 @@ AESEQ 是本例的并列优先级示意。实际 tie-break、全部严重程度�
 记录过滤条件应由分析规则明确。不要使用含严重程度的整个 BY 列表作为 NODUPKEY
 的身份键，否则不同程度不会被归约。
 
-### 3.4 待确认的最小记录选择对象
+### 3.4 已确认的实现边界：不新增记录选择字段
 
-| 对象或字段 | 建议职责 | 状态 |
+| 对象或字段 | 当前职责 | 状态 |
 | --- | --- | --- |
-| 计数身份 | 沿用 counting_unit/distinct_key；nested 时由 anchor node 限定 scope | 已有对象 |
-| record_selection | 可选的每分析块记录选择请求，不修改共享 container source | 待确认名称与应用范围 |
-| record_selection.order_by | 有序的排序键，决定同一身份内保留哪条记录 | 待确认 |
-| order_by[].variable | 该 source 中的排序变量，例如 AESEVN、AESEQ | 待确认 |
-| order_by[].direction | asc 或 desc | 待确认 |
+| 计数身份 | 沿用 `counting_unit`/`distinct_key`；nested 时由 anchor node 限定 scope | 已有对象 |
+| 记录选择 | 由 `custom_code.before` 或外部 ADaM preparation 完成 | 已确认，不进 metadata |
+| SOC 最高程度 | 在 `USUBJID + SOC` 内派生 `SOC_MAX_SEV`，或生成 SOC worst-record source | 已确认 |
+| PT 最高程度 | 在 `USUBJID + SOC + PT` 内派生 `PT_MAX_SEV`，或生成 PT worst-record source | 已确认 |
+| 并列和缺失规则 | 由 preparation 中的 SAS `ORDER BY`/`BY` 顺序及过滤条件明确 | 调用方责任 |
 
-候选表示：
-
-```yaml
-counting_unit: distinct_subject
-record_selection:
-  order_by:
-    - variable: AESEVN
-      direction: desc
-    - variable: AESEQ
-      direction: asc
-```
-
-选择应发生在 row condition 之前。SOC 与 PT blocks 各自从其节点记录中选择，
-不能在共享 source 上全局删记录，否则会影响 PT 节点或其他分析块。record 单位下
-是否允许独立的选记录分组键，以及选择与 denominator 的关系，尚需明确；本文不
-据此引入已批准字段。
+选择逻辑必须发生在 row condition 之前。SOC 与 PT 的选择范围独立；不能在共享 source
+上全局删记录。严重程度字段不得加入 `distinct_key`，否则不同严重程度会变成不同
+计数身份而无法归约。
 
 ## 4. format 值域与空节点
 
 ### 4.1 SAS 能提供什么
 
-SAS MEANS 的 CLASS `PRELOADFMT` 配合 PROC `COMPLETETYPES`，可将已指定 format
-中的未观察水平纳入输出。format 同时可以把 AVISITN 映射成访视标签。
+用户确认动态 level 可以引用调用方已提供的 format。format 必须已经在调用方的
+format catalog 中定义，或由 `custom_code.before` 定义；应用不读取 catalog，也不
+检查 format 是否存在、原始变量类型是否匹配或格式化结果是否为字符型。指定 format
+后，动态节点使用 format 产生的字符型格式化值同时作为节点身份、节点值和显示标签；
+此时不使用 `label_variable`。未指定 format 时，才使用 `label_variable`（或其缺省
+变量）作为显示标签。原始变量可以是 numeric 或 character。
 
-PROC FREQ 的 `SPARSE` 用于把变量已有水平的零频组合纳入输出，不能据此假定会
-预载 format 内所有从未观察的值。MEANS 与 FREQ 不应直接套用同一组选项。
+用户要求 format 值域中的未观察值也生成动态节点，并显示频数 0。一个 level 的
+format 值域要在每个父节点下展开；父节点自身没有观测时，只有父 level 的 format
+值域将它纳入时才存在。父子 level 都使用 format 时，完整的格式化值组合是允许的。
+
+SAS MEANS 的 CLASS `PRELOADFMT` 配合 `PROC COMPLETETYPES`，可将已指定 format
+中的未观察水平及其组合纳入输出。PROC FREQ 没有 CLASS 语句，使用 TABLES；它的
+`SPARSE` 用于已有水平的零频组合，不能替代 format 值域预载。因此不能仅靠 FREQ
+完成该节点目录需求。
+
+用户确认分类频数统一由 PROC MEANS 计算，不再使用 PROC FREQ 结果再与完整骨架 merge
+的路径。每个进入某个分类计数输入的记录先设置 `flag=1`，然后以 `N(flag)` 计数；不
+符合该 row condition 或分母条件的记录在进入对应输入前排除。不能把不符合条件的记录
+设置为 0 后直接使用 `N`，因为 0 也是非缺失值。distinct subject/distinct_key 仍须
+在计数前按既有 counting unit 规则归约；nonexclusive rows 需要允许一条源记录分别
+进入多个命中的 row event 输入。
 
 来源：
 
@@ -205,34 +209,50 @@ PROC FREQ 的 `SPARSE` 用于把变量已有水平的零频组合纳入输出，
 
 ### 4.2 对当前生成流程的影响
 
-当前过程按内部 node_key 分析，而不是直接把 AVISITN 放在 CLASS 中。仅给源变量
-绑定 format，能够影响其显示标签，但不会让一个从未出现的访视自动产生 node_key。
-节点目录还参与 expected-cell skeleton、层级布局和排序，需在这些步骤之前存在。
+当前层级节点由内部 `node_key`、节点目录、层级布局和排序共同驱动。仅给源变量绑定
+format 不足以让一个从未出现的访视自动产生 node_key；批准的生成方向是先由
+`PROC MEANS` 的 format 预载和完整类型输出建立节点及零频组合，再将其直接提供给
+后续统计和 render。
 
-合理的候选方向是：用 format 定义类别目录，实际 source records 仍独立参与分析，
-再将实际计数或统计结果与完整节点目录关联。类别目录不是带假受试者的分析记录，
-因此不必把 dummy observations 注入计数源。
+分类计数和节点目录均由 PROC MEANS 的 CLASS、PRELOADFMT、COMPLETETYPES 以及
+`flag=1` 的计数输入生成。format 产生的零频 class 组合直接进入统计输出，不再采用
+PROC FREQ 原始结果与 expected-cell 完整骨架的补零路径。类别目录仍不是带假受试者的
+分析记录；零频组合是过程输出，不向计数源注入 dummy observations。
 
-需要确认：
+已决定：在 `levels[]` 增加可选字符串字段 `format`，保存不带末尾句点的 SAS format
+名称；字符型 format 使用 `$` 前缀。emitter 负责补句点并生成 FORMAT 绑定。字段不
+保存 catalog 路径，应用不解析或检查 format 的存在性和类型匹配。指定 format 时，
+`order_variable` 不参与节点排序；节点顺序按 format 的存储顺序生成，调用方需要声明
+顺序时在 PROC FORMAT 中使用 `NOTSORTED`。`result_sort` 仍可覆盖最终展示顺序。未
+指定 format 时沿用现有 `label_variable`、`order_variable` 和 `order_direction`。
 
-- format 引用放在哪个 metadata 对象中，以及如何与 label_variable 配合；
-- 节点按原始值还是格式化值分组；MEANS 的 PRELOADFMT 使用格式化值分组，可能合并
-  原始值，不能无意改变当前 typed node identity；
-- 是否只支持有限离散值，如何处理 ranges、OTHER、missing、multilabel；
-- 子节点值域是否依赖父节点。不能把所有 SOC 与所有 PT 无条件作笛卡尔积；
-- format 在调用方 SAS 环境中的定义和可用性，以及旧 bundle 的迁移。
+parser 只做结构约束：`format` 必须是非空字符串且不得以句点结尾，不解析名称是否为
+SAS 合法 format。未指定 format 时，`order_variable` 和 `order_direction` 必填；指定
+format 时可以省略或保留这两个字段，但生成时忽略。`label_variable` 始终可选，指定
+format 时忽略。
 
-本文不增加 format 字段或应用内 SAS catalog 读取功能。
+当前版本中 format 只负责提供完整节点列表和原始值到显示值的映射。ranges、`OTHER`、
+特殊 missing 或 multilabel format 不增加专门语义；需要这些效果时，调用方必须在分析
+前自行准备数据或 format 结果。本文不增加应用内 SAS catalog 读取功能。
 
 ## 5. 三处实际错配的具体含义
 
-### 5.1 parent_level
+### 5.1 parent_level 与当前线性层级决定
 
-metadata 可以填写第三层的 parent_level 为第一层，但当前生成器仍从第二层的
-level records 继续分组。只改变 parent_level，SAS 源码不变。该字段目前没有驱动
-实际层级输入与布局。若严重程度作为独立动态 level，分支输入、节点身份、深度和
-遍历顺序都需要一致的父子契约；若使用固定分析 rows，则当前 SOC/PT 两层结构已
-能表达需要的布局。表示方式尚待确认。
+用户确认保留当前线性层级，不在本轮引入树形分支。`levels` sequence 定义
+`SOC -> PT` 这样的 level chain；运行时每个 SOC 节点仍可有多个由数据产生的 PT
+子节点。当前 SOC/PT 频数和严重程度分析通过对应 level 的 `same_row`/`below`
+blocks 与固定 analysis rows 表达。
+
+树形分支表示同一个父 level 下有多个不同的动态 child level，例如 `SOC -> PT` 与
+`SOC -> Severity`。只有多个由数据决定的不同维度需要作为 sibling paths、各自拥有
+节点值域和分析范围时才需要。它不是多个 PT 值，也不是固定 Mild/Moderate/Severe
+分析行。
+
+未来若出现这种业务需求，tree level graph 是可能的优化方向；它需要统一重构父子
+metadata、节点身份、source/anchor 范围、排序/遍历和布局，涉及 parser、UI、emitter
+与 render。当前不继续探讨该方向。现有生成器仍按 levels sequence 构造线性链，单独
+设置 `parent_level` 不改变 SAS 生成结果。
 
 ### 5.2 result_sort
 

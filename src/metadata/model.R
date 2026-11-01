@@ -663,10 +663,9 @@ parse_result_sort_value <- function(value, path, collector) {
 }
 
 parse_level_value <- function(value, path, collector) {
-  allowed <- c("id", "parent_level", "variable", "label_variable", "order_variable", "order_direction",
+  allowed <- c("id", "parent_level", "variable", "format", "label_variable", "order_variable", "order_direction",
                "result_sort", "node_role", "node_analysis_id", "missing_policy", "missing_label")
-  required <- c("id", "variable", "order_variable", "order_direction", "node_role",
-                "missing_policy")
+  required <- c("id", "variable", "node_role", "missing_policy")
   if (!check_mapping(value, path, collector, allowed, required)) return(NULL)
   id <- parse_id_value(get_field(value, "id"), error_path_field(path, "id"), collector)
   parent_level <- NULL
@@ -678,18 +677,39 @@ parse_level_value <- function(value, path, collector) {
   variable <- parse_string_value(get_field(value, "variable"),
                                  error_path_field(path, "variable"), collector,
                                  "variable", non_empty = TRUE)
+  format_name <- NULL
+  if (has_field(value, "format")) {
+    format_name <- parse_string_value(get_field(value, "format"),
+                                      error_path_field(path, "format"), collector,
+                                      "format", non_empty = TRUE)
+    if (!is.null(format_name) && grepl("\\.$", format_name)) {
+      add_value_error(collector, error_path_field(path, "format"),
+                      "Format must omit the trailing period.")
+      format_name <- NULL
+    }
+  }
   label_variable <- NULL
   if (has_field(value, "label_variable")) {
     label_variable <- parse_string_value(get_field(value, "label_variable"),
                                          error_path_field(path, "label_variable"), collector,
                                          "label_variable", non_empty = TRUE)
   }
-  order_variable <- parse_string_value(get_field(value, "order_variable"),
-                                       error_path_field(path, "order_variable"), collector,
-                                       "order_variable", non_empty = TRUE)
-  order_direction <- parse_string_value(get_field(value, "order_direction"),
-                                        error_path_field(path, "order_direction"), collector,
-                                        "order_direction")
+  order_variable <- NULL
+  if (has_field(value, "order_variable")) {
+    order_variable <- parse_string_value(get_field(value, "order_variable"),
+                                         error_path_field(path, "order_variable"), collector,
+                                         "order_variable", non_empty = TRUE)
+  }
+  order_direction <- NULL
+  if (has_field(value, "order_direction")) {
+    order_direction <- parse_string_value(get_field(value, "order_direction"),
+                                          error_path_field(path, "order_direction"), collector,
+                                          "order_direction")
+  }
+  if (!has_field(value, "format")) {
+    if (!has_field(value, "order_variable")) add_required_error(collector, path, "order_variable")
+    if (!has_field(value, "order_direction")) add_required_error(collector, path, "order_direction")
+  }
   if (!is.null(order_direction) && !order_direction %in% c("asc", "desc")) {
     add_value_error(collector, error_path_field(path, "order_direction"),
                     sprintf("Order direction '%s' is not supported.", order_direction))
@@ -742,13 +762,18 @@ parse_level_value <- function(value, path, collector) {
     result_sort <- parse_result_sort_value(get_field(value, "result_sort"),
                                            error_path_field(path, "result_sort"), collector)
   }
-  if (is.null(id) || is.null(variable) || is.null(order_variable) ||
-      is.null(order_direction) || is.null(node_role) || is.null(missing_policy)) return(NULL)
+  invalid_level <- is.null(id) || is.null(variable) || is.null(node_role) ||
+    is.null(missing_policy) ||
+    (has_field(value, "format") && is.null(format_name)) ||
+    (!has_field(value, "format") &&
+     (is.null(order_variable) || is.null(order_direction)))
+  if (invalid_level) return(NULL)
   result <- list(id = id, variable = variable)
+  if (!is.null(format_name)) result$format <- format_name
   if (!is.null(parent_level)) result$parent_level <- parent_level
   if (!is.null(label_variable)) result$label_variable <- label_variable
-  result$order_variable <- order_variable
-  result$order_direction <- order_direction
+  if (!is.null(order_variable)) result$order_variable <- order_variable
+  if (!is.null(order_direction)) result$order_direction <- order_direction
   if (!is.null(result_sort)) result$result_sort <- result_sort
   result$node_role <- node_role
   if (!is.null(node_analysis_id)) result$node_analysis_id <- node_analysis_id

@@ -760,23 +760,60 @@ log 判断结果。subject 标识固定为 `USUBJID`，不由 chunk 声明。
 | 字段 | 语义 |
 | --- | --- |
 | variable | 分组值变量。 |
+| format | 可选的 SAS format 名称，不带末尾句点；字符型 format 使用 `$` 前缀。指定后，格式化值同时作为节点身份、节点值和显示标签。 |
 | label_variable | 展示标签变量；缺省可使用 variable。 |
-| order_variable | 必填的默认排序变量；非缺失 group value 必须有对应排序值。 |
-| order_direction | 必填的默认排序方向，只能为 asc 或 desc。 |
+| order_variable | 未指定 `format` 时必填的默认排序变量；指定 `format` 时可省略且被忽略。 |
+| order_direction | 未指定 `format` 时必填的默认排序方向，只能为 asc 或 desc；指定 `format` 时可省略且被忽略。 |
 | result_sort | 可选的统计结果驱动排序 mapping，结构见下文；声明后覆盖展示顺序但不删除默认排序字段。 |
 | node_role | label 或 analysis。 |
 | node_analysis_id | node_role 为 analysis 时引用 same-row block。 |
 | missing_policy | exclude、label 或 error 的业务意图。 |
 | missing_label | missing_policy 为 label 时的展示标签。 |
 
-levels 按 sequence 形成父子层级。一个 level 最多一个 same-row block，可以有
-多个 below block；默认输出顺序为：
+动态 level 可引用调用方提供的 SAS format；format 必须已经在调用方的 format
+catalog 中定义，或由 `custom_code.before` 定义。应用不读取 catalog，也不检查 format
+是否存在、原始变量类型是否匹配或格式化结果是否为字符型。指定 format 后，节点身份、
+节点值和显示标签同时使用 format 产生的字符型格式化值，不再使用 `label_variable`。
+未指定 format 时，才使用 `label_variable`（或其缺省变量）作为显示标签。原始变量可以
+是 numeric 或 character。
+
+format 值域是该 level 的完整节点目录。未观察的格式化值仍需生成节点并显示频数 0；
+指定 format 的子 level 在每个已存在的父节点下展开完整值域。父节点没有观测时，只有
+父 level 自己的 format 值域将它纳入时才存在。父子 level 都指定 format 时，完整的
+格式化值组合是允许的。目录展开必须在 expected-cell skeleton、层级排序和 render
+之前完成。
+
+分类频数统一使用 `PROC MEANS`/`PROC SUMMARY` 的 `CLASS ... / PRELOADFMT` 和
+`COMPLETETYPES`。每个进入某个分类计数输入的记录先设置 `flag=1`，再以 `N(flag)`
+计数；不符合 row condition 或分母条件的记录在进入对应输入前排除，而不是设置为 0。
+distinct counting unit 仍须在计数前按既有规则归约。零频 class 组合直接由过程输出，
+不再使用 PROC FREQ 结果与 expected-cell 完整骨架 merge 的补零路径。
+
+指定 format 时，`order_variable` 不参与节点排序；节点顺序按 format 的存储顺序生成，
+调用方需要保留声明顺序时应在 PROC FORMAT 中使用 `NOTSORTED`。未指定 format 时沿用
+`label_variable`、`order_variable` 和 `order_direction`；`result_sort` 仍可覆盖最终
+展示顺序。当前 format 只负责提供完整节点列表和原始值到显示值的映射。ranges、
+`OTHER`、特殊 missing 和 multilabel format 的专门语义不在当前版本范围内；需要这些
+效果时由调用方在分析前自行准备数据或 format 结果。
+
+`levels` sequence 定义一条线性 level chain。每个父节点仍可对应多个由数据决定的
+同层子节点：例如 `SOC -> PT` 时，一个 SOC 下可以有多个 PT。当前 metadata 不支持
+同一个父 level 下定义多个不同的动态 child levels（树形分支）；单独填写
+`parent_level` 不改变生成器按 sequence 建立层级的行为。一个 level 最多一个
+same-row block，可以有多个 below block；默认输出顺序为：
 
 ~~~text
 当前节点行
   -> 当前 level 的 below 静态分析行
   -> 下一级动态子节点
 ~~~
+
+树形分支可作为未来扩展方向，适用于一个父节点需要展开多个不同的动态子维度，且
+这些维度各自有节点值域、父节点范围或分析 block 的情况，例如 `SOC -> PT` 同时
+`SOC -> Severity`。它不同于一个 level 具有多个实际数据子节点，也不同于挂在
+SOC/PT 节点上的固定频数或严重程度 analysis rows。树形分支将涉及父子契约、节点
+身份、排序遍历、analysis anchor 和输出布局的整体重构；当前版本保留线性结构，不
+在当前范围内展开该设计。
 
 `result_sort` 仅引用当前 level 的 analysis block，避免父子 level 形成循环依赖：
 
@@ -843,6 +880,11 @@ categorical block 可额外使用 current_group。header_population 只允许
 当前 column condition 同时判断，符合条件后按 USUBJID 去重。chunk_source 基于完整
 chunk filter 后的 source，按 Header membership 限定当前列，不继承动态层级缺失筛选。
 expression 只过滤分母；distinct_key 独立于分子键，不能承担最高严重程度记录选择。
+
+SOC/PT 最高严重程度不增加 metadata 字段。调用方在 `custom_code.before` 或外部
+ADaM preparation 中按各自分组派生 `SOC_MAX_SEV`/`PT_MAX_SEV`，再由现有 row
+condition 和 `distinct_subject` 完成计数。`distinct_key` 不携带排序方向，也不负责
+选择第一条记录；`order_variable` 只控制节点顺序。
 
 Bundle 与 manifest 固定使用 schema_version=2，严格接受和导出 v2。v1 返回
 `bundle_schema_unsupported`，不自动转换；旧 bundle 按

@@ -194,7 +194,9 @@ testthat::test_that("hierarchical continuous groups stop at every incompatible o
     bundle$templates[[1L]]$body$chunks[[1L]] <- chunk
     result <- generate_table_source(bundle, "t1")
     testthat::expect_true(result$passed, info = boundary)
-    testthat::expect_equal(hierarchical_source_count(result$source, "proc means"), 2L, info = boundary)
+    expected_means <- if (identical(boundary, "categorical")) 3L else 2L
+    testthat::expect_equal(hierarchical_source_count(result$source, "proc means"), expected_means,
+                           info = boundary)
     testthat::expect_false(grepl("_TFL_HCIN_", result$source, fixed = TRUE), info = boundary)
     testthat::expect_false(grepl("in=_tfl_result_", result$source, fixed = TRUE), info = boundary)
   }
@@ -262,6 +264,34 @@ testthat::test_that("hierarchical report rows include nodes, below rows, and lev
   )) testthat::expect_true(grepl(marker, source, fixed = TRUE), info = marker)
   testthat::expect_equal(length(regmatches(source, gregexpr("if not (SAFFL = 'Y') then delete;", source, fixed = TRUE))[[1L]]), 1L)
   testthat::expect_equal(length(regmatches(source, gregexpr("proc means", source, fixed = TRUE))[[1L]]), 1L)
+})
+
+testthat::test_that("format levels generate complete parent-scoped node catalogs", {
+  bundle <- hierarchical_report_fixture()
+  chunk <- bundle$templates[[1L]]$body$chunks[[1L]]
+  chunk$levels[[1L]]$format <- "visit_fmt"
+  chunk$levels[[1L]]$order_variable <- NULL
+  chunk$levels[[1L]]$order_direction <- NULL
+  chunk$levels[[2L]]$format <- "$category_fmt"
+  chunk$levels[[2L]]$order_variable <- NULL
+  chunk$levels[[2L]]$order_direction <- NULL
+  bundle$templates[[1L]]$body$chunks[[1L]] <- chunk
+
+  result <- generate_table_source(bundle, "t1")
+  testthat::expect_true(result$passed)
+  source <- result$source
+  testthat::expect_match(source, "data _TFL_HFMTIN_001_001;", fixed = TRUE)
+  testthat::expect_match(source,
+                         "class parent_node_key SOC / preloadfmt order=data missing;",
+                         fixed = TRUE)
+  testthat::expect_match(source, "format SOC visit_fmt.;", fixed = TRUE)
+  testthat::expect_match(source, "data _TFL_HFMTIN_001_002;", fixed = TRUE)
+  testthat::expect_match(source,
+                         "_TFL_HNODES_001_001(rename=(node_key=_tfl_parent_key) in=_tfl_parent);",
+                         fixed = TRUE)
+  testthat::expect_match(source, "format PT $category_fmt.;", fixed = TRUE)
+  testthat::expect_match(source, "nway completetypes noprint", fixed = TRUE)
+  testthat::expect_match(source, "flag = 1;", fixed = TRUE)
 })
 
 testthat::test_that("same-row analysis uses dynamic node labels without duplicate label rows", {
@@ -439,10 +469,10 @@ testthat::test_that("hierarchical blocks anchored at one level share one members
   )[[1L]]), 1L)
   testthat::expect_equal(length(regmatches(
     source, gregexpr("proc means", source, fixed = TRUE)
-  )[[1L]]), 1L)
+  )[[1L]]), 2L)
   testthat::expect_equal(length(regmatches(
-    source, gregexpr("proc freq", source, fixed = TRUE)
-  )[[1L]]), 1L)
+    source, gregexpr("proc means", source, fixed = TRUE)
+  )[[1L]]), 2L)
 })
 
 testthat::test_that("hierarchical membership expansion remains isolated by anchor level", {

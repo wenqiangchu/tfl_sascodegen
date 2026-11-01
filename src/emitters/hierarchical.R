@@ -31,6 +31,10 @@ hierarchical_text_lengths_source <- function(plan) {
     "  _tfl_key_length = 1; _tfl_label_length = &_TFL_LABEL_LEN;",
     "  if _tfl_dsid > 0 then do;",
     unlist(lapply(chunk$levels, function(level) c(
+      if (!is.null(level$format)) c(
+        "    _tfl_key_length = 32767;",
+        "    _tfl_label_length = 32767;"
+      ) else character(),
       paste0("    _tfl_varnum = varnum(_tfl_dsid, ", sas_character_literal(level$variable), ");"),
       "    if _tfl_varnum > 0 then do;",
       "      if vartype(_tfl_dsid, _tfl_varnum) = 'C' then _tfl_value_length = varlen(_tfl_dsid, _tfl_varnum) + 2;",
@@ -110,9 +114,134 @@ hierarchical_membership_source <- function(plan, level_order) {
   )
 }
 
+hierarchical_formatted_level_source <- function(plan, level_order) {
+  chunk <- plan$chunks[[1L]]
+  level <- chunk$levels[[level_order]]
+  suffix <- sprintf("%03d_%03d", plan$batch_order, level_order)
+  input <- if (level_order == 1L) hierarchical_source_dataset(plan$batch_order) else
+    hierarchical_level_dataset(plan$batch_order, level_order - 1L)
+  parent_nodes <- if (level_order == 1L) NULL else
+    hierarchical_nodes_dataset(plan$batch_order, level_order - 1L)
+  assigned <- hierarchical_level_dataset(plan$batch_order, level_order)
+  nodes <- hierarchical_nodes_dataset(plan$batch_order, level_order)
+  class_input <- paste0("_TFL_HFMTIN_", suffix)
+  class_raw <- paste0("_TFL_HFMTRAW_", suffix)
+  class_parent <- paste0("_TFL_HFCAT_", suffix)
+  class_sorted <- paste0("_TFL_HFCATS_", suffix)
+  observed <- paste0("_TFL_HFOBS_", suffix)
+  format_spec <- paste0(level$format, ".")
+  class_setup <- if (level_order == 1L) c(
+    paste0("  set ", input, "(keep=", level$variable, ");"),
+    "  parent_node_key = '';",
+    "  flag = 1;"
+  ) else c(
+    paste0("  set ", input, "(keep=", level$variable, " node_key in=_tfl_source) "),
+    paste0(parent_nodes, "(rename=(node_key=_tfl_parent_key) in=_tfl_parent);") ,
+    "  if _tfl_source then do;",
+    "    parent_node_key = node_key; flag = 1;",
+    "  end;",
+    "  else do;",
+    "    parent_node_key = _tfl_parent_key;",
+    paste0("    call missing(", level$variable, ");"),
+    "    flag = .;",
+    "  end;"
+  )
+  parent_order_join <- if (level_order == 1L) c(
+    paste0("data ", class_parent, ";"),
+    paste0("  set ", class_raw, ";"),
+    paste0("  length parent_order_path $", length(chunk$levels) * 11L, ";"),
+    "  parent_order_path = '';",
+    "run;"
+  ) else c(
+    "proc sql noprint;",
+    paste0("  create table ", class_parent, " as"),
+    paste0("  select c.*, p.node_order_path as parent_order_path from ", class_raw, " as c"),
+    paste0("    left join ", parent_nodes, " as p on c.parent_node_key = p.node_key;"),
+    "quit;"
+  )
+  c(
+    paste0("/* Build the complete format value catalog for hierarchical level ", level_order, ". */"),
+    paste0("data ", class_input, ";"),
+    paste0("  length parent_node_key $&_TFL_HKEY_LEN_", sprintf("%03d", plan$batch_order), " flag 8;"),
+    class_setup,
+    paste0("  format ", level$variable, " ", format_spec, ";"),
+    paste0("  keep parent_node_key ", level$variable, " flag;"),
+    "run;",
+    paste0("proc means data=", class_input, " nway completetypes noprint;"),
+    paste0("  class parent_node_key ", level$variable, " / preloadfmt order=data missing;"),
+    "  var flag;",
+    paste0("  output out=", class_raw, "(drop=_type_ _freq_) n=_tfl_n;"),
+    "run;",
+    parent_order_join,
+    paste0("data ", class_sorted, ";"),
+    paste0("  set ", class_parent, ";"),
+    paste0("  length node_key group_path level_value level_component parent_node_key $&_TFL_HKEY_LEN_",
+           sprintf("%03d", plan$batch_order), ";"),
+    paste0("  length node_order_path parent_order_path $", length(chunk$levels) * 11L,
+           " node_label $&_TFL_HLABEL_LEN_", sprintf("%03d", plan$batch_order), ";"),
+    if (identical(level$missing_policy, "exclude"))
+      paste0("  if missing(", level$variable, ") then delete;") else if
+      (identical(level$missing_policy, "error")) c(
+        paste0("  if missing(", level$variable, ") then delete;")
+      ) else character(),
+    paste0("  node_label = vvalue(", level$variable, ");"),
+    if (identical(level$missing_policy, "label"))
+      paste0("  if missing(", level$variable, ") then node_label = ",
+             sas_character_literal(level$missing_label), ";") else character(),
+    "  level_value = cats('F:', node_label);",
+    "  level_component = cats(lengthn(level_value), ':', trim(level_value));",
+    "  group_path = catt(parent_node_key, level_component);",
+    "  node_key = group_path;",
+    paste0("  hierarchy_level = ", level_order, ";"),
+    paste0("  format ", level$variable, " ", format_spec, ";"),
+    "run;",
+    paste0("proc sort data=", class_sorted, " out=", class_sorted, "_ORDERED equals;"),
+    "  by parent_node_key;",
+    "run;",
+    paste0("data ", nodes, ";"),
+    paste0("  set ", class_sorted, "_ORDERED;"),
+    "  by parent_node_key;",
+    "  retain sibling_order;",
+    "  if first.parent_node_key then sibling_order = 0;",
+    "  sibling_order + 1;",
+    "  node_order_path = cats(parent_order_path, 'C', put(sibling_order, z10.));",
+    "  keep node_key group_path node_label node_order_path hierarchy_level parent_node_key;",
+    "run;",
+    paste0("data ", observed, ";"),
+    paste0("  set ", input, ";"),
+    paste0("  length node_key group_path level_value level_component parent_node_key $&_TFL_HKEY_LEN_", sprintf("%03d", plan$batch_order), ";"),
+    paste0("  length node_label $&_TFL_HLABEL_LEN_", sprintf("%03d", plan$batch_order), ";"),
+    if (level_order == 1L) "  parent_node_key = '';" else "  parent_node_key = node_key;",
+    if (identical(level$missing_policy, "exclude"))
+      paste0("  if missing(", level$variable, ") then delete;") else if
+      (identical(level$missing_policy, "error")) c(
+        paste0("  if missing(", level$variable, ") then do;"),
+        "    putlog 'WARNING: [USER] missing_level'; delete;",
+        "  end;"
+      ) else character(),
+    paste0("  format ", level$variable, " ", format_spec, ";"),
+    paste0("  node_label = vvalue(", level$variable, ");"),
+    if (identical(level$missing_policy, "label"))
+      paste0("  if missing(", level$variable, ") then node_label = ",
+             sas_character_literal(level$missing_label), ";") else character(),
+    "  level_value = cats('F:', node_label);",
+    "  level_component = cats(lengthn(level_value), ':', trim(level_value));",
+    "  group_path = catt(parent_node_key, level_component);",
+    "  node_key = group_path;",
+    paste0("  hierarchy_level = ", level_order, ";"),
+    "run;",
+    "proc sql noprint;",
+    paste0("  create table ", assigned, " as"),
+    paste0("  select o.*, n.node_order_path from ", observed, " as o left join ", nodes, " as n"),
+    "    on o.node_key = n.node_key;",
+    "quit;"
+  )
+}
+
 hierarchical_level_source <- function(plan, level_order) {
   chunk <- plan$chunks[[1L]]
   level <- chunk$levels[[level_order]]
+  if (!is.null(level$format)) return(hierarchical_formatted_level_source(plan, level_order))
   suffix <- sprintf("%03d_%03d", plan$batch_order, level_order)
   input <- if (level_order == 1L) hierarchical_source_dataset(plan$batch_order) else
     hierarchical_level_dataset(plan$batch_order, level_order - 1L)

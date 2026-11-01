@@ -449,9 +449,11 @@ render_level_yaml <- function(value, indent) {
   context <- new_yaml_lines()
   yaml_emit_scalar(context, indent, "id", value$id)
   yaml_emit_scalar(context, indent, "variable", value$variable)
+  if (!is.null(value$format)) yaml_emit_scalar(context, indent, "format", value$format)
+  if (!is.null(value$parent_level)) yaml_emit_scalar(context, indent, "parent_level", value$parent_level)
   if (!is.null(value$label_variable)) yaml_emit_scalar(context, indent, "label_variable", value$label_variable)
-  yaml_emit_scalar(context, indent, "order_variable", value$order_variable)
-  yaml_emit_scalar(context, indent, "order_direction", value$order_direction)
+  if (!is.null(value$order_variable)) yaml_emit_scalar(context, indent, "order_variable", value$order_variable)
+  if (!is.null(value$order_direction)) yaml_emit_scalar(context, indent, "order_direction", value$order_direction)
   if (!is.null(value$result_sort)) yaml_emit_mapping(context, indent, "result_sort", value$result_sort,
                                                      render_result_sort_yaml)
   yaml_emit_scalar(context, indent, "node_role", value$node_role)
