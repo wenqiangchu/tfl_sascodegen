@@ -289,14 +289,40 @@ sas_character_literal <- function(value) {
   paste0("'", gsub("'", "''", value, fixed = TRUE), "'")
 }
 
-population_header_sections <- function(resolved) {
-  population_text <- paste(
+population_header_sections <- function(resolved, include_duplicate_check = TRUE) {
+  subject_key <- subject_key_constant()
+  population_lines <- c(
     "/* Select the table population. */",
-    "data _TFL_POP_001;",
+    if (include_duplicate_check) paste0("data _TFL_POP_001 _TFL_HSUBJ_001(keep=", subject_key, ");") else "data _TFL_POP_001;",
     paste0("  set ", resolved$header$source_data, ";"),
+    if (include_duplicate_check) "  output _TFL_HSUBJ_001;",
     paste0("  if not (", resolved$population$expression, ") then delete;"),
-    "run;", sep = "\n"
+    if (include_duplicate_check) "  output _TFL_POP_001;",
+    "run;",
+    if (include_duplicate_check) c(
+      "/* Header source must have one record per subject; report duplicates without changing records. */",
+      "proc sort data=_TFL_HSUBJ_001 out=_TFL_HSUBJS_001;",
+      paste0("  by ", subject_key, ";"),
+      "run;",
+      "data _null_;",
+      "  length _tfl_count_text $12;",
+      "  set _TFL_HSUBJS_001;",
+      paste0("  by ", subject_key, ";"),
+      paste0("  if first.", subject_key, " then _tfl_header_count = 0;"),
+      "  _tfl_header_count + 1;",
+      # A PUT statement takes variables and formats, not expressions, so the
+      # formatted count has to be materialized before it is written.
+      paste0("  if last.", subject_key, " and not missing(", subject_key,
+             ") and _tfl_header_count > 1 then do;"),
+      "    _tfl_count_text = strip(put(_tfl_header_count, best.));",
+      paste0("    putlog 'WARNING: [USER] header_subject_duplicate ", subject_key,
+             "=' ", subject_key,
+             " ' count=' _tfl_count_text '.';"),
+      "  end;",
+      "run;"
+    )
   )
+  population_text <- paste(population_lines, collapse = "\n")
   columns <- resolved$header$columns
   id_length <- max(1L, nchar(vapply(columns, `[[`, "", "id"), type = "bytes"))
   membership_lines <- c(
@@ -384,7 +410,7 @@ generate_sas_source <- function(request) {
     "text_lengths", "assembly", resolved$table$id, 15L,
     paste(report_text_lengths_source(resolved), collapse = "\n")
   )
-  sections <- c(sections, population_header_sections(resolved))
+  sections <- c(sections, population_header_sections(resolved, request$include_duplicate_check))
   outputs <- list()
   for (index in seq_along(planned$value)) {
     plan <- planned$value[[index]]

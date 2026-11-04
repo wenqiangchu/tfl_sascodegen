@@ -54,9 +54,12 @@ header.source_data
 上面判断 EVALFL 等源变量。已有 population 派生表保留 Header source 字段，可以
 作为显式输入；分母条件必须在只剩身份字段之前生成。
 
-如 Header source 同一受试者有多条记录，只有同时满足 population、当前列条件
-和分母条件的记录才进入分母，然后按 subject 去重；存在至少一条这样的记录就计 1。
-不能先任意保留一条再判断条件。
+Header source 必须每个 `USUBJID` 一行，由调用方预处理保证。2026-11-02 用户明确
+选择保留这个前提，撤回允许同一受试者多条 Header source 记录的早期描述。
+生成的 SAS 在 duplicate-check 开启时检查原始 Header source，重复 subject 输出
+`WARNING: [USER] header_subject_duplicate`，保留记录继续运行；不自动选择或合并记录。
+不合规 Header 输入的分析结果不属于正确性保证范围。分母资格仍先判断再按 subject
+形成计数单位，不将资格条件施加到 membership 或分子。
 
 Header 上显示的 N 保持来自完整 membership。分母条件不修改该 N、不删除列、不改变
 分析 source 的 membership。EVALFL 如果只存在于 ADAE，不能在 Header scope 中凭空

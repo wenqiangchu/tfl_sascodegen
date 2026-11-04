@@ -373,6 +373,11 @@ scaffold；系统不隐式添加 Overall 或去重。
 
 ### 5.2 Population 与 Header Membership 数据流
 
+Header `source_data` 必须每个 `USUBJID` 一行，由调用方准备。生成的 SAS 在开启
+duplicate-check 时检查原始 Header source 的重复受试者，写入
+`WARNING: [USER] header_subject_duplicate` 并保留记录继续运行；应用不读取数据，
+也不自动去重或选择 Header 记录。重复 Header 输入须由调用方修正后再解释分析结果。
+
 已确认的生成顺序为：
 
 ~~~text

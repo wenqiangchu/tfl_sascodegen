@@ -66,13 +66,34 @@ testthat::test_that("RTF source preserves custom hooks around the fixed report i
   testthat::expect_identical(source, generate_table_source(bundle, "t_demog")$source)
 })
 
-testthat::test_that("Letter layout reserves both margins and honors header widths and alignment", {
-  landscape <- generate_table_source(report_fixture("landscape"), "t_demog")$source
-  portrait <- generate_table_source(report_fixture("portrait"), "t_demog")$source
+testthat::test_that("Letter layout reserves margins and borders without changing header widths", {
+  landscape_bundle <- report_fixture("landscape")
+  portrait_bundle <- report_fixture("portrait")
+  landscape <- generate_table_source(landscape_bundle, "t_demog")$source
+  portrait <- generate_table_source(portrait_bundle, "t_demog")$source
+  for (bundle in list(landscape_bundle, portrait_bundle)) {
+    layout <- report_page_layout(bundle$headers[[1L]])
+    printable <- layout$paper_width - 2 * layout$margin
+    testthat::expect_lte(
+      layout$stub_width + sum(vapply(bundle$headers[[1L]]$columns, `[[`, numeric(1L), "width")) +
+        2 * layout$border_width_pt / 72,
+      printable
+    )
+    testthat::expect_gt(layout$stub_width, 0)
+  }
   testthat::expect_match(landscape, "papersize=letter orientation=landscape", fixed = TRUE)
   testthat::expect_match(portrait, "papersize=letter orientation=portrait", fixed = TRUE)
-  testthat::expect_match(landscape, "cellwidth=6.25in", fixed = TRUE)
-  testthat::expect_match(portrait, "cellwidth=3.75in", fixed = TRUE)
+  landscape_layout <- report_page_layout(landscape_bundle$headers[[1L]])
+  portrait_layout <- report_page_layout(portrait_bundle$headers[[1L]])
+  testthat::expect_match(
+    landscape, paste0("cellwidth=", sas_report_number(landscape_layout$stub_width), "in"),
+    fixed = TRUE
+  )
+  testthat::expect_match(
+    portrait, paste0("cellwidth=", sas_report_number(portrait_layout$stub_width), "in"),
+    fixed = TRUE
+  )
+  testthat::expect_match(landscape, "borderwidth=0.75pt", fixed = TRUE)
   testthat::expect_match(landscape, "cellwidth=1.25in just=center", fixed = TRUE)
   testthat::expect_match(landscape, "cellwidth=1.5in just=right", fixed = TRUE)
   testthat::expect_match(landscape, "'Treatment'", fixed = TRUE)
@@ -91,6 +112,31 @@ testthat::test_that("report headers count membership and report rows preserve fo
   testthat::expect_match(source, "cell_text = TRANWRD(cell_text", fixed = TRUE)
   testthat::expect_match(source, "hierarchy_level ne previous_level", fixed = TRUE)
   testthat::expect_match(source, "chunk_order ne previous_chunk", fixed = TRUE)
+})
+
+testthat::test_that("Header source duplicates are warned before population filtering without deduplication", {
+  bundle <- report_fixture()
+  checked <- generate_table_source(bundle, "t_demog")$source
+  unchecked <- generate_table_source(bundle, "t_demog", include_duplicate_check = FALSE)$source
+  testthat::expect_match(checked, "WARNING: [USER] header_subject_duplicate", fixed = TRUE)
+  subject_key <- subject_key_constant()
+  testthat::expect_match(checked, paste0("keep=", subject_key, ");"), fixed = TRUE)
+  testthat::expect_match(checked, paste0("by ", subject_key, ";"), fixed = TRUE)
+  testthat::expect_match(checked, paste0("not missing(", subject_key, ")"), fixed = TRUE)
+  testthat::expect_match(checked, "_tfl_count_text = strip(put(_tfl_header_count, best.));", fixed = TRUE)
+  # A PUT statement accepts variables and formats, never expressions: a function call
+  # inside PUTLOG is a syntax error, so assert the count is referenced by name.
+  putlog_line <- regmatches(
+    checked,
+    regexpr("putlog 'WARNING: \\[USER\\] header_subject_duplicate[^;]*;", checked)
+  )[[1L]]
+  testthat::expect_length(putlog_line, 1L)
+  testthat::expect_false(grepl("(", putlog_line, fixed = TRUE))
+  testthat::expect_match(checked, "proc sort data=_TFL_HSUBJ_001 out=_TFL_HSUBJS_001;", fixed = TRUE)
+  testthat::expect_lt(regexpr("output _TFL_HSUBJ_001;", checked, fixed = TRUE)[[1L]],
+                      regexpr("if not (SAFFL = 'Y') then delete;", checked, fixed = TRUE)[[1L]])
+  testthat::expect_false(grepl("_TFL_HSUBJ", unchecked, fixed = TRUE))
+  testthat::expect_false(grepl("header_subject_duplicate", unchecked, fixed = TRUE))
 })
 
 testthat::test_that("Header editor orientation survives save and archive export", {
@@ -127,6 +173,8 @@ testthat::test_that("the downloadable demo explicitly includes orientation and b
 testthat::test_that("report width failure is atomic and long labels remain intact", {
   too_wide <- report_fixture("portrait")
   too_wide$headers[[1L]]$columns[[1L]]$width <- 6.5
+  testthat::expect_error(report_page_layout(too_wide$headers[[1L]]),
+                         "leave no space for the stub")
   result <- generate_table_source(too_wide, "t_demog")
   testthat::expect_false(result$passed)
   testthat::expect_null(result$source)

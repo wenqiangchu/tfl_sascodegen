@@ -8,11 +8,17 @@ report_page_layout <- function(header) {
   paper_width <- if (identical(header$orientation, "landscape")) 11 else 8.5
   # Pin the one-inch RTF margin baseline so width arithmetic and ODS agree.
   margin <- 1
-  stub_width <- paper_width - 2 * margin - sum(vapply(header$columns, `[[`, numeric(1L), "width"))
+  # Classic ODS RTF includes the outer borders in its horizontal fit decision.
+  # A content grid filling the entire printable width can split into panels.
+  # The 1.5pt total reserve is a measured ODS RTF boundary allowance.
+  border_width_pt <- 0.75
+  stub_width <- paper_width - 2 * margin - 2 * border_width_pt / 72 -
+    sum(vapply(header$columns, `[[`, numeric(1L), "width"))
   if (!is.finite(stub_width) || stub_width <= 0) {
     stop("Header columns leave no space for the stub within the Letter page margins.", call. = FALSE)
   }
-  list(paper_width = paper_width, margin = margin, stub_width = stub_width)
+  list(paper_width = paper_width, margin = margin, border_width_pt = border_width_pt,
+       stub_width = stub_width)
 }
 
 sas_report_number <- function(value) {
@@ -182,7 +188,7 @@ rtf_report_source <- function(resolved, layout) {
     paste0("ods rtf file=", sas_character_literal(paste0(resolved$table$id, ".rtf")), " style=rtf;"),
     "/* ODS RTF repeats the report column headers across page breaks. */",
     "proc report data=WORK._TFL_ASM_001 nowd missing",
-    "    style(report)=[outputwidth=100%]",
+    paste0("    style(report)=[outputwidth=100% borderwidth=", sas_report_number(layout$border_width_pt), "pt]"),
     "    style(header)=[protectspecialchars=off]",
     "    style(column)=[protectspecialchars=off asis=on];",
     paste0("  columns report_order indent_level label ", report_header_columns(header), ";"),

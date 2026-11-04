@@ -342,6 +342,76 @@ testthat::test_that("formatted hierarchy text bounds use compiled format widths 
                                                     collapse = "\n"), fixed = TRUE))
 })
 
+testthat::test_that("empty formatted roots seed only the catalog and joins retain format order", {
+  chunk <- hierarchical_report_fixture()$templates[[1L]]$body$chunks[[1L]]
+  chunk$levels[[1L]]$format <- "$soc_fmt"
+  chunk$levels[[2L]]$format <- "$pt_fmt"
+  plan <- list(batch_order = 1L, chunks = list(chunk))
+  root <- paste(hierarchical_formatted_level_source(plan, 1L), collapse = "\n")
+  testthat::expect_match(root,
+    "if _n_ = 1 then do;\n    call missing(SOC);\n    flag = .; output;\n  end;", fixed = TRUE)
+  testthat::expect_lt(regexpr("flag = .; output;", root, fixed = TRUE)[[1L]],
+                      regexpr("set _TFL_HNODE_001(keep=SOC);", root, fixed = TRUE)[[1L]])
+  observed_section <- strsplit(root, "data _TFL_HFOBS_001_001;", fixed = TRUE)[[1L]][[2L]]
+  testthat::expect_match(observed_section, "set _TFL_HNODE_001;", fixed = TRUE)
+  testthat::expect_false(grepl("flag = .; output;", observed_section, fixed = TRUE))
+  child <- paste(hierarchical_formatted_level_source(plan, 2L), collapse = "\n")
+  testthat::expect_match(child,
+    "set _TFL_HFMTRAW_001_002;\n  _tfl_format_order = _n_;", fixed = TRUE)
+  testthat::expect_match(child, "order by c._tfl_format_order;", fixed = TRUE)
+  testthat::expect_match(child, "by parent_node_key _tfl_format_order;", fixed = TRUE)
+})
+
+testthat::test_that("every internal sort key is created in the level that sorts by it", {
+  chunk <- hierarchical_report_fixture()$templates[[1L]]$body$chunks[[1L]]
+  chunk$levels[[1L]]$format <- "$soc_fmt"
+  chunk$levels[[2L]]$format <- "$pt_fmt"
+  plan <- list(batch_order = 1L, chunks = list(chunk))
+  sort_blocks <- 0L
+  for (level_order in seq_along(chunk$levels)) {
+    text <- paste(hierarchical_formatted_level_source(plan, level_order), collapse = "\n")
+    matches <- gregexpr("proc sort[^;]*;[[:space:]]*by [^;]*;", text)
+    blocks <- regmatches(text, matches)[[1L]]
+    starts <- matches[[1L]]
+    for (index in seq_along(blocks)) {
+      sort_blocks <- sort_blocks + 1L
+      keys <- regmatches(blocks[[index]], gregexpr("(?<= by )[^;]*", blocks[[index]], perl = TRUE))[[1L]]
+      keys <- Filter(nzchar, strsplit(trimws(keys), "[[:space:]]+")[[1L]])
+      prefix <- substr(text, 1L, starts[[index]])
+      for (key in keys) {
+        if (!startsWith(key, "_tfl_")) next
+        # A sort key that is only referenced (never created) fails in SAS with
+        # "Variable ... is not on file", so require an assignment of its own.
+        testthat::expect_gt(
+          regexpr(paste0(key, " = "), prefix, fixed = TRUE)[[1L]], 0L,
+          label = paste0(key, " is sorted by at level ", level_order, " but never assigned")
+        )
+      }
+    }
+  }
+  testthat::expect_gt(sort_blocks, 0L)
+})
+
+testthat::test_that("catalog and analysis labels strip VVALUE padding identically", {
+  chunk <- hierarchical_report_fixture()$templates[[1L]]$body$chunks[[1L]]
+  chunk$levels[[1L]]$format <- "$soc_fmt"
+  chunk$levels[[2L]]$format <- "$pt_fmt"
+  plan <- list(batch_order = 1L, chunks = list(chunk))
+  for (level_order in seq_along(chunk$levels)) {
+    text <- paste(hierarchical_formatted_level_source(plan, level_order), collapse = "\n")
+    variable <- chunk$levels[[level_order]]$variable
+    testthat::expect_equal(
+      lengths(regmatches(text, gregexpr(paste0("node_label = strip(vvalue(", variable, "));"),
+                                       text, fixed = TRUE)))[[1L]], 2L,
+      label = paste0("both label paths for level ", level_order, " must strip padding")
+    )
+    testthat::expect_false(
+      grepl(paste0("node_label = vvalue(", variable, ");"), text, fixed = TRUE),
+      label = paste0("level ", level_order, " must not emit an unstripped label")
+    )
+  }
+})
+
 testthat::test_that("formatted levels replace inherited ordering before another child consumes it", {
   bundle <- hierarchical_report_fixture()
   chunk <- bundle$templates[[1L]]$body$chunks[[1L]]
@@ -584,6 +654,15 @@ testthat::test_that("hierarchical blocks anchored at one level share one members
   testthat::expect_equal(length(regmatches(
     source, gregexpr("proc means", source, fixed = TRUE)
   )[[1L]]), 2L)
+})
+
+testthat::test_that("hierarchical sibling counters do not propagate to descendant input", {
+  result <- generate_table_source(hierarchical_report_fixture(), "t1")
+  testthat::expect_true(result$passed)
+  for (level in c("001", "002")) {
+    testthat::expect_match(result$source,
+      paste0("  drop sibling_order;\n  output _TFL_HLEVEL_001_", level, ";"), fixed = TRUE)
+  }
 })
 
 testthat::test_that("hierarchical membership expansion remains isolated by anchor level", {

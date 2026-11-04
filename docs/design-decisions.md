@@ -1492,6 +1492,13 @@ format 的子 level 要在每个已存在的父节点下展开完整值域。父
 只有父 level 的 format 值域将它纳入时才存在。父子 level 都使用 format 时，完整的
 格式化值组合是允许的。
 
+当根输入完全为空时，`missing_policy=exclude`、`label` 和 `error` 都保留 format
+提供的非缺失零频节点；`label` 仍可保留真实缺失记录，`exclude` 删除真实缺失记录，
+`error` 按既有缺失策略记录告警并删除真实缺失记录。目录占位记录的 `flag=.` 不构成
+真实 Missing 观测，也不增加任何频数。分类频数使用 `N(flag)`，因此目录步骤的零频
+Missing 守卫依赖 SAS `N` 只统计非缺失 `flag`；这同样适用于 exclude/error：占位缺失
+类别被删除，format 提供的非缺失类别仍作为零频节点保留。
+
 `PROC FREQ` 没有 `CLASS` 语句，`TABLES` 的 `SPARSE` 不能替代 format 值域预载。
 节点目录使用 `PROC MEANS` 的 `CLASS ... / PRELOADFMT` 和 `COMPLETETYPES`；分类频数
 使用包含展示及分母位置的 `CLASSDATA=`。每个分类计数事件先设置 `flag=1`，再以 `N(flag)`
@@ -1562,3 +1569,53 @@ format 根目录行为仍需在调用方 SAS 环境验证。
 [VLENGTH](https://support.sas.com/documentation/cdl/en/lrdict/64316/HTML/default/a000245990.htm)
 返回变量编译时分配的长度，包含尾部空白容量。定长不依赖实际观测或观测中出现的类别。
 format 名称、定义和原始变量类型仍由调用方保证；应用不新增存在性或类型检查。
+
+### 2026-11-02 SAS 9.4M2 外部运行验证：空根目录与 format 顺序
+
+用户明确授权使用本机 SAS 及 study 数据进行开发阶段的外部验证，应用边界不变。
+独立 synthetic 预期发现并复现两个违反已有 format 契约的问题：
+
+1. 根输入完全为空时，`PRELOADFMT`/`COMPLETETYPES` 仍缺少未格式化的根父域。
+   在根目录输入的第一个 `SET` 之前输出一条 `parent_node_key=''`、原始值缺失、
+   `flag=.` 的目录占位记录；该记录仅用于目录过程，不进入 observed 分析输入。
+   `N(flag)` 不计该占位，既有 Missing 策略继续排除零频占位缺失类别。
+2. 子层 `PROC MEANS` 已按 format 顺序输出，但关联父排序路径的 SQL 不保证保序。
+   在关联前保留 `_tfl_format_order`，关联明确按其排序，再按父节点稳定分组。
+   最终 `result_sort` 仍按既有约定覆盖展示顺序。
+
+修复前外部断言分别发现根节点目录为空及子节点顺序错误；早期批次（`runs/final/synthetic`
+10 个、`runs/unformatted_verified` 1 个、`runs/empty_policies` 2 个）为旧代码结果。
+级别 1 的 `_tfl_format_order` 回归修复后，13 个案例已在同一批次
+`runs/aligned_20261103/synthetic/` 中用当前源码全部重跑并通过，恢复的 numeric
+`VVALUE` 路径也已包含在内；旧批次不再作为该路径的证据。
+案例覆盖完全空输入、三种 missing policy、真实缺失值、输入重排、重复记录、结果排序、
+跨父节点标签、两层 format 后的普通层及不同 format 长度。
+完整运行验证与剩余工作跟踪见 `plans/sas-runtime-validation.md`。
+
+### 2026-11-02 Header source 唯一性与重复告警
+
+用户明确选择继续要求 Header source 每个受试者一行，由调用方预处理，并要求
+不符合时生成 WARNING。因此收紧统一分母文档，撤回允许同一 subject 多条 Header
+记录的描述；不对 membership 自动去重，不改变源数据或分析记录。
+
+复用现有 `include_duplicate_check` 开关（默认开启）：在读取原始 Header source
+时输出独立的 subject key 投影，再对该投影排序。每个重复 subject 输出一次
+`WARNING: [USER] header_subject_duplicate`，包括被 population 排除的 subject。
+检查不改变 population/filter 条件、不删除记录、不中止 SAS。关闭 duplicate-check
+时省略这个诊断，与既有 source duplicate-check 的开关语义一致。
+
+### 2026-11-02 RTF 横向分表修复
+
+外部 Word 视觉检查发现，经典 ODS RTF 在内容列宽恰好占满可打印页宽时将 stub
+和治疗列拆成横向 panels。最小 synthetic 程序可复现；移除边框或为边框预留空间
+均可避免拆分。保留边框并显式固定外框宽度为 0.75 pt，计算 stub 宽度时扣除两侧
+边框共 1.5 pt。Header 声明的列宽、Letter 纸张及一英寸左右页边距保持原意。
+该修复不新增 metadata 字段；预计会改变历史 RTF 的分页和表格结构。
+
+### 2026-11-02 未格式化层级的 sibling counter 生命周期
+
+独立 study 参考计算发现：未格式化父层的 `sibling_order` 随 assigned 数据进入
+子层，子层 `SET` 每次覆盖自己的 retained counter，使多个子节点排序键相同。
+这在旧程序和当前程序均存在，不能以新旧输出一致判定正确。计数器只用于当前
+节点发现步骤，输出时丢弃；供后续层使用的只有完整 `node_order_path`。
+以独立的 SOC/PT、Parameter/Visit 和历史 PT 最大严重程度分组排序验证修复。

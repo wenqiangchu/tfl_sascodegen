@@ -37,7 +37,10 @@ inspect the program and the RTF in your own SAS environment.
 Programs use Letter paper and the built-in `Styles.Rtf` style (`style=rtf`).
 Left and right margins are explicitly one inch, giving 6.5 inches in portrait
 or 9 inches in landscape. The stub width is that usable width minus the sum
-of the Header column widths. Fonts and borders follow the RTF style. Column
+of the Header column widths and 1.5 points reserved for the two outer borders.
+The outer border width is fixed at 0.75 point to keep classic ODS RTF from
+splitting the stub and treatment columns into separate panels. Fonts otherwise
+follow the RTF style. Column
 labels and spanning headers follow the metadata; each column also shows
 `(N = xx)` from its population/header membership, including `(N = 0)`.
 
@@ -152,7 +155,10 @@ In `Generate SAS`, select a table, choose the generation options, and click
 
 - **Include duplicate record checks** is enabled by default. Clear it to omit
   the source-key duplicate checks and their `WARNING: [USER] duplicate_key`
-  messages. This applies to primitive chunks and hierarchical source records;
+  messages, and the Header source `WARNING: [USER] header_subject_duplicate`
+  check. Header source must contain one record per `USUBJID`; prepare it before
+  running the program. Warnings do not remove duplicate records or stop SAS.
+  This option applies to primitive chunks and hierarchical source records;
   it does not change analysis counts, merge rules, or exclusive-category
   overlap warnings.
 - **Source report (PROC REPORT)** is the default output mode. It appends the

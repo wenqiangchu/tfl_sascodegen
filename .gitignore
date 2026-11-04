@@ -30,17 +30,21 @@ test/fixtures/sas/**/logs/
 coverage/
 .pytest_cache/
 __pycache__/
+.pi-tmp/
 *.Rout
 # Local research and dataset material; never shipped with the application.
-study/
-study/sas_data/
-study/validation/*.rtf
-study/validation/*.log
-study/validation/*.lst
-study/validation/*.sas
-study/validation/*.zip
-study/validation_data/
-study/convert_xpt_to_sas.log
-study/validation_contents.log
-study/validation_explicit.log
-convert_xpt_to_sas.lst
+# Anchored to the repository root: nested directories that happen to be named
+# `study/` (for example the tracked harness in test/fixtures/sas/runtime_v2/study/)
+# are source code and must stay committed.
+/study/
+/study/sas_data/
+/study/validation/*.rtf
+/study/validation/*.log
+/study/validation/*.lst
+/study/validation/*.sas
+/study/validation/*.zip
+/study/validation_data/
+/study/convert_xpt_to_sas.log
+/study/validation_contents.log
+/study/validation_explicit.log
+/convert_xpt_to_sas.lst

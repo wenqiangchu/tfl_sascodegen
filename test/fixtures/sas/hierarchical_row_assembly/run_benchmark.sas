@@ -39,7 +39,8 @@ run;
 /* End-of-generation file bytes, not peak WORK or process memory. */
 proc sql noprint;
   select sum(filesize) format=32. into :bench_bytes trimmed from dictionary.tables
-    where libname='WORK' and memtype='DATA' and substr(memname,1,5)='_TFL_';
+    where libname='WORK' and memtype='DATA' and substr(memname,1,5)='_TFL_'
+      and memname not like '_TFL_HSUBJ%';
 quit;
 %put NOTE: [BENCH] final_intermediate_bytes=&bench_bytes.;
 data bench.w&bench_records._&bench_blocks._&bench_mode;

@@ -149,9 +149,14 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
   observed <- paste0("_TFL_HFOBS_", suffix)
   format_spec <- paste0(level$format, ".")
   class_setup <- if (level_order == 1L) c(
-    paste0("  set ", input, "(keep=", level$variable, ");"),
     "  parent_node_key = '';",
-    "  flag = 1;"
+    "  /* A catalog-only seed establishes the root domain even when SET reaches EOF immediately. */",
+    "  if _n_ = 1 then do;",
+    paste0("    call missing(", level$variable, ");"),
+    "    flag = .; output;",
+    "  end;",
+    paste0("  set ", input, "(keep=", level$variable, ");"),
+    "  flag = 1; output;"
   ) else c(
     paste0("  set ", input, "(keep=", level$variable, " node_key in=_tfl_source) "),
     paste0(parent_nodes, "(rename=(node_key=_tfl_parent_key) in=_tfl_parent);") ,
@@ -169,12 +174,21 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
     paste0("  set ", class_raw, ";"),
     paste0("  length parent_order_path $", length(chunk$levels) * 11L, ";"),
     "  parent_order_path = '';",
+    # The level-1 catalog has a single parent, so its format order is the PROC MEANS
+    # output order. Record it here as well: the shared sort below always orders by it.
+    "  _tfl_format_order = _n_;",
     "run;"
   ) else c(
+    "/* SQL joins do not preserve the preloaded format order without an explicit key. */",
+    paste0("data ", class_raw, ";"),
+    paste0("  set ", class_raw, ";"),
+    "  _tfl_format_order = _n_;",
+    "run;",
     "proc sql noprint;",
     paste0("  create table ", class_parent, " as"),
     paste0("  select c.*, p.node_order_path as parent_order_path from ", class_raw, " as c"),
-    paste0("    left join ", parent_nodes, " as p on c.parent_node_key = p.node_key;"),
+    paste0("    left join ", parent_nodes, " as p on c.parent_node_key = p.node_key"),
+    "  order by c._tfl_format_order;",
     "quit;"
   )
   c(
@@ -188,6 +202,7 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
     paste0("proc means data=", class_input, " nway completetypes noprint;"),
     paste0("  class parent_node_key ", level$variable, " / preloadfmt order=data missing;"),
     "  var flag;",
+    "  /* N counts non-missing FLAG values; the catalog seed has FLAG=. and therefore N=0. */",
     paste0("  output out=", class_raw, "(drop=_type_ _freq_) n=_tfl_n;"),
     "run;",
     parent_order_join,
@@ -206,7 +221,8 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
       "  /* Parent seeds establish the parent domain, not observed missing children. */",
       paste0("  if missing(", level$variable, ") and _tfl_n = 0 then delete;")
     ),
-    paste0("  node_label = vvalue(", level$variable, ");"),
+    "  /* Strip VVALUE padding so formatted labels are stable character values. */",
+    paste0("  node_label = strip(vvalue(", level$variable, "));"),
     if (identical(level$missing_policy, "label"))
       paste0("  if missing(", level$variable, ") then node_label = ",
              sas_character_literal(level$missing_label), ";") else character(),
@@ -217,8 +233,9 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
     paste0("  hierarchy_level = ", level_order, ";"),
     paste0("  format ", level$variable, " ", format_spec, ";"),
     "run;",
-    paste0("proc sort data=", class_sorted, " out=", class_sorted, "_ORDERED equals;"),
-    "  by parent_node_key;",
+    "  /* Sort by the explicit format sequence within each parent. */",
+    paste0("proc sort data=", class_sorted, " out=", class_sorted, "_ORDERED;"),
+    "  by parent_node_key _tfl_format_order;",
     "run;",
     paste0("data ", nodes, ";"),
     paste0("  set ", class_sorted, "_ORDERED;"),
@@ -242,7 +259,8 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
         "  end;"
       ) else character(),
     paste0("  format ", level$variable, " ", format_spec, ";"),
-    paste0("  node_label = vvalue(", level$variable, ");"),
+    # Strip the same padding the catalog step strips, so node and analysis labels agree.
+    paste0("  node_label = strip(vvalue(", level$variable, "));"),
     if (identical(level$missing_policy, "label"))
       paste0("  if missing(", level$variable, ") then node_label = ",
              sas_character_literal(level$missing_label), ";") else character(),
@@ -296,7 +314,8 @@ hierarchical_level_source <- function(plan, level_order) {
     "  level_component = cats(lengthn(level_value), ':', trim(level_value));",
     "  group_path = catt(parent_node_key, level_component);",
     "  node_key = group_path;",
-    paste0("  node_label = vvalue(", level$label_variable %||% level$variable, ");"),
+    "  /* Strip VVALUE padding so unformatted labels are stable character values. */",
+    paste0("  node_label = strip(vvalue(", level$label_variable %||% level$variable, "));"),
     if (identical(level$missing_policy, "label"))
       paste0("  if missing(", level$variable, ") then node_label = ",
              sas_character_literal(level$missing_label), ";"),
@@ -313,6 +332,8 @@ hierarchical_level_source <- function(plan, level_order) {
     "  if first.parent_node_key then sibling_order = 0;",
     paste0("  if first.", level$variable, " then sibling_order + 1;"),
     "  node_order_path = cats(parent_order_path, 'C', put(sibling_order, z10.));",
+    "  /* sibling_order is local to discovery; do not inherit it into the next level. */",
+    "  drop sibling_order;",
     paste0("  output ", assigned, ";"),
     paste0("  if first.", level$variable, " then output ", nodes, ";"),
     "run;"
