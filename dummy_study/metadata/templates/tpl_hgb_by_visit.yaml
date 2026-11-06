@@ -1,0 +1,69 @@
+id: 'tpl_hgb_by_visit'
+body:
+  stub_header: 'Parameter / Visit'
+  chunks:
+    - id: 'hgb_by_visit'
+      type: 'hierarchical_summary'
+      source_data: 'study.adlbh'
+      filter: 'PARAMCD = ''HGB'''
+      levels:
+        - id: 'param'
+          variable: 'PARAM'
+          order_variable: 'PARAM'
+          order_direction: 'asc'
+          node_role: 'label'
+          missing_policy: 'exclude'
+        - id: 'visit'
+          variable: 'AVISIT'
+          order_variable: 'AVISITN'
+          order_direction: 'asc'
+          node_role: 'label'
+          missing_policy: 'exclude'
+      analysis_blocks:
+        - id: 'visit_stats'
+          anchor_level: 'visit'
+          placement: 'below'
+          type: 'continuous_summary'
+          counting_unit: 'record'
+          analysis_variable: 'AVAL'
+          rows:
+            - id: 'visit_n'
+              type: 'analysis'
+              label: 'n'
+              statistics:
+                - id: 'n'
+              cell_format: '{n}'
+            - id: 'visit_mean'
+              type: 'analysis'
+              label: 'Mean (SD)'
+              statistics:
+                - id: 'mean'
+                  digits: 2
+                - id: 'sd'
+                  digits: 2
+              cell_format: '{mean} ({sd})'
+            - id: 'visit_median'
+              type: 'analysis'
+              label: 'Median'
+              statistics:
+                - id: 'median'
+                  digits: 2
+              cell_format: '{median}'
+            - id: 'visit_q1'
+              type: 'analysis'
+              label: 'Q1, Q3'
+              statistics:
+                - id: 'q1'
+                  digits: 2
+                - id: 'q3'
+                  digits: 2
+              cell_format: '{q1}, {q3}'
+            - id: 'visit_min'
+              type: 'analysis'
+              label: 'Min, Max'
+              statistics:
+                - id: 'min'
+                  digits: 2
+                - id: 'max'
+                  digits: 2
+              cell_format: '{min}, {max}'

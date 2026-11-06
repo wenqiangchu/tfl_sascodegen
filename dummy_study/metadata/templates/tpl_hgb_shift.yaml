@@ -1,0 +1,130 @@
+id: 'tpl_hgb_shift'
+body:
+  stub_header: 'Worst Post-Baseline / Baseline'
+  chunks:
+    - id: 'shift_placebo'
+      type: 'categorical_summary_nonexclusive'
+      source_data: 'WORK.SHIFT_HGB'
+      filter: 'TRTA = ''Placebo'''
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'chunk_source'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'section_placebo'
+          type: 'label'
+          label: 'Placebo'
+        - id: 'worst_normal'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Normal'
+          condition: 'ANRIND_WORST = ''NORMAL'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'worst_low'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Low'
+          condition: 'ANRIND_WORST = ''LOW'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'worst_high'
+          indent_level: 1
+          type: 'analysis'
+          label: 'High'
+          condition: 'ANRIND_WORST = ''HIGH'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+    - id: 'shift_low'
+      type: 'categorical_summary_nonexclusive'
+      source_data: 'WORK.SHIFT_HGB'
+      filter: 'TRTA = ''Xanomeline Low Dose'''
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'chunk_source'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'section_low'
+          type: 'label'
+          label: 'Xanomeline Low Dose'
+        - id: 'worst_normal'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Normal'
+          condition: 'ANRIND_WORST = ''NORMAL'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'worst_low'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Low'
+          condition: 'ANRIND_WORST = ''LOW'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'worst_high'
+          indent_level: 1
+          type: 'analysis'
+          label: 'High'
+          condition: 'ANRIND_WORST = ''HIGH'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+    - id: 'shift_high'
+      type: 'categorical_summary_nonexclusive'
+      source_data: 'WORK.SHIFT_HGB'
+      filter: 'TRTA = ''Xanomeline High Dose'''
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'chunk_source'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'section_high'
+          type: 'label'
+          label: 'Xanomeline High Dose'
+        - id: 'worst_normal'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Normal'
+          condition: 'ANRIND_WORST = ''NORMAL'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'worst_low'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Low'
+          condition: 'ANRIND_WORST = ''LOW'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'worst_high'
+          indent_level: 1
+          type: 'analysis'
+          label: 'High'
+          condition: 'ANRIND_WORST = ''HIGH'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'

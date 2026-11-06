@@ -1,0 +1,156 @@
+id: 'tpl_disposition'
+body:
+  stub_header: 'Population / Status'
+  chunks:
+    - id: 'disposition'
+      type: 'categorical_summary_nonexclusive'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'header_population'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'randomized'
+          type: 'analysis'
+          label: 'Randomized'
+          condition: '1'
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'itt'
+          type: 'analysis'
+          label: 'Intent-to-Treat Population'
+          condition: 'ITTFL = ''Y'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'safety'
+          type: 'analysis'
+          label: 'Safety Population'
+          condition: 'SAFFL = ''Y'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'efficacy'
+          type: 'analysis'
+          label: 'Efficacy Population'
+          condition: 'EFFFL = ''Y'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'completed'
+          type: 'analysis'
+          label: 'Completed Study'
+          condition: 'EOSSTT = ''COMPLETED'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'discontinued'
+          type: 'analysis'
+          label: 'Discontinued Study'
+          condition: 'EOSSTT = ''DISCONTINUED'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_adverse_event'
+          type: 'analysis'
+          label: 'Adverse Event'
+          indent_level: 1
+          condition: 'DCSREAS = ''Adverse Event'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_death'
+          type: 'analysis'
+          label: 'Death'
+          indent_level: 1
+          condition: 'DCSREAS = ''Death'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_ie_not_met'
+          type: 'analysis'
+          label: 'I/E Not Met'
+          indent_level: 1
+          condition: 'DCSREAS = ''I/E Not Met'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_lack_of_efficacy'
+          type: 'analysis'
+          label: 'Lack of Efficacy'
+          indent_level: 1
+          condition: 'DCSREAS = ''Lack of Efficacy'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_lost_to_follow_up'
+          type: 'analysis'
+          label: 'Lost to Follow-up'
+          indent_level: 1
+          condition: 'DCSREAS = ''Lost to Follow-up'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_physician_decision'
+          type: 'analysis'
+          label: 'Physician Decision'
+          indent_level: 1
+          condition: 'DCSREAS = ''Physician Decision'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_protocol_violation'
+          type: 'analysis'
+          label: 'Protocol Violation'
+          indent_level: 1
+          condition: 'DCSREAS = ''Protocol Violation'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_sponsor_decision'
+          type: 'analysis'
+          label: 'Sponsor Decision'
+          indent_level: 1
+          condition: 'DCSREAS = ''Sponsor Decision'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'reason_withdrew_consent'
+          type: 'analysis'
+          label: 'Withdrew Consent'
+          indent_level: 1
+          condition: 'DCSREAS = ''Withdrew Consent'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'

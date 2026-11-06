@@ -1,0 +1,310 @@
+id: 'tpl_baseline'
+body:
+  stub_header: 'Characteristic'
+  chunks:
+    - id: 'age'
+      type: 'continuous_summary'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      analysis_variable: 'AGE'
+      rows:
+        - id: 'age_title'
+          type: 'label'
+          label: 'Age (years)'
+        - id: 'age_n'
+          indent_level: 1
+          type: 'analysis'
+          label: 'n'
+          statistics:
+            - id: 'n'
+          cell_format: '{n}'
+        - id: 'age_mean'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Mean (SD)'
+          statistics:
+            - id: 'mean'
+              digits: 1
+            - id: 'sd'
+              digits: 1
+          cell_format: '{mean} ({sd})'
+        - id: 'age_median'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Median'
+          statistics:
+            - id: 'median'
+              digits: 1
+          cell_format: '{median}'
+        - id: 'age_q1'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Q1, Q3'
+          statistics:
+            - id: 'q1'
+              digits: 1
+            - id: 'q3'
+              digits: 1
+          cell_format: '{q1}, {q3}'
+        - id: 'age_min'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Min, Max'
+          statistics:
+            - id: 'min'
+              digits: 1
+            - id: 'max'
+              digits: 1
+          cell_format: '{min}, {max}'
+    - id: 'bmi'
+      type: 'continuous_summary'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      analysis_variable: 'BMIBL'
+      rows:
+        - id: 'bmi_title'
+          type: 'label'
+          label: 'Body mass index (kg/m2)'
+        - id: 'bmi_n'
+          indent_level: 1
+          type: 'analysis'
+          label: 'n'
+          statistics:
+            - id: 'n'
+          cell_format: '{n}'
+        - id: 'bmi_mean'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Mean (SD)'
+          statistics:
+            - id: 'mean'
+              digits: 2
+            - id: 'sd'
+              digits: 2
+          cell_format: '{mean} ({sd})'
+        - id: 'bmi_median'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Median'
+          statistics:
+            - id: 'median'
+              digits: 2
+          cell_format: '{median}'
+        - id: 'bmi_q1'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Q1, Q3'
+          statistics:
+            - id: 'q1'
+              digits: 2
+            - id: 'q3'
+              digits: 2
+          cell_format: '{q1}, {q3}'
+        - id: 'bmi_min'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Min, Max'
+          statistics:
+            - id: 'min'
+              digits: 2
+            - id: 'max'
+              digits: 2
+          cell_format: '{min}, {max}'
+    - id: 'disease_duration'
+      type: 'continuous_summary'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      analysis_variable: 'DURDIS'
+      rows:
+        - id: 'disease_duration_title'
+          type: 'label'
+          label: 'Duration of disease (months)'
+        - id: 'disease_duration_n'
+          indent_level: 1
+          type: 'analysis'
+          label: 'n'
+          statistics:
+            - id: 'n'
+          cell_format: '{n}'
+        - id: 'disease_duration_mean'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Mean (SD)'
+          statistics:
+            - id: 'mean'
+              digits: 1
+            - id: 'sd'
+              digits: 1
+          cell_format: '{mean} ({sd})'
+        - id: 'disease_duration_median'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Median'
+          statistics:
+            - id: 'median'
+              digits: 1
+          cell_format: '{median}'
+        - id: 'disease_duration_q1'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Q1, Q3'
+          statistics:
+            - id: 'q1'
+              digits: 1
+            - id: 'q3'
+              digits: 1
+          cell_format: '{q1}, {q3}'
+        - id: 'disease_duration_min'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Min, Max'
+          statistics:
+            - id: 'min'
+              digits: 1
+            - id: 'max'
+              digits: 1
+          cell_format: '{min}, {max}'
+    - id: 'age_group'
+      type: 'categorical_summary_exclusive'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'header_population'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'age_group_title'
+          type: 'label'
+          label: 'Age group, n (%)'
+        - id: 'age_lt65'
+          indent_level: 1
+          type: 'analysis'
+          label: '<65'
+          condition: 'AGEGR1 = ''<65'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'age_65_80'
+          indent_level: 1
+          type: 'analysis'
+          label: '65-80'
+          condition: 'AGEGR1 = ''65-80'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'age_gt80'
+          indent_level: 1
+          type: 'analysis'
+          label: '>80'
+          condition: 'AGEGR1 = ''>80'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+    - id: 'sex'
+      type: 'categorical_summary_exclusive'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'header_population'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'sex_title'
+          type: 'label'
+          label: 'Sex, n (%)'
+        - id: 'female'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Female'
+          condition: 'SEX = ''F'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'male'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Male'
+          condition: 'SEX = ''M'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+    - id: 'race'
+      type: 'categorical_summary_exclusive'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'header_population'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'race_title'
+          type: 'label'
+          label: 'Race, n (%)'
+        - id: 'race_white'
+          indent_level: 1
+          type: 'analysis'
+          label: 'White'
+          condition: 'RACE = ''WHITE'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'race_black'
+          indent_level: 1
+          type: 'analysis'
+          label: 'Black or African American'
+          condition: 'RACE = ''BLACK OR AFRICAN AMERICAN'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'race_aian'
+          indent_level: 1
+          type: 'analysis'
+          label: 'American Indian or Alaska Native'
+          condition: 'RACE = ''AMERICAN INDIAN OR ALASKA NATIVE'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+    - id: 'disease_duration_group'
+      type: 'categorical_summary_exclusive'
+      source_data: 'study.adsl'
+      counting_unit: 'distinct_subject'
+      denominator:
+        scope: 'header_population'
+        unit: 'distinct_subject'
+      rows:
+        - id: 'disease_duration_group_title'
+          type: 'label'
+          label: 'Duration of disease group, n (%)'
+        - id: 'dur_lt12'
+          indent_level: 1
+          type: 'analysis'
+          label: '< 12 months'
+          condition: 'DURDSGR1 = ''<12'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'
+        - id: 'dur_ge12'
+          indent_level: 1
+          type: 'analysis'
+          label: '>= 12 months'
+          condition: 'DURDSGR1 = ''>=12'''
+          statistics:
+            - id: 'n'
+            - id: 'pct'
+              digits: 1
+          cell_format: '{n} ({pct}%)'

@@ -1,0 +1,13 @@
+populations:
+  - id: 'randomized'
+    label: 'Randomized'
+    expression: '1'
+  - id: 'itt'
+    label: 'Intent-to-Treat'
+    expression: 'ITTFL = ''Y'''
+  - id: 'safety'
+    label: 'Safety'
+    expression: 'SAFFL = ''Y'''
+  - id: 'efficacy'
+    label: 'Efficacy'
+    expression: 'EFFFL = ''Y'''

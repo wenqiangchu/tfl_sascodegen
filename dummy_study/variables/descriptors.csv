@@ -1,0 +1,151 @@
+domain,NAME,TYPE,LENGTH,VARNUM,LABEL,FORMAT,FORMATL,NOBS
+adae,STUDYID,2,12,1,Study Identifier,,0,1191
+adae,SITEID,2,3,2,Study Site Identifier,,0,1191
+adae,USUBJID,2,11,3,Unique Subject Identifier,,0,1191
+adae,TRTA,2,20,4,Actual Treatment,,0,1191
+adae,TRTAN,1,8,5,Actual Treatment (N),,0,1191
+adae,AGE,1,8,6,Age,,0,1191
+adae,AGEGR1,2,5,7,Pooled Age Group 1,,0,1191
+adae,AGEGR1N,1,8,8,Pooled Age Group 1 (N),,0,1191
+adae,RACE,2,32,9,Race,,0,1191
+adae,RACEN,1,8,10,Race (N),,0,1191
+adae,SEX,2,1,11,Sex,,0,1191
+adae,SAFFL,2,1,12,Safety Population Flag,,0,1191
+adae,TRTSDT,1,8,13,Date of First Exposure to Treatment,DATE,9,1191
+adae,TRTEDT,1,8,14,Date of Last Exposure to Treatment,DATE,9,1191
+adae,ASTDT,1,8,15,Analysis Start Date,DATE,9,1191
+adae,ASTDTF,2,1,16,Analysis Start Date Imputation Flag,,0,1191
+adae,ASTDY,1,8,17,Analysis Start Relative Day,,0,1191
+adae,AENDT,1,8,18,Analysis End Date,DATE,9,1191
+adae,AENDY,1,8,19,Analysis End Relative Day,,0,1191
+adae,ADURN,1,8,20,Analysis Duration (N),,0,1191
+adae,ADURU,2,3,21,Analysis Duration Units,,0,1191
+adae,AETERM,2,46,22,Reported Term for the Adverse Event,,0,1191
+adae,AELLT,2,46,23,Lowest Level Term,,0,1191
+adae,AELLTCD,1,8,24,Lowest Level Term Code,,0,1191
+adae,AEDECOD,2,46,25,Dictionary-Derived Term,,0,1191
+adae,AEPTCD,1,8,26,Preferred Term Code,,0,1191
+adae,AEHLT,2,8,27,High Level Term,,0,1191
+adae,AEHLTCD,1,8,28,High Level Term Code,,0,1191
+adae,AEHLGT,2,9,29,High Level Group Term,,0,1191
+adae,AEHLGTCD,1,8,30,High Level Group Term Code,,0,1191
+adae,AEBODSYS,2,67,31,Body System or Organ Class,,0,1191
+adae,AESOC,2,67,32,Primary System Organ Class,,0,1191
+adae,AESOCCD,1,8,33,Primary System Organ Class Code,,0,1191
+adae,AESEV,2,8,34,Severity/Intensity,,0,1191
+adae,AESER,2,1,35,Serious Event,,0,1191
+adae,AESCAN,2,1,36,Involves Cancer,,0,1191
+adae,AESCONG,2,1,37,Congenital Anomaly or Birth Defect,,0,1191
+adae,AESDISAB,2,1,38,Persist or Signif Disability/Incapacity,,0,1191
+adae,AESDTH,2,1,39,Results in Death,,0,1191
+adae,AESHOSP,2,1,40,Requires or Prolongs Hospitalization,,0,1191
+adae,AESLIFE,2,1,41,Is Life Threatening,,0,1191
+adae,AESOD,2,1,42,Occurred with Overdose,,0,1191
+adae,AEREL,2,8,43,Causality,,0,1191
+adae,AEACN,2,1,44,Action Taken with Study Treatment,,0,1191
+adae,AEOUT,2,26,45,Outcome of Adverse Event,,0,1191
+adae,AESEQ,1,8,46,Sequence Number,,0,1191
+adae,TRTEMFL,2,1,47,Treatment Emergent Analysis Flag,,0,1191
+adae,AOCCFL,2,1,48,1st Occurrence within Subject Flag,,0,1191
+adae,AOCCSFL,2,1,49,1st Occurrence of SOC Flag,,0,1191
+adae,AOCCPFL,2,1,50,1st Occurrence of Preferred Term Flag,,0,1191
+adae,AOCC02FL,2,1,51,1st Occurrence 02 Flag for Serious,,0,1191
+adae,AOCC03FL,2,1,52,1st Occurrence 03 Flag for Serious SOC,,0,1191
+adae,AOCC04FL,2,1,53,1st Occurrence 04 Flag for Serious PT,,0,1191
+adae,CQ01NAM,2,19,54,Customized Query 01 Name,,0,1191
+adae,AOCC01FL,2,1,55,1st Occurrence 01 Flag for CQ01,,0,1191
+adlbh,STUDYID,2,12,1,Study Identifier,,0,24966
+adlbh,SUBJID,2,4,2,Subject Identifier for the Study,,0,24966
+adlbh,USUBJID,2,11,3,Unique Subject Identifier,,0,24966
+adlbh,TRTP,2,20,4,Planned Treatment,,0,24966
+adlbh,TRTPN,1,8,5,Planned Treatment (N),,0,24966
+adlbh,TRTA,2,20,6,Actual Treatment,,0,24966
+adlbh,TRTAN,1,8,7,Actual Treatment (N),,0,24966
+adlbh,TRTSDT,1,8,8,Date of First Exposure to Treatment,DATE,9,24966
+adlbh,TRTEDT,1,8,9,Date of Last Exposure to Treatment,DATE,9,24966
+adlbh,AGE,1,8,10,Age,,0,24966
+adlbh,AGEGR1,2,5,11,Pooled Age Group 1,,0,24966
+adlbh,AGEGR1N,1,8,12,Pooled Age Group 1 (N),,0,24966
+adlbh,RACE,2,32,13,Race,,0,24966
+adlbh,RACEN,1,8,14,Race (N),,0,24966
+adlbh,SEX,2,1,15,Sex,,0,24966
+adlbh,COMP24FL,2,1,16,Completers of Week 24 Population Flag,,0,24966
+adlbh,DSRAEFL,2,2,17,Discontinued due to AE?,,0,24966
+adlbh,SAFFL,2,1,18,Safety Population Flag,,0,24966
+adlbh,AVISIT,2,16,19,Analysis Visit,,0,24966
+adlbh,AVISITN,1,8,20,Analysis Visit (N),,0,24966
+adlbh,ADY,1,8,21,Analysis Relative Day,,0,24966
+adlbh,ADT,1,8,22,Analysis Date,DATE,9,24966
+adlbh,VISIT,2,16,23,Visit Name,,0,24966
+adlbh,VISITNUM,1,8,24,Visit Number,,0,24966
+adlbh,PARAM,2,48,25,Parameter,,0,24966
+adlbh,PARAMCD,2,7,26,Parameter Code,,0,24966
+adlbh,PARAMN,1,8,27,Parameter (N),,0,24966
+adlbh,PARCAT1,2,3,28,Parameter Category 1,,0,24966
+adlbh,AVAL,1,8,29,Analysis Value,,0,24966
+adlbh,BASE,1,8,30,Baseline Value,,0,24966
+adlbh,CHG,1,8,31,Change from Baseline,,0,24966
+adlbh,A1LO,1,8,32,Analysis Range 1 Lower Limit,,0,24966
+adlbh,A1HI,1,8,33,Analysis Range 1 Upper Limit,,0,24966
+adlbh,R2A1LO,1,8,34,Ratio to Analysis Range 1 Lower Limit,,0,24966
+adlbh,R2A1HI,1,8,35,Ratio to Analysis Range 1 Upper Limit,,0,24966
+adlbh,BR2A1LO,1,8,36,Base Ratio to Analysis Range 1 Lower Lim,,0,24966
+adlbh,BR2A1HI,1,8,37,Base Ratio to Analysis Range 1 Upper Lim,,0,24966
+adlbh,ANL01FL,2,2,38,Analysis Flag 01,,0,24966
+adlbh,ALBTRVAL,1,8,39,Amount Threshold Range,,0,24966
+adlbh,ANRIND,2,1,40,Analysis Reference Range Indicator,,0,24966
+adlbh,BNRIND,2,2,41,Baseline Reference Range Indicator,,0,24966
+adlbh,ABLFL,2,2,42,Baseline Record Flag,,0,24966
+adlbh,AENTMTFL,2,2,43,Last value in treatment visit,,0,24966
+adlbh,LBSEQ,1,8,44,Sequence Number,,0,24966
+adlbh,LBNRIND,2,8,45,Reference Range Indicator,,0,24966
+adlbh,LBSTRESN,1,8,46,Numeric Result/Finding in Standard Units,,0,24966
+adsl,STUDYID,2,12,1,Study Identifier,,0,254
+adsl,USUBJID,2,11,2,Unique Subject Identifier,,0,254
+adsl,SUBJID,2,4,3,Subject Identifier for the Study,,0,254
+adsl,SITEID,2,3,4,Study Site Identifier,,0,254
+adsl,SITEGR1,2,3,5,Pooled Site Group 1,,0,254
+adsl,ARM,2,20,6,Description of Planned Arm,,0,254
+adsl,TRT01P,2,20,7,Planned Treatment for Period 01,,0,254
+adsl,TRT01PN,1,8,8,Planned Treatment for Period 01 (N),,0,254
+adsl,TRT01A,2,20,9,Actual Treatment for Period 01,,0,254
+adsl,TRT01AN,1,8,10,Actual Treatment for Period 01 (N),,0,254
+adsl,TRTSDT,1,8,11,Date of First Exposure to Treatment,DATE,9,254
+adsl,TRTEDT,1,8,12,Date of Last Exposure to Treatment,DATE,9,254
+adsl,TRTDURD,1,8,13,Total Treatment Duration (Days),,0,254
+adsl,AVGDD,1,8,14,Avg Daily Dose (as planned),,0,254
+adsl,CUMDOSE,1,8,15,Cumulative Dose (as planned),,0,254
+adsl,AGE,1,8,16,Age,,0,254
+adsl,AGEGR1,2,5,17,Pooled Age Group 1,,0,254
+adsl,AGEGR1N,1,8,18,Pooled Age Group 1 (N),,0,254
+adsl,AGEU,2,5,19,Age Units,,0,254
+adsl,RACE,2,32,20,Race,,0,254
+adsl,RACEN,1,8,21,Race (N),,0,254
+adsl,SEX,2,1,22,Sex,,0,254
+adsl,ETHNIC,2,22,23,Ethnicity,,0,254
+adsl,SAFFL,2,1,24,Safety Population Flag,,0,254
+adsl,ITTFL,2,1,25,Intent-To-Treat Population Flag,,0,254
+adsl,EFFFL,2,1,26,Efficacy Population Flag,,0,254
+adsl,COMP8FL,2,1,27,Completers of Week 8 Population Flag,,0,254
+adsl,COMP16FL,2,1,28,Completers of Week 16 Population Flag,,0,254
+adsl,COMP24FL,2,1,29,Completers of Week 24 Population Flag,,0,254
+adsl,DISCONFL,2,1,30,Did the Subject Discontinue the Study?,,0,254
+adsl,DSRAEFL,2,1,31,Discontinued due to AE?,,0,254
+adsl,DTHFL,2,1,32,Subject Died?,,0,254
+adsl,BMIBL,1,8,33,Baseline BMI (kg/m^2),,0,254
+adsl,BMIBLGR1,2,6,34,Pooled Baseline BMI Group 1,,0,254
+adsl,HEIGHTBL,1,8,35,Baseline Height (cm),,0,254
+adsl,WEIGHTBL,1,8,36,Baseline Weight (kg),,0,254
+adsl,EDUCLVL,1,8,37,Years of Education,,0,254
+adsl,DISONSDT,1,8,38,Date of Onset of Disease,DATE,9,254
+adsl,DURDIS,1,8,39,Duration of Disease (Months),,0,254
+adsl,DURDSGR1,2,4,40,Pooled Disease Duration Group 1,,0,254
+adsl,VISIT1DT,1,8,41,Date of Visit 1,DATE,9,254
+adsl,RFSTDTC,2,20,42,Subject Reference Start Date/Time,,0,254
+adsl,RFENDTC,2,20,43,Subject Reference End Date/Time,,0,254
+adsl,VISNUMEN,1,8,44,End of Trt Visit (Vis 12 or Early Term.),,0,254
+adsl,RFENDT,1,8,45,Date of Discontinuation/Completion,DATE,9,254
+adsl,DCDECOD,2,27,46,Standardized Disposition Term,,0,254
+adsl,EOSSTT,2,12,47,End of Study Status,,0,254
+adsl,DCSREAS,2,18,48,Reason for Discontinuation from Study,,0,254
+adsl,MMSETOT,1,8,49,MMSE Total,,0,254

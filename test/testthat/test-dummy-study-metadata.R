@@ -1,0 +1,190 @@
+# Guards the dummy study metadata bundle.
+#
+# The bundle under dummy_study/metadata/ is authored as plain YAML and must stay
+# loadable by the production codec and model. dummy_study/tools/check_metadata.R
+# performs the full check (archive round trip plus deterministic source
+# generation for all six tables, about eight seconds); this file keeps the
+# schema contract inside the normal R suite by parsing and validating the bundle
+# and generating one table end to end.
+
+metadata_dir <- file.path(project_root, "dummy_study", "metadata")
+
+read_bundle_entry <- function(relative_path) {
+  text <- paste(readLines(file.path(metadata_dir, relative_path), warn = FALSE,
+                          encoding = "UTF-8"), collapse = "\n")
+  parsed <- parse_yaml_document_text(text)
+  testthat::expect_length(parsed$errors, 0L)
+  parsed$value
+}
+
+load_dummy_bundle <- function() {
+  tables <- sort(list.files(file.path(metadata_dir, "tables"), pattern = "\\.yaml$",
+                            full.names = TRUE))
+  templates <- sort(list.files(file.path(metadata_dir, "templates"), pattern = "\\.yaml$",
+                               full.names = TRUE))
+  read_all <- function(paths) {
+    lapply(paths, function(path) {
+      parsed <- parse_yaml_document_text(
+        paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n"))
+      testthat::expect_length(parsed$errors, 0L)
+      parsed$value
+    })
+  }
+  new_metadata_bundle(
+    populations = read_bundle_entry("populations.yaml")$populations,
+    headers = read_bundle_entry("headers.yaml")$headers,
+    tables = unname(read_all(tables)),
+    templates = unname(read_all(templates))
+  )
+}
+
+testthat::test_that("the dummy study bundle parses without model errors", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  manifest <- read_bundle_entry("manifest.yaml")
+  testthat::expect_identical(as.integer(manifest$schema_version), 2L)
+
+  parsed <- parse_bundle_value(load_dummy_bundle())
+  messages <- vapply(parsed$errors, function(error) error$message, character(1L))
+  testthat::expect_length(parsed$errors, 0L)
+  if (length(parsed$errors) > 0L) {
+    # Surface the paths so a failure names the offending field.
+    message(paste(messages, collapse = "\n"))
+  }
+})
+
+testthat::test_that("the dummy study bundle keeps the planned object set", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  testthat::expect_identical(sort(vapply(workspace$populations, `[[`, "", "id")),
+                             sort(c("efficacy", "itt", "randomized", "safety")))
+  testthat::expect_identical(sort(vapply(workspace$headers, `[[`, "", "id")),
+                             sort(c("shift_header", "trt01a_header", "trt01p_header")))
+  testthat::expect_identical(sort(vapply(workspace$tables, `[[`, "", "id")), sort(c(
+    "t_14_1_1_disposition", "t_14_1_2_baseline", "t_14_2_3_hgb_shift",
+    "t_14_3_1_2_teae", "t_14_3_1_4_teae_severity", "t_14_3_2_1_hgb_by_visit")))
+  testthat::expect_identical(length(workspace$templates), 6L)
+})
+
+testthat::test_that("every dummy study table resolves its references", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  population_ids <- vapply(workspace$populations, `[[`, "", "id")
+  header_ids <- vapply(workspace$headers, `[[`, "", "id")
+  template_ids <- vapply(workspace$templates, `[[`, "", "id")
+  for (table in workspace$tables) {
+    testthat::expect_true(table$population_id %in% population_ids,
+                          label = paste(table$id, "population"))
+    testthat::expect_true(table$header_id %in% header_ids,
+                          label = paste(table$id, "header"))
+    testthat::expect_true(table$template_id %in% template_ids,
+                          label = paste(table$id, "template"))
+  }
+})
+
+testthat::test_that("the disposition table generates deterministically", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  first <- generate_table_source(workspace, "t_14_1_1_disposition", output_mode = "report")
+  testthat::expect_true(first$passed)
+  second <- generate_table_source(workspace, "t_14_1_1_disposition", output_mode = "report")
+  testthat::expect_identical(first$source, second$source)
+  source_text <- paste(first$source, collapse = "\n")
+  testthat::expect_match(source_text, "discontinued", fixed = TRUE)
+  testthat::expect_match(source_text, "Withdrew Consent", fixed = TRUE)
+})
+
+# The four assertions below pin the fixes P4 needed after the first real SAS run.
+# Each one failed before its fix, so a revert is caught here rather than by
+# reading a generated program.
+
+testthat::test_that("the visit level orders by AVISITN and declares no format", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  template <- workspace$templates[[match("tpl_hgb_by_visit",
+                                        vapply(workspace$templates, `[[`, "", "id"))]]
+  chunk <- template$body$chunks[[1L]]
+  visit <- chunk$levels[[match("visit", vapply(chunk$levels, `[[`, "", "id"))]]
+  # A declared format makes the emitter ignore order_variable and fall back to
+  # the format catalog order, which sorts visits alphabetically.
+  testthat::expect_null(visit$format)
+  testthat::expect_identical(visit$order_variable, "AVISITN")
+  testthat::expect_identical(visit$order_direction, "asc")
+})
+
+testthat::test_that("the severity level is a display order with a probe node", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  template <- workspace$templates[[match("tpl_teae_severity",
+                                        vapply(workspace$templates, `[[`, "", "id"))]]
+  chunk <- template$body$chunks[[1L]]
+  severity <- chunk$levels[[match("sev", vapply(chunk$levels, `[[`, "", "id"))]]
+  # SEV_ORDER is a display order: 1 is SEVERE, so ascending numeric order is the
+  # clinical order. A severity score (3 for SEVERE) would sort MILD first.
+  testthat::expect_identical(severity$variable, "SEV_ORDER")
+  testthat::expect_identical(severity$format, "TFLSEV")
+
+  table <- workspace$tables[[match("t_14_3_1_4_teae_severity",
+                                  vapply(workspace$tables, `[[`, "", "id"))]]
+  before <- table$custom_code$before
+  testthat::expect_match(before, "1 = 'SEVERE'", fixed = TRUE)
+  testthat::expect_match(before, "min(case AESEV", fixed = TRUE)
+  # The complete-node probe lives here: a protocol severity code with no record.
+  testthat::expect_match(before, "4 = 'LIFE THREATENING'", fixed = TRUE)
+})
+
+testthat::test_that("a WORK header source carries the population variables", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  header <- workspace$headers[[match("shift_header",
+                                    vapply(workspace$headers, `[[`, "", "id"))]]
+  testthat::expect_identical(header$source_data, "WORK.SHIFT_HGB")
+
+  population <- workspace$populations[[match("safety",
+                                            vapply(workspace$populations, `[[`, "", "id"))]]
+  # The population expression is evaluated on the header source, so every
+  # variable it names must exist in the derived dataset.
+  testthat::expect_match(population$expression, "SAFFL", fixed = TRUE)
+
+  table <- workspace$tables[[match("t_14_2_3_hgb_shift",
+                                  vapply(workspace$tables, `[[`, "", "id"))]]
+  testthat::expect_match(table$custom_code$before, "b.SAFFL", fixed = TRUE)
+})
+
+testthat::test_that("no dummy study template uses a visit format any more", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  formats <- unlist(lapply(workspace$templates, function(template) {
+    unlist(lapply(template$body$chunks, function(chunk) {
+      if (is.null(chunk$levels)) character() else
+        vapply(chunk$levels, function(level) level$format %||% "", character(1L))
+    }))
+  }))
+  testthat::expect_false("$TFLVISIT" %in% formats)
+})
+
+# The verification pair is only meaningful if it is runnable, and the embedded
+# expectations in the shells are only meaningful if they are recomputed. This
+# asserts the scripts exist, parse, and carry the contract that keeps the
+# comparison honest rather than testing SAS output (which needs SAS installed).
+testthat::test_that("the verification scripts are present and self-describing", {
+  verify_dir <- file.path(project_root, "dummy_study", "verify")
+  for (name in c("compute_expected.R", "compare_with_sas.R")) {
+    path <- file.path(verify_dir, name)
+    testthat::expect_true(file.exists(path), label = name)
+    testthat::expect_no_error(parse(path))
+  }
+
+  expected_script <- paste(readLines(file.path(verify_dir, "compute_expected.R"),
+                                     warn = FALSE), collapse = "\n")
+  # Quantiles are computed but never asserted: PROC MEANS uses PCTLDEF = 5 while
+  # R has nine quantile types, so agreement is reportable, not gating.
+  testthat::expect_match(expected_script, "asserted_stats <- c(\"n\", \"mean\", \"sd\", \"min\", \"max\")",
+                         fixed = TRUE)
+
+  compare_script <- paste(readLines(file.path(verify_dir, "compare_with_sas.R"),
+                                    warn = FALSE), collapse = "\n")
+  # The cell comparison must round to the displayed precision, and follow the SAS
+  # rule for halves, otherwise a correct value fails on a formatting difference.
+  testthat::expect_match(compare_script, "sas_round", fixed = TRUE)
+  testthat::expect_match(compare_script, "digits", fixed = TRUE)
+})

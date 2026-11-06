@@ -1,0 +1,85 @@
+headers:
+  - id: 'trt01p_header'
+    source_data: 'study.adsl'
+    orientation: 'portrait'
+    columns:
+      - id: 'placebo'
+        label: 'Placebo'
+        condition: 'TRT01P = ''Placebo'''
+        display_order: 1
+        width: 1
+        alignment: 'center'
+      - id: 'low'
+        label: 'Xanomeline Low Dose'
+        condition: 'TRT01P = ''Xanomeline Low Dose'''
+        display_order: 2
+        width: 1
+        alignment: 'center'
+      - id: 'high'
+        label: 'Xanomeline High Dose'
+        condition: 'TRT01P = ''Xanomeline High Dose'''
+        display_order: 3
+        width: 1
+        alignment: 'center'
+      - id: 'overall'
+        label: 'Overall'
+        condition: '1'
+        display_order: 4
+        width: 1
+        alignment: 'center'
+  - id: 'trt01a_header'
+    source_data: 'study.adsl'
+    orientation: 'landscape'
+    columns:
+      - id: 'placebo'
+        label: 'Placebo'
+        condition: 'TRT01A = ''Placebo'''
+        display_order: 1
+        width: 1
+        alignment: 'center'
+      - id: 'low'
+        label: 'Xanomeline Low Dose'
+        condition: 'TRT01A = ''Xanomeline Low Dose'''
+        display_order: 2
+        width: 1
+        alignment: 'center'
+      - id: 'high'
+        label: 'Xanomeline High Dose'
+        condition: 'TRT01A = ''Xanomeline High Dose'''
+        display_order: 3
+        width: 1
+        alignment: 'center'
+      - id: 'overall'
+        label: 'Overall'
+        condition: '1'
+        display_order: 4
+        width: 1
+        alignment: 'center'
+  - id: 'shift_header'
+    source_data: 'WORK.SHIFT_HGB'
+    orientation: 'portrait'
+    columns:
+      - id: 'bl_normal'
+        label: 'Normal'
+        condition: 'LBNRIND_BL = ''NORMAL'''
+        display_order: 1
+        width: 1
+        alignment: 'center'
+      - id: 'bl_low'
+        label: 'Low'
+        condition: 'LBNRIND_BL = ''LOW'''
+        display_order: 2
+        width: 1
+        alignment: 'center'
+      - id: 'bl_high'
+        label: 'High'
+        condition: 'LBNRIND_BL = ''HIGH'''
+        display_order: 3
+        width: 1
+        alignment: 'center'
+      - id: 'overall'
+        label: 'Overall'
+        condition: '1'
+        display_order: 4
+        width: 1
+        alignment: 'center'

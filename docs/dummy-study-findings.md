@@ -1,0 +1,467 @@
+# Dummy Study 实施发现（P1–P3）
+
+本文记录 `dummy_study/` 在 P1（数据与变量字典）、P2（shell）、P3（metadata bundle）
+三个阶段中**通过实测发现的事实与缺陷**。规划与阶段状态见 `plans/dummy-study.md`；
+本文只记「原本的假设错了什么、证据是什么、怎么处置的」，便于单独复查。
+
+阅读顺序建议：先看 §1 汇总表，再看 §2 需要你确认的三项，最后按需查 §3–§5 明细。
+
+---
+
+## 1. 汇总表
+
+| # | 阶段 | 类型 | 发现 | 处置 |
+| ---: | --- | --- | --- | --- |
+| 1 | P1 | 数据事实 | `DCSREAS` 有 **9** 个真实取值 + 空白，不是规划里写的 10 个 | 修正规划数字 |
+| 2 | P1 | 工具缺陷 | SAS 空白字符值经 `astype(str)` 变成字面量 `nan`，被当成真实取值 | 先存缺失掩码再转换 |
+| 3 | P1 | 工具缺陷 | 带 `DATE` 格式的列被 pandas 解码成 `datetime64`，输出成纳秒 | 按 dtype 分支渲染 ISO 日期 |
+| 4 | P2 | 设计错误 | `ANL01FL='Y'` 会**排除 Baseline**（只标在 306 条基线后记录上） | 过滤条件改为只用 `PARAMCD='HGB'` |
+| 5 | P2 | 设计错误 | 分级 shift 无法用 `BNRIND`/`ANRIND`：HGB 基线 247 条全是 `'N'` | 改用 `LBNRIND`（235/9/3） |
+| 6 | P2 | 数据事实 | `ADLBH` 没有 `ANRLO`/`ANRHI`，无法自行推导分级 | 同上，只能依赖 `LBNRIND` |
+| 7 | P2 | 数据事实 | 5 例有基线分级但无基线后分级；其中 1 例基线为 HIGH | 规则定为「沿用基线分级」 |
+| 8 | P2 | 数据事实 | TEAE 子集的 PT 是 **230** 个，不是 242（242 是全部 `AEDECOD`） | 两处数量分别标注 |
+| 9 | P2 | 设计错误 | `result_sort` 的字母序兜底在 **SOC 层从不触发**（23 节点无并列） | P5 改为检查 SOC 内部的 PT 顺序 |
+| 10 | P2 | 数据事实 | PT 层 230 行中 **130 行**三键并列 | 同上，这是字母序的主战场 |
+| 11 | P2 | 设计错误 | 静态行「At Least One TEAE」原计划用 `placement: above` | 改为独立的普通 chunk |
+| 12 | P2 | 边界 | `LBNRIND` 另有 `ABNORMAL`（其他参数 427 条），HGB 无此取值 | shell 中显式记录为已知边界 |
+| 13 | P2 | 自查发现 | 7 处 `char(N)` 长度是我凭印象写的，与 SAS 不符 | `check_shells.py` 抓出并全部修正 |
+| 14 | P2 | 自查发现 | `AESEV` 分级计数我写成 923/219/49，实测 **770/378/43** | 修正 |
+| 15 | P2 | 既有缺陷 | `test-shinytest2.R` 偶发失败（DT 未渲染就断言），5 次中 2 次失败 | 加 DOM 等待辅助，6/6 通过 |
+| 16 | P3 | 模型约束 | level 必须给 `format`，**或** `order_variable` + `order_direction` | AE 层补 `order_variable` |
+| 17 | P3 | 模型约束 | `node_role: analysis` 强制 `node_analysis_id`，且必须指向同层 `same_row` block；`label` 禁止该字段 | 按约束建模 |
+| 18 | P3 | 模型约束 | `cell_format` 占位符必须**精确等于**该行 `statistics` 的 id 集合 | 连续表改成一行一个统计量行 |
+| 19 | P3 | 模型约束 | 连续型行不允许 `condition`；分类行必须有 `condition` | 按约束建模 |
+| 20 | P3 | **运行时陷阱** | population 表达式在 **header source** 上求值；`WORK.*` 作 header source 时缺少 `SAFFL` 会导致 SAS **编译期 ERROR** | 派生表一并物化 `SAFFL` |
+| 21 | P3 | 结构验证 | `result_sort` 生成 `metric_1..3` + `label_sort` + `descending`，与 `[4,3,1,0]` 完全对应 | 静态通过，运行期待 P4 |
+| 22 | P3 | 结构验证 | `format` 通过 `preloadfmt order=data` 实现「零计数也出行」 | 静态通过，运行期待 P4 |
+| 23 | P3 | **能力边界** | shift 表的**逐列基线分母**（如 Placebo 的 82）在模型中不可表达 | 见 §2.1 |
+
+---
+
+## 2. 需要确认的三项
+
+### 2.1 shift 表的百分比分母 —— 已确认可实现，无需决策
+
+**P3 时我判断「逐列基线分母（如 Placebo 的 82）在模型里不可表达」，这个判断是错的。**
+P4 用真实 SAS 跑出来，逐列分母是工作的：
+
+| section | 行 | 基线 Normal 列 | 基线 Low 列 | 基线 High 列 | Overall 列 |
+| --- | --- | --- | --- | --- | --- |
+| Placebo | Normal | 69 (84.1%) | 0 (0.0%) | 0 (NE%) | 69 (81.2%) |
+| Placebo | Low | 11 (13.4%) | 3 (100.0%) | 0 (NE%) | 14 (16.5%) |
+| Placebo | High | 2 (2.4%) | 0 (0.0%) | 0 (NE%) | 2 (2.4%) |
+
+- `69 (84.1%)` = 69/82，分母是该 section 内**基线为 Normal** 的受试者数，不是整组的 85；
+- `3 (100.0%)` = 3/3，Low 列在 Placebo 组只有 3 人；
+- `0 (NE%)` 表示分母为 0（Placebo 组没有基线 High 的受试者）——按约定「分母为 0 时保留
+  实际 n，`pct` 不可估计」。这一格恰好验证了该边界。
+- `Overall` 列是 69/85、14/85、2/85，三个百分比加起来 100%，行和等于该组基线人数。
+
+结论：**shell 原本的设计（列头 N 用全人群 235/9/3/247，组内百分比用逐列基线人数）
+可以原样实现**，不需要在 (a)/(b)/(c) 之间做选择。P3 的「能力边界」结论作废。
+
+### 2.2 连续型表的行组织方式
+
+`cell_format` 的占位符必须与该行 `statistics` 的 id 集合**完全相同**，所以无法
+「一行内放 8 个统计量」。当前做法是每张连续表 5 行：
+
+```
+n
+Mean (SD)
+Median
+Q1, Q3
+Min, Max
+```
+
+这是标准 TFL 版式，但与 shell §3 里「统计量：n, mean, sd, median, q1, q3, min, max」
+的一行清单读起来不同。**如果这不是你要的行结构，需要在 P4 之前改。**
+
+### 2.3 完整节点探针从 `Week 28` 移到 `LIFE THREATENING`（**需要你复核**）
+
+你先前确认「`Week 28` 探针保留」。P4 发现它**与访视排序不可兼得**，因此我把它迁走了。
+
+原因（详见 §6.2）：level 一旦声明 `format`，emitter 就走 format 目录路径并忽略
+`order_variable`。访视表因此只能二选一：
+
+| 配置 | 顺序 | 完整节点 |
+| --- | --- | --- |
+| `format: $TFLVISIT`（含 Week 28） | 字母序（`Week 12` 排在 `Week 2` 前）✗ | ✓ |
+| `order_variable: AVISITN` | 协议顺序 ✓ | 无探针 |
+
+TFL 表的访视必须按临床顺序，所以选了后者，并把探针迁到严重度的封闭取值域：
+`TFLSEV` 增加 `4 = 'LIFE THREATENING'`（数据里没有这个取值）。P4 实测该行输出
+`0 (0.0%)` 且没有被整行删除，完整性验证的强度与原设计相同。
+
+**需要你确认**：接受这次迁移，还是希望保留 `Week 28` 而让访视按字母序输出。
+
+### 2.4 `format` 会静默忽略 `order_variable`（产品级问题，待决策）
+
+`src/emitters/hierarchical.R:285`：
+
+```r
+if (!is.null(level$format)) return(hierarchical_formatted_level_source(plan, level_order))
+```
+
+`parse_level_value` 允许同时声明 `format` 与 `order_variable`（不报错），但 emitter 在
+format 分支提前返回，`order_variable`/`order_direction` 被**静默丢弃**——生成的 SAS 里
+连变量名都不出现。这比「拒绝该组合」更危险：用户写了排序规则，得到的却是另一种顺序，
+且没有任何提示。
+
+这是产品行为，不只影响 dummy study。可能的处置：
+
+| 选项 | 说明 |
+| --- | --- |
+| (a) 模型层拒绝该组合 | 同时声明时报错，最直白；会破坏已有的 fixtures（若有） |
+| (b) emitter 支持 format + order | 用 format 提供节点集合、用 order_variable 提供顺序；工作量最大但语义最好 |
+| (c) 保持不变，只在文档写清 | 记录为「format 优先级最高」的已知语义 |
+
+我没有替你做这个决定。
+
+## 3. P1 明细：数据与变量字典
+
+### 3.1 数据规模
+
+| 数据集 | 观测 | 变量 | 大小 |
+| --- | ---: | ---: | ---: |
+| `adsl` | 254 | 49 | 1.3 MB |
+| `adae` | 1191 | 55 | 1.7 MB |
+| `adlbh` | 24966 | 46 | 7.9 MB |
+
+三个集合计约 10.9 MB，是本仓库唯一的二进制数据例外（理由见 `dummy_study/README.md`）。
+
+### 3.2 空白值变成 `nan`（发现 #2）
+
+SAS 的空白字符值在 pandas 里是 `NaN`；直接 `astype(str)` 会变成**字符串 `"nan"`**，
+于是被当成一个真实取值统计。后果：`DCSREAS` 显示 10 个取值（多一个 `nan`）、
+`BNRIND` 显示 3 个（多一个 `nan`）。
+
+处置：先记录 `isna()` 掩码，转字符串后再用掩码还原缺失。字典末尾的「另有 N 条空白」
+说明也由掩码生成。
+
+### 3.3 日期列变成纳秒（发现 #3）
+
+带 `DATE` 格式的变量被 pandas 解码为 `datetime64[ns]`，再经 `pd.to_numeric`
+变成纳秒整数（如 `1341792000000000000`）。处置：按 dtype 分支渲染 ISO 日期。
+
+交叉验证：`TRTSDT` 渲染为 `2012-07-09 – 2014-09-02`，与 SAS `DATE9.` 的
+`09JUL2012 – 02SEP2014` 一致。
+
+### 3.4 描述符来源
+
+环境没有 `pyreadstat`，无法直接读 SAS 标签与格式。改为用
+`tools/export_descriptors.sas`（`PROC CONTENTS`）导出 `variables/descriptors.csv`
+（150 行 = 49 + 55 + 46），把结果作为**已提交文件**保留，这样没有 SAS 的机器也能重建字典。
+
+---
+
+## 4. P2 明细：shell
+
+### 4.1 `ANL01FL='Y'` 会排除 Baseline（发现 #4）
+
+规划 §4.3 原本写 `filter: PARAMCD = 'HGB' and ANL01FL = 'Y'`。实测：`ANL01FL`
+只标在 306 条**基线后**记录上，Baseline 行是空白的。加上这个过滤会让 Baseline
+节点整行消失，且只剩 9 次访视。已改为只过滤 `PARAMCD='HGB'`。
+
+### 4.2 shift 的分级来源（发现 #5、#6）
+
+| 变量 | HGB 基线分布 | 能否用于 shift |
+| --- | --- | --- |
+| `BNRIND` / `ANRIND` | 247 条**全部**是 `'N'` | 否，三列退化成一列 |
+| `LBNRIND` | 235 `NORMAL` / 9 `LOW` / 3 `HIGH` | 是 |
+| `ANRLO`/`ANRHI` | **不存在** | 无法自算 |
+
+### 4.3 无基线后分级的受试者（发现 #7）
+
+247 例有基线分级；5 例没有基线后分级，其中 1 例（`01-703-1279`，Low Dose）基线为
+HIGH。规则选「沿用基线分级」（`coalesce(W_RANK, BL_RANK)`），使每个 section 的三行
+之和等于该组基线人数；若改为「归入未知」或「排除」，部分 section 会少人。
+
+预期矩阵（行 = 基线后最差，列 = 基线）：
+
+| Arm | 基线 N/L/H | N→ | L→ | H→ |
+| --- | --- | --- | --- | --- |
+| Placebo | 82/3/0 | 69/11/2 | 0/3/0 | 0/0/0 |
+| High | 79/1/1 | 73/4/2 | 0/1/0 | 1/0/0 |
+| Low | 74/5/2 | 69/5/0 | 0/5/0 | 1/0/1 |
+| 全人群 | 235/9/3 | — | — | — |
+
+### 4.4 字母序兜底的真实战场（发现 #9、#10）
+
+`result_sort` 的排序键是 `metric_missing_k` 升序 → `descending metric_k` →
+`label_sort` → `node_order_path`。
+
+- **SOC 层 23 个节点三键互不相同**：字母序兜底一次都不会被触发。
+- **PT 层 230 行中 130 行并列**：字母序在此大量生效。
+
+所以「字母序验证」必须落在某个 SOC **内部**的 PT 顺序上，只看 SOC 层等于没验。
+
+### 4.5 自查抓到的两处凭空数字（发现 #13、#14）
+
+`tools/check_shells.py` 第一次运行就报出 7 处长度错误：
+
+| 变量 | 我写的 | 实际 |
+| --- | --- | --- |
+| `EOSSTT` | char(11) | char(12) |
+| `DURDSGR1` | char(3) | char(4) |
+| `ABLFL` | char(1) | char(2) |
+| `ANL01FL` | char(1) | char(2) |
+| `LBNRIND` | char(12) | char(8) |
+| `PARAM` | char(38) | char(48) |
+| `ABLFL`（另一处） | char(1) | char(2) |
+
+另有 `AESEV` 分级计数：我写 923/219/49，实测全 1191 行是
+`MILD` 770 / `MODERATE` 378 / `SEVERE` 43（TEAE 子集 731/354/41）。
+
+这两类错误的共同点：**凭印象写数字**。所以 P2 之后所有统计量都改为「先跑数据，
+再写文档」，并由 `check_shells.py` 与 `test-dummy-study-*.R` 双向守护。
+
+### 4.6 既有测试缺陷（发现 #15）
+
+`test-shinytest2.R` 有 5 次单独运行中 2 次失败，失败行号每次不同
+（70/99、26/61、89）。根因：DT 在浏览器里渲染表格体之前，`wait_for_idle()` 已经返回，
+断言读到空 `<tbody>`。这不是本 dummy study 引入的，与唯一被修改的已跟踪文件
+`.gitignore` 无关。
+
+处置：新增 `wait_for_rows()` / `wait_for_text()` 两个「等 DOM 状态」的辅助函数，
+用在 `select_list_row()`、`import_demo()` 与列表内容断言处。修复后连续 6 次运行全通过。
+
+---
+
+## 5. P3 明细：metadata bundle
+
+### 5.1 四条模型约束（发现 #16–#19）
+
+```yaml
+# 1) 每个 level 要么给 format，要么给 order_variable + order_direction
+- id: 'visit'
+  variable: 'AVISIT'
+  format: '$TFLVISIT'          # 这条分支不需要 order_variable
+
+- id: 'soc'
+  variable: 'AEBODSYS'
+  order_variable: 'AEBODSYS'   # 显示顺序其实由 result_sort 决定，
+  order_direction: 'asc'       # 但模型仍强制要求这两个字段
+
+# 2) node_role: analysis 必须带 node_analysis_id，且指向同层 same_row block
+- id: 'soc'
+  node_role: 'analysis'
+  node_analysis_id: 'soc_subjects'   # label 角色给这个字段会报错
+
+# 3) cell_format 占位符集合 == 该行 statistics 的 id 集合
+statistics: [n, mean, sd]  →  cell_format: '{n} {mean} ({sd})'
+
+# 4) 连续型行禁止 condition；分类行必须有 condition
+```
+
+### 5.2 population 在 header source 上求值（发现 #20）
+
+这是 P3 最有价值的一条，且是**运行期**错误，静态校验抓不到。
+
+`shift_header` 的 `source_data` 是 `WORK.SHIFT_HGB`（用派生表做 header 源，正是
+`plans/dummy-study.md` §8 要验证的假设 ③）。生成的代码是：
+
+```sas
+/* Select the table population. */
+data _TFL_POP_001 _TFL_HSUBJ_001(keep=USUBJID);
+  set WORK.SHIFT_HGB;
+  output _TFL_HSUBJ_001;
+  if not (SAFFL = 'Y') then delete;
+  output _TFL_POP_001;
+run;
+```
+
+`WORK.SHIFT_HGB` 最初只有 `USUBJID / TRTA / LBNRIND_BL / ANRIND_WORST`，
+没有 `SAFFL` → SAS 会在**编译期**报「变量 SAFFL 没有找到」。
+
+处置：在 `custom_code.before` 里把 `SAFFL` 一并物化。**一般规则**：任何用 `WORK.*`
+作 header source 的表，派生表必须带上 population 表达式引用到的全部变量。
+
+### 5.3 `result_sort` 与 `format` 的静态验证（发现 #21、#22）
+
+`t_14_3_1_2_teae` 生成：
+
+```sas
+create table _TFL_HORDER_002_001 as
+select n.*, … metric_1, metric_missing_1, metric_2, metric_missing_2,
+        metric_3, metric_missing_3, upcase(n.node_label) as label_sort, …
+
+proc sort data=_TFL_HORDER_002_001;
+  by parent_node_key metric_missing_1 descending metric_1
+     metric_missing_2 descending metric_2
+     metric_missing_3 descending metric_3 label_sort node_order_path;
+```
+
+`column_order: [4, 3, 1, 0]` 正好产出 3 个 metric + `label_sort`，与设计一致。
+
+`t_14_3_2_1_hgb_by_visit` 生成 `put(AVISIT, $TFLVISIT.)` 与
+`format AVISIT $TFLVISIT.;`；`t_14_3_1_4_teae_severity` 生成
+`class parent_node_key SEV_RANK / preloadfmt order=data missing;` ——
+`preloadfmt` 正是「零计数也出行」的 SAS 机制，`order=data` 取 format 声明顺序
+（SEVERE → MODERATE → MILD）。
+
+**两条都只是静态通过**，SAS 真实行为待 P4。
+
+---
+
+## 6. P4 明细：真实 SAS 运行
+
+### 6.1 运行方式与结果
+
+`dummy_study/tools/run_sas.R` 为每张表生成一个包装程序：绑定 `study` 库 → `%include`
+生成程序（不改一行）→ 把 `_TFL_WIDE_001` / `_TFL_ASM_001` 落盘到
+`generated/sasout/` → 用 `%put` 把行数写进日志。调用方式沿用项目已有的外部运行
+harness：`-sysin <program> -log <log> -print <lst> -nosplash -noterminal`，相对文件名 +
+`cwd` 为运行目录。
+
+| 表 | exit | ERROR | 告警 | 未分类告警 | 行数 | RTF |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `t_14_1_1_disposition` | 0 | 0 | 2 | 0 | 15 | 20 KB |
+| `t_14_1_2_baseline` | 0 | 0 | 2 | 0 | 25 | 37 KB |
+| `t_14_2_3_hgb_shift` | 0 | 0 | 2 | 0 | 9 | 16 KB |
+| `t_14_3_1_2_teae` | 0 | 0 | 779 | 0 | 254 | 332 KB |
+| `t_14_3_1_4_teae_severity` | 0 | 0 | 329 | 0 | 367 | 523 KB |
+| `t_14_3_2_1_hgb_by_visit` | 0 | 0 | 2 | 0 | 67 | 77 KB |
+
+告警分类（`run_sas.R` 内置，未分类即判定失败）：
+
+- `environment_missing_library_entries`（每程序 2 条）：站点安装缺少 SASHELP 条目，
+  与本程序无关；该告警是两条记录，第二行不含库名，靠中文续行文本识别。
+- `source_duplicate_diagnostic_records_preserved`（AE 表 777 / 327 条）：AE 源天然
+  「一例多条记录」，`distinct_subject` 的重复键 guard 只报告不聚合。与既有验证里的
+  `audit_logs.py` 分类同名同义。
+- 其余一律 `unclassified` 并让运行失败——避免用「总数」把真问题藏起来。
+
+### 6.2 四个运行期缺陷
+
+| # | 现象 | 根因 | 处置 |
+| ---: | --- | --- | --- |
+| P4-1 | 访视按字母序输出 | 声明 `format` 后 emitter 走目录路径，忽略 `order_variable`（`hierarchical.R:285`） | 访视层改用 `AVISITN`，去掉 format |
+| P4-2 | 严重度输出 MILD → MODERATE → SEVERE | 数值 format 按**未格式化值升序**建节点；rank 1=MILD 时最严重的排最后 | `SEV_ORDER` 改成显示序 1=SEVERE，归约用 `min()` |
+| P4-3 | 我在 P3 断言「逐列分母不可实现」 | 误判 emitter 的分母推导 | 作废，见 §2.1 |
+| P4-4 | shell 14.3.1.4 的预期计数是错量 | 写的是「受试者级最大严重度」（50/42/46），实际输出是「每 PT 取最大」的节点数 | 见 §6.3 |
+
+### 6.3 「按 PT 取最大」与「按受试者取最大」不是一回事
+
+shell 原先写的 level-1 预期（SEVERE 3/7/4、MODERATE 12/28/26、MILD 50/42/46）是
+**受试者级最大严重度**，合计 65/77/76 = TEAE 人数。但三层层级是「严重度 → SOC → PT」，
+严重度是**每个 PT 内部**取最大，于是同一受试者可以出现在多个严重度下。
+
+实测节点计数：
+
+| 严重程度 | Placebo | Low | High | Overall |
+| --- | ---: | ---: | ---: | ---: |
+| SEVERE | 5 | 16 | 8 | 29 |
+| MODERATE | 25 | 49 | 51 | 125 |
+| MILD | 58 | 55 | 64 | 177 |
+| LIFE THREATENING | 0 | 0 | 0 | 0 |
+
+四行之和 331 > Safety 人群 254 —— 这不是错误，而是「按 PT 取最大」的必然结果。
+两个数各自自洽：331 是节点人次，254 是人群。已把 shell 的预期表改成实测值并加了说明。
+
+### 6.4 与独立计算的一致性
+
+| 表 | SAS 行数 | 独立计算（pandas） |
+| --- | ---: | --- |
+| TEAE | 254 | 1 + 23 SOC + 230 PT = 254 |
+| severity | 367 | 1 + 253 PT = 254 |
+| severity（加探针） | 367 | 3 + 53 (sev,soc) + 310 (sev,soc,pt) + 1 探针 = 367 |
+| HGB by visit | 67 | 1 + 11 × 6 = 67 |
+| disposition | 15 | 4 + 2 + 9 = 15 |
+| shift | 9 | 3 section × 3 行 |
+
+SOC 顺序也已核对：GENERAL 108 → SKIN 99 → NERVOUS 53 → GI 51 → CARDIAC 40 →
+INFECTIONS 38，与 `result_sort` 的三键降序 + 字母序兜底一致。
+
+正式的逐格比对属于 P5（R 独立实现 + 只断言 n/mean/sd/min/max 与 n/pct，
+分位数只报告不判定）。
+
+## 6.5 P5 复核发现的 section 标题行缺陷
+
+用户复核 14.1.2 时指出：每个 section 只有统计量行，没有 section 标题行。
+核查后确认属实，且同类问题出现在 6 张表中的 2 张。
+
+**缺陷**：14.1.2 的 7 个 chunk、14.2.3 的 3 个 chunk 都直接以统计量行开头，
+没有首行标题。14.2.3 尤其严重——三组 `Normal / Low / High` 连续打印而臂名只存在于
+chunk 结构里，报表读者无法判断某一行属于哪个治疗组。
+
+**根因**：metadata 的 `label` 行类型一直可用（`categorical.R:70` 对非 `analysis`
+行跳过计数，行列骨架照常输出），但初版 bundle 只写 `analysis` 行，而 shell 里其实
+已经声明了这些标题行：
+
+- 14.1.2 §3 行 1–3（`Age (years)` / `Body mass index` / `Duration of disease`）
+  与行 4、8、11、15（`Age group, n (%)` 等）；
+- 14.2.3 §3 明确写了「每个治疗组一个 section」。
+
+**修复**：给 7 + 3 个 chunk 各加一条 leading `type: 'label'` 行。实测确认
+`label` 行渲染为 `row_role = 'label'`、各列空白。行数随之 15 → 32（14.1.2）、
+9 → 12（14.2.3），6 个程序仍全部 `exit=0 / errors=0`。
+
+**其余 4 张表核验通过**，它们本来就带 section 头，只是机制不同：
+
+| 表 | section 头机制 |
+| --- | --- |
+| 14.1.1 | 无 section 行；各行自带语义（`Randomized` / `Completed` …），原因行已缩进 1 |
+| 14.3.2.1 | `dynamic` 层级节点 `Hemoglobin (mmol/L)` + 各 visit |
+| 14.3.1.2 | 静态行 `At Least One TEAE` + `dynamic` SOC 节点 |
+| 14.3.1.4 | `dynamic` 三级节点（严重程度 → SOC → PT） |
+
+**为何此前没有测试抓到**：`check_shells.py` 只校验 `DOMAIN.VARIABLE` 存在性、
+`char(N)` 长度、`nan` 字面量与 6 段结构；P5 的 5520 个断言只覆盖有数值的单元格。
+**section 标题行没有数字，任何数值比对都不会发现它消失。**
+
+**新增双侧 guard**：
+
+1. `check_shells.py` 第 5 项检查——shell §3 声明的 `label` 行数必须等于模板
+   `type: 'label'` 行数；
+2. `test-dummy-study-shells.R` 同一条不变量的 R 版本，纳入常规套件。
+
+两者都用「删掉一条标题行」验证过会失败（`7 → 6`、`3 → 2`）。
+
+**代价**：`label` 行不带 `condition`、不参与计数，因此不影响既有 5520 个断言；
+P5 比对回归后仍为 5520 全一致。
+
+## 6.6 缩进层级修正（14.1.2 / 14.2.3）
+
+用户复核 14.1.2 时进一步指出统计量部分的缩进仍不对。核实后确认：补了 section 标题行
+之后，**32 行全部是 `indent_level = 0`**，标题行与它管辖的统计量行左对齐，
+视觉上仍是一个平铺列表，读不出「标题—归属行」关系。14.2.3 同样问题（12 行全 0）。
+
+**机制**：缩进由 `src/generator/report_source.R:208` 的
+`compute label` → `style=[pretext="^R/RTF'\li<n>"]` 实现，`n = indent_level * 200` twips。
+模型早已支持 `indent_level`（`model.R:494-502`，`min_value = 0`），14.1.1 的
+DCSREAS 明细行就用 1 级缩进。
+
+**修复**：14.1.2 的 25 个 `analysis` 行、14.2.3 的 9 个 `analysis` 行全部补
+`indent_level: 1`；`label` 行保持 0。RTF 实测出现且仅出现 `\li0` 与 `\li200` 两种取值，
+确认缩进落到了渲染层。
+
+**新增 guard**：`test-dummy-study-shells.R` 增加一条不变量——模板里 `type: 'label'`
+行不得带 `indent_level: 1`，而 `type: 'analysis'` 行必须带。已用「删掉 `age_n` 的
+`indent_level`」验证会失败。
+
+**教训**：section 结构与缩进都是「没有数字」的契约，P5 的 5520 个数值断言全部无法覆盖。
+这类版式不变量必须由结构检查守护，不能指望数值比对。
+
+## 6.7 shinytest2 `wait_for_idle` 抛错（非本阶段引入）
+
+完整套件复跑时 `test-shinytest2.R:234` 以
+`An error occurred while waiting for Shiny to be stable` 失败。根因：`wait_for_idle()`
+在 Shiny 未稳定时是**抛错**，而非返回假值，所以此前只包住 DT 渲染等待的
+`try(..., silent = TRUE)` 无法拦截它，一次瞬时抖动会随机带走一条测试。
+
+**修复**：新增 `wait_for_stable()` 助手——首次 `wait_for_idle` 失败后以更长窗口重试一次，
+仍失败才放弃；调用方的 DOM 等待（`wait_for_rows` / `wait_for_text`）与断言仍是真正的判据。
+全文件 57 处 `wait_for_idle` 调用统一改走该助手。连跑 3 次 0 失败。
+
+## 7. 证据位置
+
+| 内容 | 位置 |
+| --- | --- |
+| 阶段规划与实施记录 | `plans/dummy-study.md` §4、§7、§8、§9 |
+| 数据事实（生成物） | `dummy_study/variables/{adsl,adae,adlbh}.md` |
+| shell 规格 | `dummy_study/shell/*.md`（6 个） |
+| shell 校验输出 | `python dummy_study/tools/check_shells.py`（6 shells / 150 descriptors） |
+| metadata 源码 | `dummy_study/metadata/`（14 个 YAML） |
+| bundle 校验输出 | `Rscript dummy_study/tools/check_metadata.R`（8.3 秒，零错误） |
+| 生成源码（不提交） | `dummy_study/generated/sas/*.sas`（6 个，372–1074 行） |
+| 守卫测试 | `test/testthat/test-dummy-study-{dictionary,shells,metadata}.R` |

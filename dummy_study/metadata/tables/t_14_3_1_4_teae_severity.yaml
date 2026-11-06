@@ -1,0 +1,39 @@
+id: 't_14_3_1_4_teae_severity'
+population_id: 'safety'
+header_id: 'trt01a_header'
+template_id: 'tpl_teae_severity'
+custom_code:
+  before: |-
+    /* One row per subject x SOC x PT, reduced to the maximum severity of that
+       combination. Reducing per subject instead would collapse every PT into a
+       single severity. */
+    /* SEV_ORDER is a display order, not a severity score: 1 is the most severe
+       value so that ascending numeric order matches the report order. A severity
+       score with 3 for SEVERE would sort MILD first, because the emitter orders
+       formatted numeric nodes by their unformatted value. */
+    proc sql;
+      create table WORK.AE_MAXSEV as
+        select USUBJID,
+               TRTA,
+               AEBODSYS,
+               AEDECOD,
+               min(case AESEV
+                     when 'SEVERE'   then 1
+                     when 'MODERATE' then 2
+                     when 'MILD'     then 3 end) as SEV_ORDER
+          from study.adae
+         where SAFFL = 'Y' and TRTEMFL = 'Y'
+         group by USUBJID, TRTA, AEBODSYS, AEDECOD;
+    quit;
+
+    /* The format supplies the label and the complete node set, so a severity
+       with no event still gets a row. LIFE THREATENING is a protocol severity
+       code with no record in this dataset; it proves that a format-declared
+       node is rendered even when the source contributes no observation. */
+    proc format;
+      value TFLSEV
+        1 = 'SEVERE'
+        2 = 'MODERATE'
+        3 = 'MILD'
+        4 = 'LIFE THREATENING';
+    run;

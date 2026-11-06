@@ -1,0 +1,36 @@
+id: 't_14_2_3_hgb_shift'
+population_id: 'safety'
+header_id: 'shift_header'
+template_id: 'tpl_hgb_shift'
+custom_code:
+  before: |-
+    /* One row per subject with a non-missing baseline normal-range indicator.
+       The worst post-baseline indicator is ranked NORMAL < LOW < HIGH; a subject
+       without a post-baseline grade keeps the baseline grade forward so that each
+       section's rows sum to its own baseline population.
+
+       SAFFL and TRTA are carried so that this dataset can serve as the header
+       source: the population expression is evaluated on the header source. */
+    proc sql;
+      create table WORK.SHIFT_HGB as
+        select b.USUBJID,
+               b.TRTA,
+               b.SAFFL,
+               b.LBNRIND as LBNRIND_BL,
+               coalesce(w.WORST, b.LBNRIND) as ANRIND_WORST
+          from (select USUBJID, TRTA, SAFFL, LBNRIND
+                  from study.adlbh
+                 where PARAMCD = 'HGB' and ABLFL = 'Y' and not missing(LBNRIND)) as b
+          left join (select USUBJID,
+                            case max(case LBNRIND
+                                       when 'HIGH' then 2
+                                       when 'LOW'  then 1
+                                       else 0 end)
+                              when 2 then 'HIGH'
+                              when 1 then 'LOW'
+                              else 'NORMAL' end as WORST
+                       from study.adlbh
+                      where PARAMCD = 'HGB' and missing(ABLFL)
+                      group by USUBJID) as w
+            on b.USUBJID = w.USUBJID;
+    quit;

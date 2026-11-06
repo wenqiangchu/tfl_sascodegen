@@ -26,6 +26,10 @@ tmp/
 test/fixtures/sas/**/generated/
 test/fixtures/sas/**/logs/
 
+# Hand-authored SAS tools for the dummy study; generated programs stay ignored.
+!dummy_study/tools/*.sas
+dummy_study/generated/
+
 # Test and tooling caches
 coverage/
 .pytest_cache/
