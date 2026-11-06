@@ -8,17 +8,21 @@ report_page_layout <- function(header) {
   paper_width <- if (identical(header$orientation, "landscape")) 11 else 8.5
   # Pin the one-inch RTF margin baseline so width arithmetic and ODS agree.
   margin <- 1
-  # Classic ODS RTF includes the outer borders in its horizontal fit decision.
-  # A content grid filling the entire printable width can split into panels.
-  # The 1.5pt total reserve is a measured ODS RTF boundary allowance.
+  # ODS RTF splits a table into horizontal panels -- printed on separate pages,
+  # with the stub column only on the first panel -- when the content grid does
+  # not fit the printable width. Cell padding and borders are not part of the
+  # declared cell widths, so the grid needs real slack, not just the border
+  # allowance: 1.5pt was measured to be too tight and produced a panel break.
   border_width_pt <- 0.75
-  stub_width <- paper_width - 2 * margin - 2 * border_width_pt / 72 -
+  fit_reserve <- 0.25
+  stub_width <- paper_width - 2 * margin - fit_reserve -
+    2 * border_width_pt / 72 -
     sum(vapply(header$columns, `[[`, numeric(1L), "width"))
   if (!is.finite(stub_width) || stub_width <= 0) {
     stop("Header columns leave no space for the stub within the Letter page margins.", call. = FALSE)
   }
   list(paper_width = paper_width, margin = margin, border_width_pt = border_width_pt,
-       stub_width = stub_width)
+       fit_reserve = fit_reserve, stub_width = stub_width)
 }
 
 sas_report_number <- function(value) {
@@ -123,14 +127,21 @@ table_assembly_source <- function(outputs, resolved) {
     "  if last.row_sequence then output;",
     paste0("  keep ", identities, " ", column_text, ";"),
     "run;",
-    "/* Insert one blank row at chunk or hierarchy-level boundaries. */",
+    "/* Insert one blank row at block boundaries. */",
+    "/* A block is a node plus the below rows it owns. */",
     "data _TFL_SPACING_001;",
     "  set _TFL_WIDE_001;",
-    "  retain previous_chunk previous_level;",
+    "  retain previous_chunk previous_role;",
     "  report_order = _n_ * 2;",
+    "  /* Three boundaries earn a blank row: a new chunk, a top-level node, and",
+    "     the end of a node's below rows. A node whose children are only other",
+    "     nodes needs no divider because indentation already expresses the",
+    "     nesting; a node that owns below rows does, because those rows share",
+    "     the indent of the next sibling. The below-row test looks for a node",
+    "     following the run of static rows, not for each static row. */",
     "  gap_before = _n_ > 1 and (chunk_order ne previous_chunk or",
-    "    (hierarchy_level > 0 and previous_level > 0 and hierarchy_level ne previous_level));",
-    "  previous_chunk = chunk_order; previous_level = hierarchy_level;",
+    "    hierarchy_level = 1 or (previous_role = 'static' and row_role = 'dynamic'));",
+    "  previous_chunk = chunk_order; previous_role = row_role;",
     "  output;",
     "  if gap_before then do;",
     "    report_order = report_order - 1;",
@@ -139,7 +150,7 @@ table_assembly_source <- function(outputs, resolved) {
     "    runtime_row_id = cats('spacer:', put(report_order, best32.));",
     "    output;",
     "  end;",
-    paste0("  keep report_order ", identities, " ", column_text, ";"),
+    paste0("  keep report_order gap_before ", identities, " ", column_text, ";"),
     "run;",
     "/* Custom code after may update this dataset in place before final output. */",
     "proc sort data=_TFL_SPACING_001 out=WORK._TFL_ASM_001;",

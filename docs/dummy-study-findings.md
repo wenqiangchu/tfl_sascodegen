@@ -453,6 +453,167 @@ DCSREAS 明细行就用 1 级缩进。
 仍失败才放弃；调用方的 DOM 等待（`wait_for_rows` / `wait_for_text`）与断言仍是真正的判据。
 全文件 57 处 `wait_for_idle` 调用统一改走该助手。连跑 3 次 0 失败。
 
+## 6.8 列宽溢出（RTF 分栏）—— 报告的严重缺陷
+
+用户指出「有些行溢出到下面，Word 里不和 stub 在一起」。实测确认这是一个比外观更严重的问题。
+
+**现象**：RTF 被 ODS 拆成**水平分栏（panels）**。表头的 `	rhdr` 段出现两种不同的 `cellx` 布局：
+
+```
+portrait:  [5153, 7239, 9325]        -> 3 格（stub + 2 列）
+           [4638, 9266]              -> 2 格（stub + 1 列）
+landscape: [10759, 12926]            -> 2 格
+           [4295, 8580, 12865]       -> 3 格
+```
+
+即第三、四列被推到**后续页**，而**stub 列只出现在第一栏**。所以「行溢出到下面且不和 stub 在一起」是分栏的直接后果。
+
+**连带影响**：分栏让页数几乎翻倍。
+
+| 表 | 修复前页数 | 修复后 |
+| --- | ---: | ---: |
+| 14.1.1 | 2 | **1** |
+| 14.1.2 | 3 | **2** |
+| 14.3.1.2 | 25 | **14** |
+| 14.3.1.4 | 40 | **21** |
+| 14.3.2.1 | 6 | **3** |
+
+（Word 16.0.19127 `ComputeStatistics(2)` 实测。）
+
+**根因**：`report_page_layout()` 只预留了 **1.5pt**（0.0208in）给边框：
+
+```
+stub_width = 纸张宽 − 2×1in − 0.0208 − Σ列宽
+```
+
+但 ODS 的分栏判定用的是**含单元格内边距和边框的实际网格宽度**，这个网格比「声明列宽之和」宽。1.5pt 远不够。用 `probe_width3.sas` 做的二分探针确认：
+
+| stub | 每列 | 网格合计 | 结果 |
+| --- | --- | --- | --- |
+| 2.479in | 1.00in | 6.479in | **分 2 栏** |
+| 2.400in | 1.00in | 6.400in | 1 栏 ✓ |
+| 2.000in | 1.10in | 6.400in | 1 栏 ✓ |
+| 1.200in | 1.30in | 6.400in | 1 栏 ✓ |
+
+临界点在 **6.40in**（可用宽度 6.5in − 0.1in）。所以需要的余量是 **≈0.1in**，而非 0.02in。
+
+**修复**：引入显式 `fit_reserve = 0.25in`（取实测阈值的 2.5 倍安全边界）：
+
+```r
+stub_width = 纸张宽 − 2×1in − fit_reserve − 2×边框 − Σ列宽
+```
+
+修复后 6 张表全部 `distinct_layouts = 1`（单一网格、5 列齐全），`	rhdr` 段从 4 降到 2。
+
+**顺带推翻一个假设**：`width=` 字符宽度提示**不是**原因。探针 `v_a`（带 `width=40`）、`v_b`（完全去掉 `width=`）、`v_c`（`width` 与 cellwidth 匹配）三者产物**字节完全相同**（均 5706 字节，分栏一致）。所以 `report_source.R` 里的 `width=40` / `width=16` 对版面没有影响，可以保留也可以清理，但不要误以为改它能解决溢出。
+
+## 6.9 Word COM 页数测量能力
+
+`test/fixtures/sas/runtime_v2/study/render_rtf.py` 已用 `win32com` 打开 Word 并 `ExportAsFixedFormat` 导出 PDF。本阶段补了 `ComputeStatistics(2)` 直接拿页数的能力，用于：
+
+1. 证明分栏导致页数翻倍；
+2. 为分页策略提供**真实物理容量**数据 —— 这是决定「一页放多少行」的唯一可靠依据。
+
+实测容量（修复分栏后）：
+
+| 表 | 数据行 | 页数 | 行/页 |
+| --- | ---: | ---: | ---: |
+| 14.1.1 | 15 | 1 | 15.0 |
+| 14.1.2 | 38 | 2 | 19.0 |
+| 14.2.3 | 14 | 1 | 14.0 |
+| 14.3.1.2 | 300 | 14 | 21.4 |
+| 14.3.1.4 | 476 | 21 | 22.7 |
+| 14.3.2.1 | 68 | 3 | 22.7 |
+
+**≈21–23 数据行/页**是当前版式下的稳定容量。这个数字是分页策略的输入，不是可以靠算术推出的（取决于字号 `fs20`、内边距 `clpadt=60`、行距 `sb/sa=60`、表头高度）。
+
+## 6.10 更正：`placement` 与「一个 level 一个 block」的约束
+
+此前分析 14.3.1.4 重构时我说「一个 level 只能有一个 `same_row` block，需要放开 `model.R:952-956` 约束」。**这个说法不准确，更正如下。**
+
+`model.R:952-956` 的实际校验是：**当 level 声明了 `node_analysis_id` 时**，该 block 必须是 `same_row` 且锚定在该 level。它**没有**限制一个 level 只能有一个 block——`analysis_blocks` 是独立列表，可以给同一 level 再加 `placement: below` 的 block。
+
+emitter 侧也已支持（`hierarchical.R:454-460`）：
+
+```r
+if (same_row) c(
+  "  label = node_label; row_role = 'dynamic';",
+  paste0("  indent_level = ", level_order - 1L, ";"),
+  "  order_key = cats(display_order_path, 'A');"     # A = 同行，排在子节点前
+) else c(
+  "  row_role = 'static';",
+  paste0("  indent_level = ", level_order, " + indent_level;"),
+  "  order_key = cats(display_order_path, 'B', ...);" # B = below
+)
+```
+
+`order_key` 的 `A` / `B` 前缀配合 `hierarchical.R:693` 的注释「Order current node and below static rows before dynamic children」，**正是为「节点计数行 → below 行 → 子节点」这个顺序设计的**。
+
+**为何 `below` 而非 `before`**：SAS `proc report` 的 `compute before <var>` 作用于**分组变量的首行之前**；而我们要表达的语义是「SOC 这个节点的计数行之后、它的 PT 子节点之前」。用 `same_row` 承载计数、再用 `below` 承载严重程度汇总，等于把「之前」表达成「上一个节点之后」，不需要 `before`。实测也已确认 `compute before/after` + `line` 在 ODS RTF 下**不产生任何表格行**，所以 `before` 这条路本来也不通。
+
+**结论**：14.3.1.4 重构为解释 2 不需要改模型约束，只需要在模板里给 `soc` 和 `pt` 各加一个 `placement: below` 的 `analysis_block`。这是纯 metadata 改动。
+
+## 6.11 空行规则重写：从「深度变化」到「块边界」
+
+用户指出「不是所有层级嵌套都该插空行」，并给出判定原则：**按 level 嵌套 + label/analysis
+行决定**。核实后确认原规则是错的，且错在语义层。
+
+**原规则**（`report_source.R:131-132`）：
+
+```
+gap_before = chunk_order 变化
+          OR (hierarchy_level > 0 AND previous_level > 0 AND hierarchy_level ≠ previous_level)
+```
+
+即「层级深度一变就插空行」。后果：SOC 与它自己的 PT 之间被插入空行，**把父子关系切断**，
+与用户观察一致（14.3.1.2 有 46 个空行、14.3.1.4 有 109 个）。
+
+**新规则**：
+
+```
+gap_before = chunk_order 变化                      # 新 chunk
+          OR hierarchy_level = 1                    # 顶层节点
+          OR (previous_role = 'static' AND row_role = 'dynamic')  # below 行块结束
+```
+
+插入位置为**该行之前**，因此 `previous_role` 是查看上一行的角色。三个判据的语义：
+
+| 判据 | 含义 | 例子 |
+| --- | --- | --- |
+| `chunk_order` 变化 | 新 chunk 开始 | 14.1.2 的 7 个特性之间、14.2.3 的 3 个治疗组之间 |
+| `hierarchy_level = 1` | 顶层节点开始 | 14.3.1.2 的 23 个 SOC 之间 |
+| 上一个 static → 当前 dynamic | 某节点的 below 行结束、下一个节点开始 | 14.3.1.4 的严重程度行结束后接下一个 PT |
+
+**关键设计点**：只认「static 之后紧跟 dynamic」，不是在每个 static 行前都插。因为一个节点
+的 below 行是**连续一段**，只有这段结束、下一个节点开始时才需要分隔。这条把「PT 之间是否
+插空行」变成**数据驱动**——PT 下没有 below 行（14.3.1.2）就不插，有 below 行（14.3.1.4）就插，
+无需为每张表写特例。
+
+**改动生效后的空行数**：
+
+| 表 | 原 | 新 | 说明 |
+| --- | ---: | ---: | --- |
+| 14.1.1 | 0 | 0 | 单 chunk、无层级 |
+| 14.1.2 | 6 | 6 | chunk 之间 |
+| 14.2.3 | 2 | 2 | chunk 之间 |
+| 14.3.1.2 | 46 | **23** | SOC 之间；SOC↔PT 不再插 |
+| 14.3.1.4 | 109 | **3** | 待重构为解释 2 后会变多 |
+| 14.3.2.1 | 1 | **10** | 每个 visit 块之间 |
+
+**14.3.2.1 从 1 涨到 10** 是正确的：该表是 `PARAM → visit → 统计量`，统计量行是
+`static`（below），所以每个 visit 的统计量结束后、下一个 visit 前插入 —— 13 个 visit 得到
+12 个候选，减去首行 1 个、再算上块边界，实际 10 个。原规则的 1 个空行是纯属巧合
+（只在 `hierarchy_level` 1→2 变化处触发）。
+
+**`gap_before` 已进入产物**：作为 `_TFL_ASM_001` 的一列保留（`keep report_order gap_before ...`），
+但 `proc report` 不引用它，**不出现在 RTF 里**。这样空行规则可以被直接断言，
+而不是像以前那样只能数 `row_role='spacer'` 的个数反推。
+
+**新增/更新 guard**：
+1. `test-dummy-study-metadata.R` 新增一条，断言新判据存在、旧判据 `previous_level` 已消失；
+2. `test-report-source.R` / `test-shinytest2.R` / `test-z-hierarchical-emitter.R`
+   三处原本 pin 住旧表达式的断言同步更新为 pin 新表达式。
+
 ## 7. 证据位置
 
 | 内容 | 位置 |

@@ -74,11 +74,14 @@ testthat::test_that("Letter layout reserves margins and borders without changing
   for (bundle in list(landscape_bundle, portrait_bundle)) {
     layout <- report_page_layout(bundle$headers[[1L]])
     printable <- layout$paper_width - 2 * layout$margin
-    testthat::expect_lte(
-      layout$stub_width + sum(vapply(bundle$headers[[1L]]$columns, `[[`, numeric(1L), "width")) +
-        2 * layout$border_width_pt / 72,
-      printable
-    )
+    grid <- layout$stub_width +
+      sum(vapply(bundle$headers[[1L]]$columns, `[[`, numeric(1L), "width"))
+    testthat::expect_lte(grid + 2 * layout$border_width_pt / 72, printable)
+    # ODS RTF splits a table into horizontally repeated panels, printed on
+    # separate pages with the stub only on the first, when the content grid does
+    # not fit with slack for padding and borders. A grid that merely equals the
+    # printable width is not enough; the reserve is what keeps one panel.
+    testthat::expect_gte(printable - grid, layout$fit_reserve)
     testthat::expect_gt(layout$stub_width, 0)
   }
   testthat::expect_match(landscape, "papersize=letter orientation=landscape", fixed = TRUE)
@@ -110,7 +113,10 @@ testthat::test_that("report headers count membership and report rows preserve fo
   testthat::expect_match(source, "protectspecialchars=off", fixed = TRUE)
   testthat::expect_match(source, "if last.column_order then output;", fixed = TRUE)
   testthat::expect_match(source, "cell_text = TRANWRD(cell_text", fixed = TRUE)
-  testthat::expect_match(source, "hierarchy_level ne previous_level", fixed = TRUE)
+  # A blank row marks a block boundary: a new chunk, a top-level node, or the
+  # end of a node's below rows. Depth changes alone do not qualify, because
+  # indentation already expresses nesting between a node and its children.
+  testthat::expect_match(source, "hierarchy_level = 1 or (previous_role = 'static'", fixed = TRUE)
   testthat::expect_match(source, "chunk_order ne previous_chunk", fixed = TRUE)
 })
 

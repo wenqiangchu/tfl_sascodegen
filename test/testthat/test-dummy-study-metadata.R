@@ -188,3 +188,21 @@ testthat::test_that("the verification scripts are present and self-describing", 
   testthat::expect_match(compare_script, "sas_round", fixed = TRUE)
   testthat::expect_match(compare_script, "digits", fixed = TRUE)
 })
+
+# The blank-line rule is a layout contract with no numeric signal, so the only
+# way a regression can be caught is to assert the rule itself. It used to fire on
+# every depth change, which put a blank row between a System Organ Class and its
+# own Preferred Terms -- cutting apart a parent and its children.
+testthat::test_that("blank rows mark block boundaries, not depth changes", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  result <- generate_table_source(workspace, "t_14_3_1_2_teae", output_mode = "report")
+  testthat::expect_true(result$passed)
+  source <- paste(result$source, collapse = "
+")
+
+  testthat::expect_match(source, "hierarchy_level = 1 or (previous_role = 'static'",
+                         fixed = TRUE)
+  # The retired condition must be gone: it is what split the SOC/PT nesting.
+  testthat::expect_false(grepl("previous_level", source, fixed = TRUE))
+})
