@@ -306,65 +306,84 @@ for (column_id in column_ids) {
   }
 }
 
-# --- 14.3.1.4 TEAE by maximum severity, SOC and PT -------------------------
+# --- 14.3.1.4 TEAE by SOC and PT, each with its own severity breakdown -------
 
+# The report nests severity *inside* both SOC and PT, so the same subject can be
+# counted at several severity rows of one SOC. The SOC-level breakdown reduces
+# each subject to their worst severity within that SOC; the PT-level breakdown
+# keeps the worst severity within the SOC/PT pair. These are different numbers
+# and the fixture asserts both.
 severity_order <- c(SEVERE = 1L, MODERATE = 2L, MILD = 3L)
 teae_severity <- teae
 teae_severity$SEV_ORDER <- unname(severity_order[teae_severity$AESEV])
-severity_key <- c("USUBJID", "TRTA", "AEBODSYS", "AEDECOD")
-reduced <- stats::aggregate(teae_severity$SEV_ORDER,
-                            by = teae_severity[severity_key], FUN = min)
-names(reduced)[[length(names(reduced))]] <- "SEV_ORDER"
-severity_labels <- c("1" = "SEVERE", "2" = "MODERATE", "3" = "MILD",
-                     "4" = "LIFE THREATENING")
+severity_codes <- c(SEVERE = 1L, MODERATE = 2L, MILD = 3L)
 
-# The severity tree depends only on which (severity, SOC, PT) combinations exist
-# anywhere in the data, not on which arm is being counted; an arm with no event
-# for a node prints 0. Level 4 exists only through the format, so it has no
-# children at all.
-sev_soc_universe <- unique(reduced[!is.na(reduced$SEV_ORDER), c("SEV_ORDER", "AEBODSYS")])
-sev_pt_universe <- unique(reduced[!is.na(reduced$SEV_ORDER),
-                                  c("SEV_ORDER", "AEBODSYS", "AEDECOD")])
+# Worst severity per subject x SOC x PT, which is what WORK.AE_MAXSEV holds.
+pt_key <- c("USUBJID", "TRTA", "AEBODSYS", "AEDECOD")
+pt_reduced <- stats::aggregate(teae_severity$SEV_ORDER, by = teae_severity[pt_key],
+                               FUN = min)
+names(pt_reduced)[[length(names(pt_reduced))]] <- "SEV_ORDER"
+
+# Worst severity per subject x SOC, collapsing that subject's PTs in the SOC.
+soc_key <- c("USUBJID", "TRTA", "AEBODSYS")
+soc_reduced <- stats::aggregate(pt_reduced$SEV_ORDER, by = pt_reduced[soc_key],
+                                FUN = min)
+names(soc_reduced)[[length(names(soc_reduced))]] <- "SEV_ORDER"
 
 subject_count <- function(frame) {
   if (nrow(frame) == 0L) return(0L)
   length(unique(frame$USUBJID))
 }
 
+# The node universe is data-wide, not per arm: a node an arm never reached still
+# prints 0 rather than disappearing.
+soc_universe <- sort(unique(soc_reduced$AEBODSYS))
+pt_universe <- unique(pt_reduced[, c("AEBODSYS", "AEDECOD")])
+pt_universe <- pt_universe[order(pt_universe$AEBODSYS, pt_universe$AEDECOD), ]
+
 for (column_id in column_ids) {
-  in_column <- if (identical(column_id, "overall")) rep(TRUE, nrow(reduced)) else
-    reduced$TRTA == arm_values[[column_id]]
+  in_column <- function(frame) {
+    if (identical(column_id, "overall")) rep(TRUE, nrow(frame)) else
+      frame$TRTA == arm_values[[column_id]]
+  }
   denominator <- if (identical(column_id, "overall")) 254 else
     sum(adsl$TRT01A == arm_values[[column_id]], na.rm = TRUE)
+  soc_arm <- soc_reduced[in_column(soc_reduced), ]
+  pt_arm <- pt_reduced[in_column(pt_reduced), ]
 
-  selected <- reduced[in_column, ]
-  for (severity_code in c(1L, 2L, 3L, 4L)) {
-    severity_label <- severity_labels[[as.character(severity_code)]]
-    in_severity <- !is.na(selected$SEV_ORDER) & selected$SEV_ORDER == severity_code
-    n_severity <- subject_count(selected[in_severity, ])
-    expected <- emit(expected, "t_14_3_1_4_teae_severity", severity_label,
-                     severity_label, 1L, column_id,
-                     list(n = n_severity, pct = 100 * n_severity / denominator),
+  for (soc in soc_universe) {
+    soc_rows <- soc_arm[soc_arm$AEBODSYS == soc, ]
+    n_soc <- subject_count(soc_rows)
+    expected <- emit(expected, "t_14_3_1_4_teae_severity", soc, soc, 1L, column_id,
+                     list(n = n_soc, pct = 100 * n_soc / denominator),
                      asserted = c("n", "pct"))
-
-    socs <- sort(unique(sev_soc_universe$AEBODSYS[
-      sev_soc_universe$SEV_ORDER == severity_code]))
-    for (soc in socs) {
-      n_soc <- subject_count(selected[in_severity & selected$AEBODSYS == soc, ])
+    for (severity_name in names(severity_codes)) {
+      code <- severity_codes[[severity_name]]
+      n_sev <- subject_count(soc_rows[!is.na(soc_rows$SEV_ORDER) &
+                                        soc_rows$SEV_ORDER == code, ])
       expected <- emit(expected, "t_14_3_1_4_teae_severity",
-                       paste(severity_label, soc, sep = " / "), soc, 2L, column_id,
-                       list(n = n_soc, pct = 100 * n_soc / denominator),
+                       paste(soc, severity_name, sep = " / "), severity_name, 2L,
+                       column_id,
+                       list(n = n_sev, pct = 100 * n_sev / denominator),
                        asserted = c("n", "pct"))
+    }
 
-      pts <- sev_pt_universe[sev_pt_universe$SEV_ORDER == severity_code &
-                               sev_pt_universe$AEBODSYS == soc, "AEDECOD"]
-      for (pt in sort(unique(pts))) {
-        n_pt <- subject_count(
-          selected[in_severity & selected$AEBODSYS == soc & selected$AEDECOD == pt, ])
+    pts <- pt_universe$AEDECOD[pt_universe$AEBODSYS == soc]
+    for (pt in pts) {
+      pt_rows <- pt_arm[pt_arm$AEBODSYS == soc & pt_arm$AEDECOD == pt, ]
+      n_pt <- subject_count(pt_rows)
+      expected <- emit(expected, "t_14_3_1_4_teae_severity",
+                       paste(soc, pt, sep = " / "), pt, 2L, column_id,
+                       list(n = n_pt, pct = 100 * n_pt / denominator),
+                       asserted = c("n", "pct"))
+      for (severity_name in names(severity_codes)) {
+        code <- severity_codes[[severity_name]]
+        n_pt_sev <- subject_count(pt_rows[!is.na(pt_rows$SEV_ORDER) &
+                                            pt_rows$SEV_ORDER == code, ])
         expected <- emit(expected, "t_14_3_1_4_teae_severity",
-                         paste(severity_label, soc, pt, sep = " / "), pt, 3L,
-                         column_id,
-                         list(n = n_pt, pct = 100 * n_pt / denominator),
+                         paste(soc, pt, severity_name, sep = " / "), severity_name,
+                         3L, column_id,
+                         list(n = n_pt_sev, pct = 100 * n_pt_sev / denominator),
                          asserted = c("n", "pct"))
       }
     }

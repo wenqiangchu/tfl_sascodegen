@@ -614,6 +614,87 @@ gap_before = chunk_order 变化                      # 新 chunk
 2. `test-report-source.R` / `test-shinytest2.R` / `test-z-hierarchical-emitter.R`
    三处原本 pin 住旧表达式的断言同步更新为 pin 新表达式。
 
+## 6.12 14.3.1.4 重构为「SOC/PT 各带严重程度」（解释 2）
+
+用户指出原 shell 的结构是错的：本表应当是 **by SOC by PT**，**SOC 下面有严重程度、
+PT 下面也有严重程度**。原实现是「严重程度 → SOC → PT」三层，严重程度在最外层，
+与需求相反。已按解释 2 重构。
+
+### 新结构
+
+```text
+SOC 计数行                            ind 0
+  SEVERE / MODERATE / MILD            ind 1   ← below block
+                                      ← 空行
+  PT 计数行                           ind 1
+    SEVERE / MODERATE / MILD          ind 2   ← below block
+                                      ← 空行
+  下一个 PT ...
+```
+
+`levels` 降为两级（`soc` → `pt`），严重程度改为**两个 `below` analysis_block**：
+`soc_severity`（锚定 `soc`）与 `pt_severity`（锚定 `pt`）。`TFLSEV` format 与
+原 `sev` level 一并删除 —— 严重程度不再是层级，而是 below 行的 condition。
+
+**模型无需改动**：核实后确认 `model.R:952-956` 只要求 `node_analysis_id` 指向的 block
+是 `same_row`，并未限制一个 level 只能有一个 block。emitter 早已支持
+（`hierarchical.R:454-460`，`same_row` 用排序前缀 `A`、`below` 用 `B`）。
+
+### 发现并修掉的口径错误
+
+重构后 P5 立刻报出 **64 个不符**，全部在 SOC 层的严重程度行：期望 MILD 54、
+SAS 输出 70。根因是严重程度行错误地按 `SEV_ORDER` 计数。
+
+`AE_MAXSEV` 的粒度是 `USUBJID × SOC × PT`，`SEV_ORDER` 是**该组合**的最差严重度。
+用它给 SOC 层计数，等于「受试者在 SOC 下**任一** PT 达到该严重度就计入」——三行会重叠。
+以最大 SOC（108 人）为例：
+
+| 口径 | SEVERE | MODERATE | MILD | 合计 |
+| --- | ---: | ---: | ---: | ---: |
+| 任一 PT 达到 | 7 | 47 | **70** | 124 ✗ 超过 108 |
+| **最差严重度** | 7 | 47 | **54** | 108 ✓ |
+
+**用户确认两层都用「最差严重度」**（行内可相加）。修法：`custom_code.before` 派生
+**两个**归约变量 —— `SEV_ORDER`（SOC/PT 最差，PT 层用）与 `SOC_SEV_ORDER`
+（跨该 SOC 的 PT 再取 `min`，SOC 层用）。
+
+**PT 层无此歧义**：`AE_MAXSEV` 已是一行一个 SOC/PT 组合，`SEV_ORDER` 就是该组合的
+最差严重度，三行必然相加等于 PT 计数行的 n。
+
+### 另一个 SAS 陷阱
+
+第一版实现写成自引用：
+
+```sas
+create table WORK.AE_MAXSEV as select a.*, b.SOC_SEV_ORDER
+  from WORK.AE_MAXSEV as a inner join (...) ...
+```
+
+触发 `WARNING: 该 CREATE TABLE 语句递归引用目标表。可能产生数据完整性问题。`
+运行器把未分类 WARNING 视为失败（`0/1 programs clean`）。修法：先建
+`WORK.AE_PTSEV`，再 join 回自身生成 `WORK.AE_MAXSEV`。
+
+### 结果
+
+| 项 | 原（SEV→SOC→PT） | 新（SOC/PT + below） |
+| --- | ---: | ---: |
+| 输出行数 | 476 | **1012** |
+| 空行数 | 109（旧规则）/ 3 | **252** |
+| 页数 | 21 | **55** |
+| P5 断言格 | 2936 | **8096** |
+
+行数构成：23 SOC + 23×3 SOC 严重度 + 230 PT + 230×3 PT 严重度 = 1012。
+空行构成：22 个 SOC 边界 + 230 个 PT 边界 = 252，**每个空行都精确落在
+`static` 段结束与下一个 `dynamic` 之间**（已用脚本全面校验）。
+
+### 代价与遗留
+
+**`format` 功能在 dummy study 里失去了覆盖。** 原 `TFLSEV` 是本 fixture 中唯一使用
+level 级 `format` 的地方（14.3.2.1 已在 P4 移除 `$TFLVISIT`），重构后 6 张表**再无
+任何 level 声明 `format`**。`format` 仍有专门覆盖（`test/fixtures/sas/runtime_v2/run_formats.py`，
+13 个用例 + 永久 guard），所以不是无覆盖，但 dummy study 这条端到端链路不再经过它。
+若要恢复，需要另找一张表用 `format` 驱动层级。
+
 ## 7. 证据位置
 
 | 内容 | 位置 |

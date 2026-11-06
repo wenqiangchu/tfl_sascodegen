@@ -111,25 +111,46 @@ testthat::test_that("the visit level orders by AVISITN and declares no format", 
   testthat::expect_identical(visit$order_direction, "asc")
 })
 
-testthat::test_that("the severity level is a display order with a probe node", {
+testthat::test_that("severity is a below row block, not a hierarchy level", {
   skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
   workspace <- parse_bundle_value(load_dummy_bundle())$value
   template <- workspace$templates[[match("tpl_teae_severity",
                                         vapply(workspace$templates, `[[`, "", "id"))]]
   chunk <- template$body$chunks[[1L]]
-  severity <- chunk$levels[[match("sev", vapply(chunk$levels, `[[`, "", "id"))]]
-  # SEV_ORDER is a display order: 1 is SEVERE, so ascending numeric order is the
-  # clinical order. A severity score (3 for SEVERE) would sort MILD first.
-  testthat::expect_identical(severity$variable, "SEV_ORDER")
-  testthat::expect_identical(severity$format, "TFLSEV")
+  level_ids <- vapply(chunk$levels, `[[`, "", "id")
+  # Severity is no longer a level: the report nests severity under both SOC and
+  # PT, which two same_row levels cannot express. It is a below block instead.
+  testthat::expect_identical(level_ids, c("soc", "pt"))
+  for (level in chunk$levels) testthat::expect_null(level$format)
+
+  blocks <- chunk$analysis_blocks
+  block_ids <- vapply(blocks, `[[`, "", "id")
+  placements <- vapply(blocks, `[[`, "", "placement")
+  names(placements) <- block_ids
+  testthat::expect_identical(placements[["soc_subjects"]], "same_row")
+  testthat::expect_identical(placements[["pt_subjects"]], "same_row")
+  testthat::expect_identical(placements[["soc_severity"]], "below")
+  testthat::expect_identical(placements[["pt_severity"]], "below")
+
+  # SOC-level severity must read the SOC-wide reduction. Conditioning it on the
+  # per-SOC/PT SEV_ORDER counts a subject once per matching PT, so the three rows
+  # overlap and sum to more than the SOC total.
+  soc_severity <- blocks[[match("soc_severity", block_ids)]]
+  conditions <- vapply(soc_severity$rows, `[[`, "", "condition")
+  testthat::expect_true(all(grepl("SOC_SEV_ORDER", conditions, fixed = TRUE)))
+  pt_severity <- blocks[[match("pt_severity", block_ids)]]
+  pt_conditions <- vapply(pt_severity$rows, `[[`, "", "condition")
+  testthat::expect_true(all(grepl("SEV_ORDER", pt_conditions, fixed = TRUE)))
 
   table <- workspace$tables[[match("t_14_3_1_4_teae_severity",
                                   vapply(workspace$tables, `[[`, "", "id"))]]
   before <- table$custom_code$before
-  testthat::expect_match(before, "1 = 'SEVERE'", fixed = TRUE)
+  testthat::expect_match(before, "when 'SEVERE'   then 1", fixed = TRUE)
   testthat::expect_match(before, "min(case AESEV", fixed = TRUE)
-  # The complete-node probe lives here: a protocol severity code with no record.
-  testthat::expect_match(before, "4 = 'LIFE THREATENING'", fixed = TRUE)
+  testthat::expect_match(before, "as SOC_SEV_ORDER", fixed = TRUE)
+  # A self-referencing CREATE TABLE draws "recursive reference to the target
+  # table", which the runner treats as an unclassified failure.
+  testthat::expect_match(before, "WORK.AE_PTSEV", fixed = TRUE)
 })
 
 testthat::test_that("a WORK header source carries the population variables", {
@@ -201,7 +222,9 @@ testthat::test_that("blank rows mark block boundaries, not depth changes", {
   source <- paste(result$source, collapse = "
 ")
 
-  testthat::expect_match(source, "hierarchy_level = 1 or (previous_role = 'static'",
+  testthat::expect_match(source, "(hierarchy_level = 1 and row_role ne 'static') or",
+                         fixed = TRUE)
+  testthat::expect_match(source, "(previous_role = 'static' and row_role = 'dynamic')",
                          fixed = TRUE)
   # The retired condition must be gone: it is what split the SOC/PT nesting.
   testthat::expect_false(grepl("previous_level", source, fixed = TRUE))

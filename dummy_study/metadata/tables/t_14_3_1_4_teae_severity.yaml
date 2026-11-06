@@ -4,9 +4,14 @@ header_id: 'trt01a_header'
 template_id: 'tpl_teae_severity'
 custom_code:
   before: |-
-    /* One row per subject x SOC x PT, reduced to the maximum severity of that
-       combination. Reducing per subject instead would collapse every PT into a
-       single severity. */
+    /* One row per subject x SOC x PT, carrying two severity reductions.
+
+       SEV_ORDER is the worst severity of that SOC/PT pair for the subject, which
+       is the grain the report needs at the PT level. SOC_SEV_ORDER is the worst
+       severity of the whole SOC for that subject, collapsed across their PTs in
+       it, which the SOC-level severity rows need: conditioning those rows on
+       SEV_ORDER would count a subject once per PT that reaches the severity, so
+       the three rows would overlap and sum to more than the SOC total. */
     /* SEV_ORDER is a display order, not a severity score: 1 is the most severe
        value so that ascending numeric order matches the report order. A severity
        score with 3 for SEVERE would sort MILD first, because the emitter orders
@@ -24,16 +29,20 @@ custom_code:
           from study.adae
          where SAFFL = 'Y' and TRTEMFL = 'Y'
          group by USUBJID, TRTA, AEBODSYS, AEDECOD;
-    quit;
 
-    /* The format supplies the label and the complete node set, so a severity
-       with no event still gets a row. LIFE THREATENING is a protocol severity
-       code with no record in this dataset; it proves that a format-declared
-       node is rendered even when the source contributes no observation. */
-    proc format;
-      value TFLSEV
-        1 = 'SEVERE'
-        2 = 'MODERATE'
-        3 = 'MILD'
-        4 = 'LIFE THREATENING';
-    run;
+      create table WORK.AE_PTSEV as
+        select USUBJID, TRTA, AEBODSYS, AEDECOD, SEV_ORDER
+          from WORK.AE_MAXSEV;
+
+      create table WORK.AE_MAXSEV as
+        select a.*,
+               b.SOC_SEV_ORDER
+          from WORK.AE_PTSEV as a
+          inner join
+            (select USUBJID, TRTA, AEBODSYS, min(SEV_ORDER) as SOC_SEV_ORDER
+               from WORK.AE_PTSEV
+              group by USUBJID, TRTA, AEBODSYS) as b
+            on  a.USUBJID = b.USUBJID
+            and a.TRTA = b.TRTA
+            and a.AEBODSYS = b.AEBODSYS;
+    quit;

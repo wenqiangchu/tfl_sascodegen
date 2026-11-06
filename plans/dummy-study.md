@@ -569,3 +569,19 @@ format 声明顺序（SEVERE → MODERATE → MILD）。
 
 **待办**：14.3.1.4 重构为解释 2（SOC/PT 下各有 below 严重程度行）；分页（`page_rows`
 可配、SAS 侧 retain 累积、Page x of Y、每页首尾空行）。
+
+### 布局修正二（14.3.1.4 重构为解释 2）
+
+用户指出原 shell 结构有误：应为 by SOC by PT，SOC 与 PT **各自**带一组严重程度行。
+已重构：`levels` 降为 `soc`→`pt`，严重程度改为两个 `below` block，删除 `sev` level
+与 `TFLSEV`。模型无需改动（一个 level 可同时挂 `same_row` 与 `below`）。
+
+**发现并修掉一个口径错误**：SOC 层严重程度行原按每 SOC/PT 的 `SEV_ORDER` 计数，
+导致三行重叠（MILD 70 vs 应为 54）。已派生 `SOC_SEV_ORDER`（跨 SOC 的 PT 取 min）。
+另一陷阱：自引用 `CREATE TABLE` 会触发递归引用 WARNING，已改为经 `AE_PTSEV` 中转。
+
+结果：输出 1012 行、252 个空行、55 页、P5 断言 8096 格全一致。
+详见 `docs/dummy-study-findings.md` §6.12。
+
+**代价**：dummy study 6 张表不再有任何 level 级 `format` 用法，
+该功能改由 `test/fixtures/sas/runtime_v2/run_formats.py` 覆盖。

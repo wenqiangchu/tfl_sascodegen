@@ -1,17 +1,11 @@
 id: 'tpl_teae_severity'
 body:
-  stub_header: 'Maximum Severity / System Organ Class / Preferred Term'
+  stub_header: 'System Organ Class / Preferred Term'
   chunks:
-    - id: 'ae_by_sev_soc_pt'
+    - id: 'ae_by_soc_pt_sev'
       type: 'hierarchical_summary'
       source_data: 'WORK.AE_MAXSEV'
       levels:
-        - id: 'sev'
-          variable: 'SEV_ORDER'
-          format: 'TFLSEV'
-          node_role: 'analysis'
-          node_analysis_id: 'sev_subjects'
-          missing_policy: 'exclude'
         - id: 'soc'
           variable: 'AEBODSYS'
           label_variable: 'AEBODSYS'
@@ -43,24 +37,6 @@ body:
             column_order: [4, 3, 1, 0]
             direction: 'desc'
       analysis_blocks:
-        - id: 'sev_subjects'
-          anchor_level: 'sev'
-          placement: 'same_row'
-          type: 'categorical_summary_nonexclusive'
-          counting_unit: 'distinct_subject'
-          denominator:
-            scope: 'header_population'
-            unit: 'distinct_subject'
-          rows:
-            - id: 'subjects'
-              type: 'analysis'
-              label: 'Subjects'
-              condition: '1'
-              statistics:
-                - id: 'n'
-                - id: 'pct'
-                  digits: 1
-              cell_format: '{n} ({pct}%)'
         - id: 'soc_subjects'
           anchor_level: 'soc'
           placement: 'same_row'
@@ -79,6 +55,42 @@ body:
                 - id: 'pct'
                   digits: 1
               cell_format: '{n} ({pct}%)'
+        - id: 'soc_severity'
+          anchor_level: 'soc'
+          placement: 'below'
+          type: 'categorical_summary_nonexclusive'
+          counting_unit: 'distinct_subject'
+          denominator:
+            scope: 'header_population'
+            unit: 'distinct_subject'
+          rows:
+            - id: 'soc_severe'
+              type: 'analysis'
+              label: 'SEVERE'
+              condition: 'SOC_SEV_ORDER = 1'
+              statistics:
+                - id: 'n'
+                - id: 'pct'
+                  digits: 1
+              cell_format: '{n} ({pct}%)'
+            - id: 'soc_moderate'
+              type: 'analysis'
+              label: 'MODERATE'
+              condition: 'SOC_SEV_ORDER = 2'
+              statistics:
+                - id: 'n'
+                - id: 'pct'
+                  digits: 1
+              cell_format: '{n} ({pct}%)'
+            - id: 'soc_mild'
+              type: 'analysis'
+              label: 'MILD'
+              condition: 'SOC_SEV_ORDER = 3'
+              statistics:
+                - id: 'n'
+                - id: 'pct'
+                  digits: 1
+              cell_format: '{n} ({pct}%)'
         - id: 'pt_subjects'
           anchor_level: 'pt'
           placement: 'same_row'
@@ -92,6 +104,42 @@ body:
               type: 'analysis'
               label: 'Subjects'
               condition: '1'
+              statistics:
+                - id: 'n'
+                - id: 'pct'
+                  digits: 1
+              cell_format: '{n} ({pct}%)'
+        - id: 'pt_severity'
+          anchor_level: 'pt'
+          placement: 'below'
+          type: 'categorical_summary_nonexclusive'
+          counting_unit: 'distinct_subject'
+          denominator:
+            scope: 'header_population'
+            unit: 'distinct_subject'
+          rows:
+            - id: 'pt_severe'
+              type: 'analysis'
+              label: 'SEVERE'
+              condition: 'SEV_ORDER = 1'
+              statistics:
+                - id: 'n'
+                - id: 'pct'
+                  digits: 1
+              cell_format: '{n} ({pct}%)'
+            - id: 'pt_moderate'
+              type: 'analysis'
+              label: 'MODERATE'
+              condition: 'SEV_ORDER = 2'
+              statistics:
+                - id: 'n'
+                - id: 'pct'
+                  digits: 1
+              cell_format: '{n} ({pct}%)'
+            - id: 'pt_mild'
+              type: 'analysis'
+              label: 'MILD'
+              condition: 'SEV_ORDER = 3'
               statistics:
                 - id: 'n'
                 - id: 'pct'

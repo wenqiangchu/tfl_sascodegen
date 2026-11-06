@@ -152,20 +152,26 @@ resolve_flat_paths <- function(data) {
 }
 
 # Flat chunks come in three shapes, and `row_role` plus `hierarchy_level` say
-# which: a hierarchy node carries its own counts on the same row (same_row), a
-# continuous characteristic prints one row per statistic, and a category level
-# prints "n (pct%)". Treating a same_row node as a statistic row silently drops
-# every SOC and PT count, so the node case is checked first.
+# which: a hierarchy node carries its own counts on the same row (dynamic), a
+# below row sits under the node it belongs to (static), and a continuous or
+# category row prints "n (pct%)" or one line per statistic. A static row also
+# carries a hierarchy level, so it must be appended to the current path rather
+# than truncating it like a node would.
 flatten_mixed <- function(data, table, columns) {
   cells <- list()
   current <- character(0)
   for (i in seq_len(nrow(data))) {
     label <- data$label[[i]]
     level <- data$hierarchy_level[[i]]
-    is_node <- !is.na(level) && level > 0L
+    role <- as.character(data$row_role[[i]])
+    is_node <- !is.na(level) && level > 0L && !identical(role, "static")
     if (is_node) {
       current <- c(current[seq_len(min(length(current), level - 1L))], label)
       path <- paste(current, collapse = " / ")
+      stat_set <- c(n = "n", pct = "pct")
+    } else if (!is.na(level) && level > 0L) {
+      # A below row: keep the node path and append the row label.
+      path <- paste(c(current, label), collapse = " / ")
       stat_set <- c(n = "n", pct = "pct")
     } else {
       stat_set <- if (label %in% names(stat_row_map)) {

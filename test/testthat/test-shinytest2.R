@@ -354,7 +354,7 @@ testthat::test_that("AE hierarchical table generates a complete SAS source previ
   testthat::expect_match(source, "Execute nested primitive analysis", fixed = TRUE)
   testthat::expect_match(source, "_TFL_HFLAT_", fixed = TRUE)
   testthat::expect_match(source, "proc report data=WORK._TFL_ASM_001", fixed = TRUE)
-  testthat::expect_match(source, "hierarchy_level = 1 or (previous_role = 'static'", fixed = TRUE)
+  testthat::expect_match(source, "(hierarchy_level = 1 and row_role ne 'static') or", fixed = TRUE)
   testthat::expect_match(source, "SOC", fixed = TRUE)
   testthat::expect_match(source, "PT", fixed = TRUE)
 })

@@ -116,7 +116,7 @@ testthat::test_that("report headers count membership and report rows preserve fo
   # A blank row marks a block boundary: a new chunk, a top-level node, or the
   # end of a node's below rows. Depth changes alone do not qualify, because
   # indentation already expresses nesting between a node and its children.
-  testthat::expect_match(source, "hierarchy_level = 1 or (previous_role = 'static'", fixed = TRUE)
+  testthat::expect_match(source, "(hierarchy_level = 1 and row_role ne 'static') or", fixed = TRUE)
   testthat::expect_match(source, "chunk_order ne previous_chunk", fixed = TRUE)
 })
 
