@@ -94,7 +94,10 @@ TFL 表的访视必须按临床顺序，所以选了后者，并把探针迁到�
 
 **需要你确认**：接受这次迁移，还是希望保留 `Week 28` 而让访视按字母序输出。
 
-### 2.4 `format` 会静默忽略 `order_variable`（产品级问题，待决策）
+### 2.4 `format` 会静默忽略 `order_variable`（已决策：模型层拒绝）
+
+> **2026-11-07 更新：已决定并实施。** 见本节末尾「最终决策」。
+
 
 `src/emitters/hierarchical.R:285`：
 
@@ -115,6 +118,26 @@ format 分支提前返回，`order_variable`/`order_direction` 被**静默丢弃
 | (b) emitter 支持 format + order | 用 format 提供节点集合、用 order_variable 提供顺序；工作量最大但语义最好 |
 | (c) 保持不变，只在文档写清 | 记录为「format 优先级最高」的已知语义 |
 
+我没有替你做这个决定。
+
+#### 最终决策（2026-11-07）
+
+**选择 (a) 的收窄版：模型层拒绝 `format` + `label_variable` / `order_variable` /
+`order_direction`。**
+
+理由：
+
+1. `format` 同时提供**节点值域、显示标签、节点顺序**三件事，而这三人字段各自只是其中
+   一项的另一种写法，且只能表达数据中已存在的值，无法表达 format 新增的值。
+2. 值域一旦扩大，`order_variable` 的取值空间就与节点不再一一对应，排序变量对新节点
+   **无值可比** —— 所以"忽略它"不是缺陷，是逻辑必然。
+3. `label_variable` 也不该保留：format 路径下它既不影响标签也不影响节点身份
+   （`node_label` 与 `level_value` 都来自 `vvalue(variable)`），写了完全无效。
+4. 先前的"允许保留但忽略"会静默丢弃用户写入，无告警、无结果差异提示。
+
+**未采纳 (b) 支持组合**：实测发现 `format` 驱动时节点顺序来自 `order=data`，而
+`NOTSORTED` 才是"按声明序"的必要条件（不带时是原始值序）。也就是说"用 format 定序"
+本身已足够表达顺序诉求，再开 `order_variable` 后门会破坏 `format` 的清晰语义。
 我没有替你做这个决定。
 
 ## 3. P1 明细：数据与变量字典
@@ -769,15 +792,96 @@ RTF 里体现为 `\\pard\\plain\\intbl\\sb10\\sa10\\qr\\f1\\fs20\\cf1{\\b0\\i0..
    左侧是「每行一行」，且 `block_id` 有重复，SAS 会做笛卡尔积（1012 行变成 6381 行）。
    改成先 `create table` 把 `_block_size` 列并进明细，再单遍数据步累加，行数才稳定。
 
+## 6.14 format 驱动的层级：一个真实的 emitter 缺陷 + 顺序无法被值比对覆盖
+
+14.3.1.5（Serious TEAE by SOC and PT）是专门为验证 `format` 层级加的第 7 张表。它当场
+暴露了两个问题。
+
+### 缺陷：首层用字符型 format 时 SAS 报「已定义为字符型和数值型」
+
+`src/emitters/hierarchical.R` 的 catalog 种子行是：
+
+```sas
+if _n_ = 1 then do;
+  call missing(AEBODSYS);   /* 此处 AEBODSYS 尚未被 SET 定义 */
+  flag = .; output;
+end;
+set _TFL_HNODE_001(keep=AEBODSYS);
+```
+
+**SAS 在 `call missing` 时就按缺失值把变量建成数值型**，随后 `format AEBODSYS $tflssoc.`
+就撞上型别冲突：
+
+```
+ERROR: 变量 AEBODSYS 已定义为字符型和数值型。
+ERROR 48-59: 输出格式 TFLSSOC 没有找到或无法加载。
+```
+
+之前 6 张表全躲过了，因为它们的首层分别是 `TRT01A`、`PARAMCD`（字符但**不带** format）、
+`AEBODSYS`（无 format）和数值型 `AVISITN`——**没有任何一张是「首层 + 字符型 format」**，
+所以这个组合从未被执行。修法是在 `call missing` 之前显式声明：
+
+```sas
+length AEBODSYS $&_TFL_HLABEL_LEN_001;
+```
+
+`&_TFL_HLABEL_LEN_001` 是 emitter 已算好的标签长度宏变量，复用即可，不需要新长度契约。
+`test-z-hierarchical-emitter.R` 已加断言：`length SOC $` 必须出现在 `call missing(SOC);`
+之前。
+
+### 缺陷：值比对天生看不见「顺序」，format 定序等于没验
+
+补上类型声明后 69 行全部算对，`compare_with_sas.R` 报 ok。但把它改成
+`value $tflssoc`（去掉 `NOTSORTED`）——顺序明显从 `Nervous` 开头变成 `Cardiac` 开头——
+**比对依然全部 ok**。
+
+原因是值比对的主键是 `(路径, 列, 统计量)`：
+
+```r
+key = paste(path, column_id, stat, sep = "
+")
+```
+
+顺序错了，主键集合不变，每一格的值也都没变，所以 join 依然全中。也就是说：
+
+> **format 驱动的表，其"顺序"这一半行为在 P5 里完全没有被验证。**
+
+修法有两段：
+
+- `compute_expected.R` 额外写 `generated/expected/node_order.csv`，内容是**从 format
+  声明顺序推出的行序**（23 SOC × (1 + 2 PT) = 69 行）；
+- `compare_with_sas.R` 新增 `check_node_order()`：按 `report_order` 重建报告路径序列，
+  与 `node_order.csv` 逐行 `identical()`。不一致就打印第一个差异位置并
+  `quit(status = 1L)`。
+
+**已验证该守卫会失败**：删掉 `(notsorted)` 后
+
+```
+node order (format-driven tables)
+t_14_3_1_5_serious_teae        69 rows  PROBLEM
+  first difference at row 1: expected Nervous system disorders, got Cardiac disorders
+node order contract violated: the format declaration order was not kept
+```
+
+进程退出码 1；恢复后回到 `ok`、退出码 0。
+
+### 教训
+
+1. **fixture 的目的是覆盖组合，不是覆盖代码行。** 7 张表里 6 张都"有 format 或字符变量"，
+   但只有 14.3.1.5 同时具备「首层 + 字符 format」，缺陷就只在那里现形。要刻意去找
+   未被覆盖的**字段组合**，而不是看行覆盖率。
+2. **按主键 join 的比对只能验值，不能验序。** 凡是"顺序本身是契约"的输出（format 定序、
+   `result_sort`、`NOTSORTED`），都必须另有一条按序列比对的断言。
+
 ## 7. 证据位置
 
 | 内容 | 位置 |
 | --- | --- |
 | 阶段规划与实施记录 | `plans/dummy-study.md` §4、§7、§8、§9 |
 | 数据事实（生成物） | `dummy_study/variables/{adsl,adae,adlbh}.md` |
-| shell 规格 | `dummy_study/shell/*.md`（6 个） |
-| shell 校验输出 | `python dummy_study/tools/check_shells.py`（6 shells / 150 descriptors） |
-| metadata 源码 | `dummy_study/metadata/`（14 个 YAML） |
+| shell 规格 | `dummy_study/shell/*.md`（7 个） |
+| shell 校验输出 | `python dummy_study/tools/check_shells.py`（7 shells / 150 descriptors） |
+| metadata 源码 | `dummy_study/metadata/`（17 个 YAML） |
 | bundle 校验输出 | `Rscript dummy_study/tools/check_metadata.R`（8.3 秒，零错误） |
-| 生成源码（不提交） | `dummy_study/generated/sas/*.sas`（6 个，372–1074 行） |
+| 生成源码（不提交） | `dummy_study/generated/sas/*.sas`（7 个，372–1296 行） |
 | 守卫测试 | `test/testthat/test-dummy-study-{dictionary,shells,metadata}.R` |

@@ -324,3 +324,84 @@ testthat::test_that("ZIP structure rejects unknown entries and filename identity
   testthat::expect_false(result2$passed)
   testthat::expect_true(any(vapply(result2$errors, function(x) identical(x$code, "bundle_file_identity_invalid"), logical(1))))
 })
+
+# A level is format-driven or variable-driven, never both. A format supplies the
+# node domain, the display label and the node order together, so label_variable
+# and order_variable/order_direction each restate one of those from a source that
+# cannot serve values the data does not contain. Accepting the combination used
+# to discard what the caller wrote, with no diagnostic at all.
+testthat::test_that("a level rejects label and order fields together with format", {
+  build <- function(extra) {
+    level <- paste(c(
+      "        - id: l1",
+      "          variable: SOC",
+      "          node_role: analysis",
+      "          node_analysis_id: a1",
+      "          missing_policy: exclude",
+      extra
+    ), collapse = "\n")
+    paste(c(
+      "schema_version: 2",
+      "populations:",
+      "  - id: p",
+      "    label: Population",
+      "    expression: '1'",
+      "headers: []",
+      "tables:",
+      "  - id: t",
+      "    population_id: p",
+      "    header_id: h",
+      "    template_id: x",
+      "templates:",
+      "  - id: x",
+      "    body:",
+      "      chunks:",
+      "      - id: ch",
+      "        type: hierarchical_summary",
+      "        source_data: work.events",
+      "        analysis_blocks:",
+      "        - id: a1",
+      "          anchor_level: l1",
+      "          placement: same_row",
+      "          type: categorical_summary_nonexclusive",
+      "          counting_unit: distinct_subject",
+      "          denominator:",
+      "            scope: header_population",
+      "            unit: distinct_subject",
+      "          rows:",
+      "          - id: r1",
+      "            type: analysis",
+      "            label: Subjects",
+      "            condition: '1'",
+      "            statistics:",
+      "            - id: 'n'",
+      "            cell_format: '{n}'",
+      "        levels:",
+      level
+    ), collapse = "\n")
+  }
+  # The unformatted level still needs an order variable and direction, so that is
+  # the baseline that must parse.
+  unformatted <- build(c("          order_variable: SOCN", "          order_direction: asc"))
+  testthat::expect_true(parse_bundle_yaml(unformatted)$passed)
+
+  # A formatted level needs neither, and is the other valid shape.
+  formatted <- build("          format: $soc_fmt")
+  testthat::expect_true(parse_bundle_yaml(formatted)$passed)
+
+  for (field in c("label_variable", "order_variable", "order_direction")) {
+    offending <- build(c("          format: $soc_fmt", paste0("          ", field, ": X")))
+    result <- parse_bundle_yaml(offending)
+    testthat::expect_false(result$passed, info = field)
+    messages <- vapply(result$errors, `[[`, "", "message")
+    testthat::expect_true(any(grepl(field, messages, fixed = TRUE)), info = field)
+    testthat::expect_true(any(grepl("cannot be combined with 'format'", messages,
+                                    fixed = TRUE)), info = field)
+  }
+
+  # A formatted level also no longer requires, and must not be forced into,
+  # the order pair: the format drives ordering by itself.
+  both <- build(c("          format: $soc_fmt", "          order_variable: SOCN",
+                  "          order_direction: asc"))
+  testthat::expect_false(parse_bundle_yaml(both)$passed)
+})

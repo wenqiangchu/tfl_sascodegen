@@ -617,3 +617,77 @@ format 声明顺序（SEVERE → MODERATE → MILD）。
 结果：**90 页**（1/2/1/16/64/6），每页 ≤ 22 打印行且首尾各一空行，P5 断言 10680 格
 仍全一致。`compare_with_sas.R` 新增 `check_pagination()`，把「不超容量 + 页首尾均有垫行」
 变成可失败的断言（已注入故障验证其会失败）。
+
+## 10. format 驱动层级（14.3.1.5）
+
+### 10.1 目标
+
+把 `levels[].format` 这条路径变成被真正执行、被真正断言的路径。此前 6 张表虽然覆盖了
+`format`（14.3.2.1 的 `visit` 层用数值型 format），但从未覆盖两个组合：
+
+1. **首层用字符型 format**；
+2. **父层和子层都用 format**（完整的格式化值组合）。
+
+新增第 7 张表 **14.3.1.5 Serious TEAE by SOC and PT**，并明确标注它**不是临床报表需求**，
+只为验证 format 的零频节点行为。数据事实：`AESER = 'Y'` 只有 3 行 / 3 例受试者，
+落在 1 个 SOC、2 个 PT 上。
+
+### 10.2 形状
+
+两个 level 都声明 `format`（方案 A）：
+
+| level | 变量 | format | 值域 |
+| --- | --- | --- | --- |
+| `soc` | `AEBODSYS` | `$tflssoc` | TEAE 子集的全部 23 个 SOC |
+| `pt` | `AEDECOD` | `$tflspt` | 2 个有严重事件的 PT |
+
+结果 **69 行 = 23 SOC + 46 PT**，其中 **66 行是零频**（22 个零频 SOC + 44 个零频 PT）。
+44 这个数字是「父层 format × 子层 format」的必然结果：每个 SOC 下都长出完整子值域。
+
+两个 format 都在本表 `custom_code.before` 里定义，**且都带 `(NOTSORTED)`**。
+
+### 10.3 模型收紧：format 与三个字段互斥
+
+`parse_level_value()` 现在拒绝 `format` 与 `label_variable` / `order_variable` /
+`order_direction` 同时出现。理由：format 同时给出**值域 + 标签 + 顺序**，那三个字段
+各自只能表达其中一项，且只能表达数据里已存在的值，无法表达 format 新增的节点；
+先前"允许保留但生成时忽略"等于静默丢弃用户写入。
+
+### 10.4 `NOTSORTED` 是调用方的责任
+
+`PROC FORMAT` 默认按 `START` 排序丢弃声明顺序，`PRELOADFMT ORDER=DATA` 于是退回原始值
+顺序。应用不读 format catalog，无法判断也不需要判断，因此：**不检查、不告警、只记录**。
+
+实测结果（`\qr`-free 探针，format 声明为 `2='ZULU' 3='ALPHA' 1='MIKE'`）：
+
+| 选项 | 输出顺序 |
+| --- | --- |
+| `order=data`，无 `NOTSORTED` | 原始值序 MIKE, ZULU, ALPHA |
+| `order=data`，有 `(NOTSORTED)` | 声明序 ZULU, ALPHA, MIKE |
+| `order=internal` / `order=freq` | 原始值序 |
+| `order=formatted` | 按标签字母序 |
+
+`NOTSORTED` 的结果与数据到达顺序无关，且能在 `CNTLOUT` → `CNTLIN` 往返中存活
+（不带时声明序被丢弃）。这些都写进 `docs/design-decisions.md` 与用户契约。
+
+### 10.5 两个被这次新增抓出来的缺陷
+
+1. **首层字符 format 会撞型别**。catalog 种子行的 `call missing(AEBODSYS)` 在 `SET`
+   之前把变量建成数值型，随后 `format AEBODSYS $fmt.` 报「已定义为字符型和数值型」。
+   修法：`call missing` 之前显式 `length <var> $<label_len>;`。
+2. **P5 值比对看不见顺序**。去掉 `NOTSORTED` 后顺序明显改变（首行从 Nervous 变 Cardiac），
+   而按 `(路径, 列, 统计量)` 的 join 依然全 ok。修法：`compute_expected.R` 额外产出
+   `node_order.csv`（format 声明序推出的行序），`compare_with_sas.R` 的
+   `check_node_order()` 逐行比对，不一致即失败。
+
+另加 `check_format_nodes()`：断言 23 父 / 22 零频、46 子 / 44 零频、3 行非零，
+把「零频节点必须被打印而不是被丢弃」变成可失败的断言（缺席的节点没有单元格可与之
+不一致，值比对天生看不见）。
+
+### 10.6 结果
+
+| 表 | 页 | 行 | 最大/页 |
+| --- | ---: | ---: | ---: |
+| 14.3.1.5 | 5 | 97 | 21 |
+
+7 张表合计 **95 页**，每页在容量内且首尾有垫行；P5 **11232** 个断言单元格全部一致。

@@ -299,8 +299,13 @@ testthat::test_that("formatted hierarchy text bounds use compiled format widths 
   chunk <- bundle$templates[[1L]]$body$chunks[[1L]]
   chunk$levels[[1L]]$variable <- "AVISITN"
   chunk$levels[[1L]]$format <- "visit_fmt"
-  chunk$levels[[1L]]$label_variable <- "IGNORED_LABEL"
+  chunk$levels[[1L]]$order_variable <- NULL
+  chunk$levels[[1L]]$order_direction <- NULL
+  # label_variable cannot be combined with format (rejected at the model layer),
+  # so the sizing probe must never consult it.
   chunk$levels[[2L]]$format <- "$category_fmt"
+  chunk$levels[[2L]]$order_variable <- NULL
+  chunk$levels[[2L]]$order_direction <- NULL
   chunk$levels[[2L]]$missing_policy <- "label"
   chunk$levels[[2L]]$missing_label <- strrep("M", 700L)
   plan <- list(batch_order = 1L, chunks = list(chunk))
@@ -350,6 +355,20 @@ testthat::test_that("empty formatted roots seed only the catalog and joins retai
   root <- paste(hierarchical_formatted_level_source(plan, 1L), collapse = "\n")
   testthat::expect_match(root,
     "if _n_ = 1 then do;\n    call missing(SOC);\n    flag = .; output;\n  end;", fixed = TRUE)
+  # The seed writes a missing value before SET defines the variable, so the type
+  # has to be declared. Without it SAS creates a numeric SOC and the character
+  # format then fails with "already defined as character and numeric" -- which is
+  # exactly what a first level driven by a character format hits.
+  testthat::expect_match(root, "length SOC $", fixed = TRUE)
+  testthat::expect_lt(regexpr("length SOC $", root, fixed = TRUE)[[1L]],
+                      regexpr("call missing(SOC);", root, fixed = TRUE)[[1L]])
+  # A numeric format must not get a character declaration: CALL MISSING already
+  # picks the numeric type, and the `$` in `$soc_fmt` is what separates the two.
+  chunk$levels[[1L]]$format <- "num_fmt"
+  plan$chunks[[1L]] <- chunk
+  numeric_root <- paste(hierarchical_formatted_level_source(plan, 1L), collapse = "
+")
+  testthat::expect_false(grepl("length SOC $", numeric_root, fixed = TRUE))
   testthat::expect_lt(regexpr("flag = .; output;", root, fixed = TRUE)[[1L]],
                       regexpr("set _TFL_HNODE_001(keep=SOC);", root, fixed = TRUE)[[1L]])
   observed_section <- strsplit(root, "data _TFL_HFOBS_001_001;", fixed = TRUE)[[1L]][[2L]]
@@ -416,9 +435,16 @@ testthat::test_that("formatted levels replace inherited ordering before another 
   bundle <- hierarchical_report_fixture()
   chunk <- bundle$templates[[1L]]$body$chunks[[1L]]
   chunk$levels[[1L]]$format <- "$soc_fmt"
+  chunk$levels[[1L]]$order_variable <- NULL
+  chunk$levels[[1L]]$order_direction <- NULL
   chunk$levels[[2L]]$format <- "$pt_fmt"
+  chunk$levels[[2L]]$order_variable <- NULL
+  chunk$levels[[2L]]$order_direction <- NULL
+  # Level 3 stays unformatted on purpose: the test asserts that a formatted
+  # level's ordering is not inherited by a following non-format level.
   chunk$levels[[3L]] <- list(id = "l3", variable = "SEV", order_variable = "SEVN",
-                            order_direction = "asc", node_role = "label", missing_policy = "exclude")
+                            order_direction = "asc", node_role = "label",
+                            missing_policy = "exclude")
   bundle$templates[[1L]]$body$chunks[[1L]] <- chunk
   result <- generate_table_source(bundle, "t1")
   testthat::expect_true(result$passed)
@@ -443,6 +469,9 @@ testthat::test_that("formatted missing labels require real records rather than p
     bundle <- hierarchical_report_fixture()
     level <- bundle$templates[[1L]]$body$chunks[[1L]]$levels[[2L]]
     level$format <- "$category_fmt"
+    # A formatted level takes its order from the format, not from these fields.
+    level$order_variable <- NULL
+    level$order_direction <- NULL
     level$missing_policy <- policy
     if (policy == "label") level$missing_label <- "Missing"
     bundle$templates[[1L]]$body$chunks[[1L]]$levels[[2L]] <- level

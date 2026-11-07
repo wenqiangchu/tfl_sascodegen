@@ -766,15 +766,31 @@ log 判断结果。subject 标识固定为 `USUBJID`，不由 chunk 声明。
 | 字段 | 语义 |
 | --- | --- |
 | variable | 分组值变量。 |
-| format | 可选的 SAS format 名称，不带末尾句点；字符型 format 使用 `$` 前缀。指定后，格式化值同时作为节点身份、节点值和显示标签。 |
-| label_variable | 展示标签变量；缺省可使用 variable。 |
-| order_variable | 未指定 `format` 时必填的默认排序变量；指定 `format` 时可省略且被忽略。 |
-| order_direction | 未指定 `format` 时必填的默认排序方向，只能为 asc 或 desc；指定 `format` 时可省略且被忽略。 |
+| format | 可选的 SAS format 名称，不带末尾句点；字符型 format 使用 `$` 前缀。指定后，格式化值同时作为节点身份、节点值和显示标签，节点顺序也由 format 决定。**不能与 label_variable、order_variable、order_direction 同时出现**（结构错误）。 |
+| label_variable | 展示标签变量；缺省可使用 variable。指定 `format` 时不允许出现。 |
+| order_variable | 未指定 `format` 时必填的默认排序变量。指定 `format` 时不允许出现。 |
+| order_direction | 未指定 `format` 时必填的默认排序方向，只能为 asc 或 desc。指定 `format` 时不允许出现。 |
 | result_sort | 可选的统计结果驱动排序 mapping，结构见下文；声明后覆盖展示顺序但不删除默认排序字段。 |
 | node_role | label 或 analysis。 |
 | node_analysis_id | node_role 为 analysis 时引用 same-row block。 |
 | missing_policy | exclude、label 或 error 的业务意图。 |
 | missing_label | missing_policy 为 label 时的展示标签。 |
+
+一个 level 要么由 `format` 驱动，要么由 `order_variable`/`order_direction` 驱动，两者互斥。
+`format` 同时提供节点值域、显示标签和节点顺序，因此继续保留那三个字段只会表达同一个维度
+的另一种写法，而它们无法表达 `format` 新增的、数据中不存在的值。
+
+**`format` 驱动时的节点顺序取决于 format 定义里是否写 `NOTSORTED`：**
+
+| format 定义 | 节点顺序 |
+| --- | --- |
+| `value myfmt (NOTSORTED) 2='B' 3='C' 1='A';` | 声明顺序（B、C、A） |
+| `value myfmt 2='B' 3='C' 1='A';` | 原始值顺序（1、2、3 → A、B、C），与声明顺序无关 |
+
+需要「按 format 里书写的顺序显示」时必须写 `NOTSORTED`。不写时 SAS 会对 format 的 START
+值建立有序查找结构，声明顺序不再保留。应用不读取 format catalog，因此无法代为判断，
+也不会在漏写时告警——是否加 `NOTSORTED` 由调用方按需决定。如果希望按统计量排序，
+两种写法都可以，再用 `result_sort` 覆盖展示顺序。
 
 动态 level 可引用调用方提供的 SAS format；format 必须已经在调用方的 format
 catalog 中定义，或由 `custom_code.before` 定义。应用不读取 catalog，也不检查 format
@@ -801,10 +817,11 @@ distinct counting unit 仍须在计数前按既有规则归约。零频 class �
 只为当前父节点下真实存在的缺失值生成 Missing 节点；占位记录形成的零频缺失类别应
 排除，普通非缺失 format 类别即使频数为零仍保留。
 
-指定 format 时，`order_variable` 不参与节点排序；节点顺序按 format 的存储顺序生成，
-调用方需要保留声明顺序时应在 PROC FORMAT 中使用 `NOTSORTED`。未指定 format 时沿用
-`label_variable`、`order_variable` 和 `order_direction`；`result_sort` 仍可覆盖最终
-展示顺序。当前 format 只负责提供完整节点列表和原始值到显示值的映射。ranges、
+指定 format 时不能再用 `label_variable`、`order_variable` 或 `order_direction`（见前文
+字段表的互斥规则）；节点顺序由 format 决定，其中「声明顺序」需要 PROC FORMAT 中显式
+写 `NOTSORTED`，否则为原始值顺序。未指定 format 时沿用 `order_variable` 和
+`order_direction`；`result_sort` 在两种情形下都可覆盖最终展示顺序。当前 format 只负责
+提供完整节点列表和原始值到显示值的映射。ranges、
 `OTHER`、特殊 missing 和 multilabel format 的专门语义不在当前版本范围内；需要这些
 效果时由调用方在分析前自行准备数据或 format 结果。
 

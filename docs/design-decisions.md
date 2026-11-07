@@ -1511,14 +1511,40 @@ format 使用 `$` 前缀。emitter 负责补句点并生成 FORMAT 绑定。字�
 路径，应用不读取 catalog，也不检查 format 是否存在或原始变量类型是否匹配。
 
 parser 的结构规则是：`format` 必须是非空字符串，且不得以句点结尾；不解析名称是否
-为 SAS 合法 format。未指定 format 时，`order_variable` 和 `order_direction` 仍为必填；
-指定 format 时，这两个字段可以省略，也可以保留，生成时均忽略。`label_variable` 始终
-可选，指定 format 时忽略。
+为 SAS 合法 format。一个 level 要么是 format 驱动，要么是变量驱动，**两者互斥**：
+未指定 format 时，`order_variable` 和 `order_direction` 必填，`label_variable` 可选；
+指定 format 时，`label_variable`、`order_variable`、`order_direction` **一律不允许出现**，
+出现即报结构错误。
 
-指定 format 时，`order_variable` 不参与节点排序；节点顺序按 format 的存储顺序生成。
-调用方需要保留 PROC FORMAT 的声明顺序时使用 `NOTSORTED`。未指定 format 时沿用
-`label_variable`、`order_variable` 和 `order_direction`。`result_sort` 仍可在统计完成
-后覆盖最终展示顺序。
+> 2026-11-07 收紧：先前契约允许「指定 format 时这三个字段可省略也可保留，生成时忽略」。
+> 实际后果是静默丢弃用户写入的内容——既无告警也无结果差异提示。format 同时提供节点
+> 值域、显示标签和节点顺序，这三个字段各自只是其中一项的另一种写法，且它们只能表达
+> 数据中已存在的值，无法表达 format 新增的值。因此改为拒绝，而不是接受后忽略。
+
+`result_sort` 不受影响，仍可在统计完成后覆盖最终展示顺序，两种 level 都适用。
+
+### 节点顺序与 `NOTSORTED`
+
+未指定 format 时，节点顺序由 `order_variable` + `order_direction` 决定。
+
+指定 format 时，emitter 使用 `PROC MEANS ... CLASS ... / PRELOADFMT ORDER=DATA` 取得
+format 值域，节点顺序来自该 class 变量的排列。**是否保留 PROC FORMAT 的声明顺序，取决
+于 format 定义时有没有写 `NOTSORTED`**，两条路径的结果不同：
+
+| format 定义 | 节点顺序 | 实测 |
+| --- | --- | --- |
+| `<name> (NOTSORTED) ...` | **声明顺序** | 声明 `2,3,1` → 输出 `2,3,1` |
+| `<name> ...`（无 `NOTSORTED`） | **原始值顺序**（与声明顺序无关） | 声明 `2,3,1` → 输出 `1,2,3` |
+
+原因：不带 `NOTSORTED` 时 SAS 对 format 的 START 值建立有序查找结构，声明顺序这一信息
+不再保留。因此「按想要的顺序显示」在 format 驱动下**必须写 `NOTSORTED`**，这不是可选项。
+
+应用不读 catalog、不检查 format 定义，因此**无法代替调用方判断**是否需要 `NOTSORTED`，
+也不会在漏写时告警。调用方按以下规则自行决定：
+
+- 希望节点按 format 里的书写顺序出现 → 必须加 `NOTSORTED`；
+- 接受按原始值顺序出现（例如原始值本身就是 1,2,3 的编码）→ 可以不加；
+- 希望按统计量排序 → 两种都可以，用 `result_sort` 覆盖。
 
 ### 2026-11-02 审阅修复：目录、分母与真实缺失值
 

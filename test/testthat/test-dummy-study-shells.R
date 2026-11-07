@@ -13,6 +13,7 @@ expected_shells <- c(
   "14.2.3-hgb-shift.md",
   "14.3.1.2-teae-by-soc-pt.md",
   "14.3.1.4-teae-by-soc-pt-severity.md",
+  "14.3.1.5-serious-teae-by-soc-pt.md",
   "14.3.2.1-hgb-by-visit.md"
 )
 sections <- c("## 1. Identity", "## 2. Columns", "## 3. Rows",

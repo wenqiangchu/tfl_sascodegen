@@ -64,12 +64,21 @@ level_ui <- function(level, prefix, index, chunk) {
   p <- paste0(prefix, "level_", index, "_")
   ids <- vapply(chunk$levels %||% list(), function(x) x$id, character(1))
   has_format <- !is.null(level$format) && nzchar(level$format)
+  # A level is format-driven or variable-driven, never both: the parser rejects
+  # the combination, so the note states the rule instead of describing a
+  # precedence the model no longer accepts.
   format_note <- tags$small(
     class = "help-block",
     if (has_format) {
-      "Format supplies the node value, label, and display order; order and label variables are ignored."
+      paste0("Format supplies the node domain, the display label and the node ",
+             "order. Label and order variables cannot be combined with it; ",
+             "clear the format to use them instead. The format must be defined ",
+             "by the calling SAS environment, and it needs NOTSORTED if its ",
+             "declaration order is to be kept.")
     } else {
-      "Optional. The format must be defined by the calling SAS environment."
+      paste0("Optional. A level without a format needs an order variable and ",
+             "an order direction. The format must be defined by the calling ",
+             "SAS environment.")
     }
   )
   tags$div(

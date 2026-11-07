@@ -724,7 +724,23 @@ parse_level_value <- function(value, path, collector) {
                                           error_path_field(path, "order_direction"), collector,
                                           "order_direction")
   }
-  if (!has_field(value, "format")) {
+  # A level is either format-driven or variable-driven, never both. A format
+  # supplies the node domain, the display label and the node order together, so
+  # label_variable and order_variable would each restate one of those from a
+  # source that cannot serve values the data does not contain. Accepting them
+  # would silently discard what the caller wrote, so the combination is
+  # rejected instead.
+  if (has_field(value, "format")) {
+    for (field in c("label_variable", "order_variable", "order_direction")) {
+      if (!has_field(value, field)) next
+      add_value_error(collector, error_path_field(path, field),
+                      sprintf(paste0("Field '%s' cannot be combined with 'format'. ",
+                                     "A format supplies the node domain, label and ",
+                                     "order; declare the level either with ",
+                                     "'format' or with 'order_variable' and ",
+                                     "'order_direction'."), field))
+    }
+  } else {
     if (!has_field(value, "order_variable")) add_required_error(collector, path, "order_variable")
     if (!has_field(value, "order_direction")) add_required_error(collector, path, "order_direction")
   }
@@ -783,6 +799,9 @@ parse_level_value <- function(value, path, collector) {
   invalid_level <- is.null(id) || is.null(variable) || is.null(node_role) ||
     is.null(missing_policy) ||
     (has_field(value, "format") && is.null(format_name)) ||
+    (has_field(value, "format") &&
+     any(vapply(c("label_variable", "order_variable", "order_direction"),
+                function(field) has_field(value, field), logical(1L)))) ||
     (!has_field(value, "format") &&
      (is.null(order_variable) || is.null(order_direction)))
   if (invalid_level) return(NULL)

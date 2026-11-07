@@ -390,10 +390,136 @@ for (column_id in column_ids) {
   }
 }
 
+# --- 14.3.1.5 Serious TEAE by SOC and PT (format-driven levels) --------------
+
+# This table exists to exercise format-driven levels, so the node universe is
+# deliberately wider than the data: both levels declare a format and the report
+# prints the full cross product, meaning all 23 SOCs and, under each of them,
+# both formatted Preferred Terms. Only one SOC carries any serious event.
+#
+# The formats are written with NOTSORTED, so the SOC order is the declaration
+# order in the table's custom_code.before, not the alphabetical order of the
+# MedDRA strings. The expectations below therefore hard-code that declaration
+# order instead of sorting, which is what makes the format ordering testable.
+serious_soc_order <- c(
+  "NERVOUS SYSTEM DISORDERS",
+  "CARDIAC DISORDERS",
+  "VASCULAR DISORDERS",
+  "RESPIRATORY, THORACIC AND MEDIASTINAL DISORDERS",
+  "GASTROINTESTINAL DISORDERS",
+  "SKIN AND SUBCUTANEOUS TISSUE DISORDERS",
+  "MUSCULOSKELETAL AND CONNECTIVE TISSUE DISORDERS",
+  "INFECTIONS AND INFESTATIONS",
+  "INVESTIGATIONS",
+  "INJURY, POISONING AND PROCEDURAL COMPLICATIONS",
+  "METABOLISM AND NUTRITION DISORDERS",
+  "PSYCHIATRIC DISORDERS",
+  "RENAL AND URINARY DISORDERS",
+  "EYE DISORDERS",
+  "EAR AND LABYRINTH DISORDERS",
+  "HEPATOBILIARY DISORDERS",
+  "IMMUNE SYSTEM DISORDERS",
+  "REPRODUCTIVE SYSTEM AND BREAST DISORDERS",
+  "SOCIAL CIRCUMSTANCES",
+  "SURGICAL AND MEDICAL PROCEDURES",
+  "CONGENITAL, FAMILIAL AND GENETIC DISORDERS",
+  "NEOPLASMS BENIGN, MALIGNANT AND UNSPECIFIED (INCL CYSTS AND POLYPS)",
+  "GENERAL DISORDERS AND ADMINISTRATION SITE CONDITIONS"
+)
+serious_pt_order <- c("SYNCOPE", "PARTIAL SEIZURES WITH SECONDARY GENERALISATION")
+
+# The format labels are the display values the report prints.
+serious_soc_label <- c(
+  "NERVOUS SYSTEM DISORDERS" = "Nervous system disorders",
+  "CARDIAC DISORDERS" = "Cardiac disorders",
+  "VASCULAR DISORDERS" = "Vascular disorders",
+  "RESPIRATORY, THORACIC AND MEDIASTINAL DISORDERS" =
+    "Respiratory, thoracic and mediastinal disorders",
+  "GASTROINTESTINAL DISORDERS" = "Gastrointestinal disorders",
+  "SKIN AND SUBCUTANEOUS TISSUE DISORDERS" = "Skin and subcutaneous tissue disorders",
+  "MUSCULOSKELETAL AND CONNECTIVE TISSUE DISORDERS" =
+    "Musculoskeletal and connective tissue disorders",
+  "INFECTIONS AND INFESTATIONS" = "Infections and infestations",
+  "INVESTIGATIONS" = "Investigations",
+  "INJURY, POISONING AND PROCEDURAL COMPLICATIONS" =
+    "Injury, poisoning and procedural complications",
+  "METABOLISM AND NUTRITION DISORDERS" = "Metabolism and nutrition disorders",
+  "PSYCHIATRIC DISORDERS" = "Psychiatric disorders",
+  "RENAL AND URINARY DISORDERS" = "Renal and urinary disorders",
+  "EYE DISORDERS" = "Eye disorders",
+  "EAR AND LABYRINTH DISORDERS" = "Ear and labyrinth disorders",
+  "HEPATOBILIARY DISORDERS" = "Hepatobiliary disorders",
+  "IMMUNE SYSTEM DISORDERS" = "Immune system disorders",
+  "REPRODUCTIVE SYSTEM AND BREAST DISORDERS" = "Reproductive system and breast disorders",
+  "SOCIAL CIRCUMSTANCES" = "Social circumstances",
+  "SURGICAL AND MEDICAL PROCEDURES" = "Surgical and medical procedures",
+  "CONGENITAL, FAMILIAL AND GENETIC DISORDERS" =
+    "Congenital, familial and genetic disorders",
+  "NEOPLASMS BENIGN, MALIGNANT AND UNSPECIFIED (INCL CYSTS AND POLYPS)" =
+    "Neoplasms benign, malignant and unspecified (incl cysts and polyps)",
+  "GENERAL DISORDERS AND ADMINISTRATION SITE CONDITIONS" =
+    "General disorders and administration site conditions"
+)
+serious_pt_label <- c(
+  "SYNCOPE" = "Syncope",
+  "PARTIAL SEIZURES WITH SECONDARY GENERALISATION" =
+    "Partial seizures with secondary generalisation"
+)
+
+serious <- teae[!is.na(teae$AESER) & teae$AESER == "Y", ]
+stopifnot(setequal(unique(serious$AEBODSYS), "NERVOUS SYSTEM DISORDERS"))
+stopifnot(all(unique(serious$AEDECOD) %in% serious_pt_order))
+
+for (column_id in column_ids) {
+  in_column <- if (identical(column_id, "overall")) rep(TRUE, nrow(serious)) else
+    serious$TRTA == arm_values[[column_id]]
+  denominator <- if (identical(column_id, "overall")) nrow(adsl) else
+    sum(adsl$TRT01A == arm_values[[column_id]], na.rm = TRUE)
+  serious_arm <- serious[in_column, ]
+
+  for (soc in serious_soc_order) {
+    soc_label <- serious_soc_label[[soc]]
+    soc_rows <- serious_arm[!is.na(serious_arm$AEBODSYS) &
+                              serious_arm$AEBODSYS == soc, ]
+    n_soc <- subject_count(soc_rows)
+    expected <- emit(expected, "t_14_3_1_5_serious_teae", soc_label, soc_label, 1L,
+                     column_id, list(n = n_soc, pct = 100 * n_soc / denominator),
+                     asserted = c("n", "pct"))
+    for (pt in serious_pt_order) {
+      pt_label <- serious_pt_label[[pt]]
+      pt_rows <- soc_rows[!is.na(soc_rows$AEDECOD) & soc_rows$AEDECOD == pt, ]
+      n_pt <- subject_count(pt_rows)
+      expected <- emit(expected, "t_14_3_1_5_serious_teae",
+                       paste(soc_label, pt_label, sep = " / "), pt_label, 2L,
+                       column_id, list(n = n_pt, pct = 100 * n_pt / denominator),
+                       asserted = c("n", "pct"))
+    }
+  }
+}
+
 # --- write -------------------------------------------------------------------
 
 result <- do.call(rbind, expected)
 result <- result[order(result$table, result$path, result$column_id, result$stat), ]
+
+# The cell comparison is keyed, so it cannot see display order. For the table
+# whose levels are format-driven the order *is* the behaviour under test, so the
+# expected sequence of report rows is written alongside the cells. It comes from
+# the format declaration order, which NOTSORTED preserves; without NOTSORTED SAS
+# falls back to the raw value order and this sequence would no longer match.
+node_order_path <- file.path(out_dir, "node_order.csv")
+declared_soc_order <- vapply(serious_soc_order, function(soc) serious_soc_label[[soc]],
+                             character(1L), USE.NAMES = FALSE)
+order_rows <- unlist(lapply(declared_soc_order, function(soc_label) {
+  c(soc_label, unlist(lapply(unname(serious_pt_label), function(pt_label) {
+    paste(soc_label, pt_label, sep = " / ")
+  })))
+}))
+utils::write.csv(data.frame(table = "t_14_3_1_5_serious_teae",
+                            position = seq_along(order_rows),
+                            path = order_rows,
+                            stringsAsFactors = FALSE),
+                 node_order_path, row.names = FALSE)
 row.names(result) <- NULL
 utils::write.csv(result, file.path(out_dir, "expected.csv"), row.names = FALSE)
 

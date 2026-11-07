@@ -8,11 +8,12 @@
 | 阶段 | 内容 | 状态 |
 | --- | --- | --- |
 | P1 | 目录、数据、变量字典 | 完成 |
-| P2 | 6 个 MD shell | 完成 |
+| P2 | 7 个 MD shell | 完成 |
 | P3 | metadata bundle（schema_version 2） | 完成 |
 | P4 | 生成并运行 SAS | 完成 |
 | P5 | R 独立计算比对 | 完成 |
 | P6 | 分页版式（`page_rows`、`Page x of Y`、页边空白行） | 完成 |
+| P7 | format 驱动层级（14.3.1.5：零频节点、`NOTSORTED` 定序） | 完成 |
 
 ## 分页
 
@@ -101,13 +102,13 @@ Variable dictionary / Chunk plan / Open points），写明每行每 section 用�
 
 `metadata/` 是给程序读的同一份规格：`manifest.yaml` + `populations.yaml` +
 `headers.yaml` + `tables/` + `templates/`。它由 `tools/check_metadata.R` 校验，
-用生产 codec 解析、生产模型验证，再把 6 张表各生成两次比对确定性。
+用生产 codec 解析、生产模型验证，再把 7 张表各生成两次比对确定性。
 
 ```powershell
 # 只校验，不写文件
 Rscript dummy_study/tools/check_metadata.R
 
-# 校验并写出 generated/metadata.zip 与 6 个 .sas
+# 校验并写出 generated/metadata.zip 与 7 个 .sas
 Rscript dummy_study/tools/check_metadata.R --write
 ```
 
@@ -120,15 +121,17 @@ Rscript dummy_study/tools/check_metadata.R --write
 1. **population 表达式在 header source 上求值**。若 `header.source_data` 指向
    `WORK.*` 派生表，该表必须带上 population 表达式用到的全部变量（例如 `SAFFL`），
    否则 SAS 编译期直接报「变量没有找到」。
-2. **每个 level 要么给 `format`，要么同时给 `order_variable` + `order_direction`**。
-   AE 的 SOC/PT 层显示顺序由 `result_sort` 决定，但模型仍要求声明排序变量。
+2. **每个 level 要么给 `format`，要么同时给 `order_variable` + `order_direction`，
+   两种写法互斥**。同时给 `format` 和 `label_variable`/`order_variable`/
+   `order_direction` 现在是结构错误：format 同时提供节点值域、显示标签和节点顺序，
+   那三个字段只会重复它、且无法表达 format 新增的值。
 3. **`cell_format` 的占位符必须与该行 `statistics` 的 id 集合完全相同**，
    所以连续型表按「一行一个统计量行」组织（n / Mean (SD) / Median / Q1, Q3 / Min, Max）。
 
 ### 在真实 SAS 中运行
 
 ```powershell
-# 全部 6 张表
+# 全部 7 张表
 Rscript dummy_study/tools/run_sas.R
 
 # 只跑一张
@@ -141,9 +144,17 @@ Rscript dummy_study/tools/run_sas.R --table t_14_1_1_disposition
 诊断），**未分类告警直接判失败**，避免用总数掩盖真问题。
 
 P4 首轮 6/6 通过（exit=0、0 ERROR），但也暴露了 4 个静态检查抓不到的运行期缺陷，
-详见 `docs/dummy-study-findings.md` §6。其中最容易被忽略的一条是：**level 一旦声明
-`format`，emitter 就会忽略 `order_variable`**，所以「用 format 排顺序」是错的，
-排序必须交给 `order_variable`。
+详见 `docs/dummy-study-findings.md` §6。
+
+`format` 驱动的层是 **14.3.1.5**（Serious TEAE by SOC and PT）。那张表存在的唯一目的
+就是验证 format 的零频节点行为：`AESER = 'Y'` 在数据里只有 1 个 SOC、2 个 PT、3 例
+受试者，两个 level 都声明 format 后展开成 23 个 SOC + 46 个 PT = 69 行，其中 66 行是
+`0 (0.0%)`。这是预期外观，不是缺陷。
+
+format 定序依赖 `(NOTSORTED)`：不带声明顺序会被 PROC FORMAT 丢弃，`PRELOADFMT
+ORDER=DATA` 退回原始值顺序。应用不读 format catalog，所以**这个选择由调用方负责**，
+应用不检查也不告警。`verify/compare_with_sas.R` 的 `check_node_order()` 对 14.3.1.5
+断言这一点——去掉 `NOTSORTED` 会让首个 SOC 从 Nervous 变成 Cardiac，验证立即失败。
 
 ### 独立验证（不依赖 SAS 生成的数字）
 
@@ -156,6 +167,6 @@ Rscript dummy_study/verify/compare_with_sas.R   # 与 SAS 产物逐格比对
 SAS），长表写出 `generated/expected/expected.csv`。第二条把 SAS 报表明细解析成
 `(路径, 列, 统计量)` 后 join。
 
-当前结果：**5520 个断言单元格全部一致**。分位数（`median`/`q1`/`q3`）只记录不判定，
+当前结果：**11232 个断言单元格全部一致**，7 张表共 95 页全部在容量内且首尾有空白行。分位数（`median`/`q1`/`q3`）只记录不判定，
 因为 `PROC MEANS` 默认 `PCTLDEF=5` 与 R 的分位数算法不同；它们在
 `generated/comparison.csv` 的 `reported_only` 列里可见。

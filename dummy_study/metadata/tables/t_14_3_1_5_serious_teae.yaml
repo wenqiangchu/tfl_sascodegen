@@ -1,0 +1,56 @@
+id: 't_14_3_1_5_serious_teae'
+population_id: 'safety'
+header_id: 'trt01a_header'
+template_id: 'tpl_serious_teae'
+custom_code:
+  before: |-
+    /* Define the two node formats this table uses.
+
+       The purpose is to exercise format-driven hierarchical levels: the format
+       supplies the node domain even for values the data does not contain, and
+       it supplies the display label and the node order together. Both levels
+       therefore declare `format` and must not declare label_variable,
+       order_variable or order_direction.
+
+       NOTSORTED is required here. Without it SAS discards the declaration order
+       and PRELOADFMT ORDER=DATA would fall back to the raw value order, which
+       sorts the SOCs alphabetically by their long MedDRA strings instead of the
+       clinical order written below. The application does not read the format
+       catalog, so this choice is the caller's: see the contract note on
+       NOTSORTED in table-and-chunk-analysis-model.md.
+
+       $TFLSSOC lists all 23 System Organ Classes present anywhere in the TEAE
+       data, so the 22 classes with no serious event appear as zero-count nodes.
+       $TFLSPT lists the two Preferred Terms that have a serious event; because
+       the parent level also uses a format, the full cross product expands under
+       every SOC (see the parent/child format rule). */
+    proc format;
+      value $tflssoc (notsorted)
+        'NERVOUS SYSTEM DISORDERS'                                      = 'Nervous system disorders'
+        'CARDIAC DISORDERS'                                             = 'Cardiac disorders'
+        'VASCULAR DISORDERS'                                            = 'Vascular disorders'
+        'RESPIRATORY, THORACIC AND MEDIASTINAL DISORDERS'               = 'Respiratory, thoracic and mediastinal disorders'
+        'GASTROINTESTINAL DISORDERS'                                    = 'Gastrointestinal disorders'
+        'SKIN AND SUBCUTANEOUS TISSUE DISORDERS'                        = 'Skin and subcutaneous tissue disorders'
+        'MUSCULOSKELETAL AND CONNECTIVE TISSUE DISORDERS'               = 'Musculoskeletal and connective tissue disorders'
+        'INFECTIONS AND INFESTATIONS'                                   = 'Infections and infestations'
+        'INVESTIGATIONS'                                                = 'Investigations'
+        'INJURY, POISONING AND PROCEDURAL COMPLICATIONS'                = 'Injury, poisoning and procedural complications'
+        'METABOLISM AND NUTRITION DISORDERS'                            = 'Metabolism and nutrition disorders'
+        'PSYCHIATRIC DISORDERS'                                         = 'Psychiatric disorders'
+        'RENAL AND URINARY DISORDERS'                                   = 'Renal and urinary disorders'
+        'EYE DISORDERS'                                                 = 'Eye disorders'
+        'EAR AND LABYRINTH DISORDERS'                                   = 'Ear and labyrinth disorders'
+        'HEPATOBILIARY DISORDERS'                                       = 'Hepatobiliary disorders'
+        'IMMUNE SYSTEM DISORDERS'                                       = 'Immune system disorders'
+        'REPRODUCTIVE SYSTEM AND BREAST DISORDERS'                      = 'Reproductive system and breast disorders'
+        'SOCIAL CIRCUMSTANCES'                                          = 'Social circumstances'
+        'SURGICAL AND MEDICAL PROCEDURES'                               = 'Surgical and medical procedures'
+        'CONGENITAL, FAMILIAL AND GENETIC DISORDERS'                    = 'Congenital, familial and genetic disorders'
+        'NEOPLASMS BENIGN, MALIGNANT AND UNSPECIFIED (INCL CYSTS AND POLYPS)' = 'Neoplasms benign, malignant and unspecified (incl cysts and polyps)'
+        'GENERAL DISORDERS AND ADMINISTRATION SITE CONDITIONS'          = 'General disorders and administration site conditions';
+
+      value $tflspt (notsorted)
+        'SYNCOPE'                                              = 'Syncope'
+        'PARTIAL SEIZURES WITH SECONDARY GENERALISATION'       = 'Partial seizures with secondary generalisation';
+    run;

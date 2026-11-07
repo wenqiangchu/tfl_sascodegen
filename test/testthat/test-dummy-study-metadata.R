@@ -61,8 +61,9 @@ testthat::test_that("the dummy study bundle keeps the planned object set", {
                              sort(c("shift_header", "trt01a_header", "trt01p_header")))
   testthat::expect_identical(sort(vapply(workspace$tables, `[[`, "", "id")), sort(c(
     "t_14_1_1_disposition", "t_14_1_2_baseline", "t_14_2_3_hgb_shift",
-    "t_14_3_1_2_teae", "t_14_3_1_4_teae_severity", "t_14_3_2_1_hgb_by_visit")))
-  testthat::expect_identical(length(workspace$templates), 6L)
+    "t_14_3_1_2_teae", "t_14_3_1_4_teae_severity", "t_14_3_1_5_serious_teae",
+    "t_14_3_2_1_hgb_by_visit")))
+  testthat::expect_identical(length(workspace$templates), 7L)
 })
 
 testthat::test_that("every dummy study table resolves its references", {
@@ -212,6 +213,49 @@ testthat::test_that("the verification scripts are present and self-describing", 
   # own assertion against the paginated rows.
   testthat::expect_match(compare_script, "check_pagination", fixed = TRUE)
   testthat::expect_match(compare_script, "missing_last_blank", fixed = TRUE)
+  # The cell comparison is keyed by report path, so it cannot see display order.
+  # A format-driven level is ordered by the format, so the order needs its own
+  # comparison against the declaration order.
+  testthat::expect_match(compare_script, "check_node_order", fixed = TRUE)
+  testthat::expect_match(expected_script, "node_order.csv", fixed = TRUE)
+  # A missing zero-count node has no cell to disagree with, so the printed node
+  # shape needs its own check.
+  testthat::expect_match(compare_script, "check_format_nodes", fixed = TRUE)
+})
+
+# 14.3.1.5 exists only to exercise format-driven levels: a format supplies node
+# values the data does not contain, which is the one behaviour no other fixture
+# covers. If it ever stops being format-driven it stops testing that.
+testthat::test_that("14.3.1.5 drives both levels by format, not by variables", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  template <- Filter(function(t) identical(t$id, "tpl_serious_teae"),
+                     workspace$templates)[[1L]]
+  chunk <- template$body$chunks[[1L]]
+  testthat::expect_identical(chunk$type, "hierarchical_summary")
+  for (level in chunk$levels) {
+    testthat::expect_true(!is.null(level$format), label = level$id)
+    # The model rejects the combination, so a bundle that parses proves it, but
+    # assert the absence too so the intent survives a model change.
+    testthat::expect_null(level$label_variable, label = level$id)
+    testthat::expect_null(level$order_variable, label = level$id)
+    testthat::expect_null(level$order_direction, label = level$id)
+  }
+  testthat::expect_identical(vapply(chunk$levels, `[[`, "", "format"),
+                             c("$tflssoc", "$tflspt"))
+
+  # NOTSORTED is the caller's choice and nothing in the app can check it, so the
+  # generated source is the only place the decision is visible.
+  table <- Filter(function(tb) identical(tb$id, "t_14_3_1_5_serious_teae"),
+                  workspace$tables)[[1L]]
+  before <- table$custom_code$before
+  testthat::expect_match(before, "value $tflssoc (notsorted)", fixed = TRUE)
+  testthat::expect_match(before, "value $tflspt (notsorted)", fixed = TRUE)
+  # The zero-count SOCs only appear if the format lists the full TEAE SOC domain,
+  # not just the SOCs that have a serious event.
+  testthat::expect_match(before, "NERVOUS SYSTEM DISORDERS", fixed = TRUE)
+  testthat::expect_match(before, "GENERAL DISORDERS AND ADMINISTRATION SITE CONDITIONS",
+                         fixed = TRUE)
 })
 
 # The blank-line rule is a layout contract with no numeric signal, so the only

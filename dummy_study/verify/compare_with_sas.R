@@ -76,6 +76,83 @@ read_wide <- function(table) {
 # that carries page_group, so the invariant is checked there. Capacity counts
 # printed lines, so a page holds at most page_rows rows; the page-edge blanks
 # are mandatory, so every page must open and close with a spacer.
+# The cell comparison is keyed by report path, so it is blind to display order.
+# For a format-driven table the order is exactly what the format decides, so the
+# rendered sequence is compared against the order derived from the declaration.
+# Without this, dropping NOTSORTED reorders the table and every cell still agrees.
+check_node_order <- function(table) {
+  order_path <- file.path("dummy_study", "generated", "expected", "node_order.csv")
+  if (!file.exists(order_path)) return(NULL)
+  expected_order <- utils::read.csv(order_path, stringsAsFactors = FALSE)
+  expected_order <- expected_order[expected_order$table == table, ]
+  if (nrow(expected_order) == 0L) return(NULL)
+
+  asm_path <- file.path(sas_dir, paste0("asm_", table, ".sas7bdat"))
+  if (!file.exists(asm_path)) {
+    stop("Missing assembled SAS output: ", asm_path, call. = FALSE)
+  }
+  assembled <- haven::read_sas(asm_path)
+  assembled <- assembled[order(assembled$report_order), ]
+  assembled$label <- trimws(as.character(assembled$label))
+  assembled <- assembled[as.character(assembled$row_role) != "spacer", ]
+
+  # Rebuild the report path exactly as the cell comparison does: a node keeps the
+  # ancestors above its own depth, so a level-2 node replaces the previous
+  # level-2 entry rather than appending to it.
+  current <- character(0)
+  paths <- character(nrow(assembled))
+  for (index in seq_len(nrow(assembled))) {
+    level <- assembled$hierarchy_level[[index]]
+    label <- assembled$label[[index]]
+    current <- c(current[seq_len(min(length(current), level - 1L))], label)
+    paths[[index]] <- paste(current, collapse = " / ")
+  }
+
+  list(
+    table = table,
+    actual = paths,
+    expected = expected_order$path,
+    agrees = identical(paths, expected_order$path)
+  )
+}
+
+# A format supplies node values the data does not contain, so the interesting
+# contract for a format-driven table is that the zero-count nodes are *printed*
+# rather than dropped. Value comparison cannot show that: an absent node has no
+# cell to disagree with. This asserts the shape directly.
+check_format_nodes <- function(table, sas_vars) {
+  asm_path <- file.path(sas_dir, paste0("asm_", table, ".sas7bdat"))
+  if (!file.exists(asm_path)) return(NULL)
+  assembled <- haven::read_sas(asm_path)
+  assembled <- assembled[order(assembled$report_order), ]
+  rows <- assembled[as.character(assembled$row_role) != "spacer", ]
+  levels <- rows$hierarchy_level
+  columns <- grep("^col_[0-9]+$", names(rows), value = TRUE)
+  zero <- rep(TRUE, nrow(rows))
+  for (column in columns) {
+    zero <- zero & trimws(as.character(rows[[column]])) == "0 (0.0%)"
+  }
+
+  parents <- rows[!is.na(levels) & levels == 1L, ]
+  children <- rows[!is.na(levels) & levels == 2L, ]
+  parent_zero <- zero[!is.na(levels) & levels == 1L]
+  child_zero <- zero[!is.na(levels) & levels == 2L]
+
+  # Every child in the format must appear under every formatted parent, so the
+  # child count is parents x distinct PTs. This is the documented behaviour of
+  # combining a format with a formatted child, not an accident.
+  list(
+    table = table,
+    parents = nrow(parents),
+    children = nrow(children),
+    zero_parents = sum(parent_zero),
+    zero_children = sum(child_zero),
+    non_zero = sum(!zero),
+    agrees = nrow(children) %% max(nrow(parents), 1L) == 0L &&
+      nrow(children) > 0L && nrow(parents) > 0L
+  )
+}
+
 check_pagination <- function(table, page_rows) {
   path <- file.path(sas_dir, paste0("paged_", table, ".sas7bdat"))
   if (!file.exists(path)) {
@@ -352,6 +429,58 @@ pagination contract violated: a page overflowed or lost an edge blank
 cat(sprintf("%d pages across %d tables; every page within capacity and padded
 ",
             sum(pagination$pages), nrow(pagination)))
+
+# Zero-count format nodes must be printed, which no cell comparison can observe.
+# Only tables named in node_order.csv have format-driven levels, so only those
+# carry the zero-count contract.
+format_tables <- unique(utils::read.csv(file.path("dummy_study", "generated",
+                                                 "expected", "node_order.csv"),
+                                       stringsAsFactors = FALSE)$table)
+format_checks <- Filter(Negate(is.null), lapply(format_tables, check_format_nodes))
+if (length(format_checks) > 0L) {
+  cat("
+format-driven nodes (zero-count nodes are printed, not dropped)
+")
+  for (check in format_checks) {
+    cat(sprintf("%-30s %2d parents (%2d zero)  %3d children (%3d zero)  non-zero rows %d
+",
+                check$table, check$parents, check$zero_parents,
+                check$children, check$zero_children, check$non_zero))
+  }
+  violated <- !vapply(format_checks, `[[`, logical(1L), "agrees")
+  if (any(violated)) {
+    cat("
+format node shape violated: children are not evenly distributed over parents
+")
+    quit(status = 1L)
+  }
+}
+
+# Display order is a format contract, not a numeric one.
+order_checks <- Filter(Negate(is.null),
+                       lapply(unique(expected$table), check_node_order))
+if (length(order_checks) > 0L) {
+  cat("
+node order (format-driven tables)
+")
+  for (check in order_checks) {
+    cat(sprintf("%-30s %d rows  %s
+", check$table, length(check$actual),
+                if (check$agrees) "ok" else "PROBLEM"))
+    if (!check$agrees) {
+      mismatch <- which(check$actual != check$expected)[[1L]]
+      cat(sprintf("  first difference at row %d: expected %s, got %s
+",
+                  mismatch, check$expected[[mismatch]], check$actual[[mismatch]]))
+    }
+  }
+  if (any(!vapply(order_checks, `[[`, logical(1L), "agrees"))) {
+    cat("
+node order contract violated: the format declaration order was not kept
+")
+    quit(status = 1L)
+  }
+}
 
 cat(sprintf("\nall %d asserted cells agree with the independent R computation\n",
             sum(summary_table$asserted)))

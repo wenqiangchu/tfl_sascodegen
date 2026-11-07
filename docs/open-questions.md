@@ -73,10 +73,13 @@ SAS 机制上，`PROC MEANS`/`PROC SUMMARY` 的 `CLASS ... / PRELOADFMT` 配合
 
 已决定：在 `levels[]` 增加可选字符串字段 `format`，保存不带末尾句点的 SAS format
 名称；字符型 format 使用 `$` 前缀。emitter 负责补句点并生成 FORMAT 绑定。字段不
-保存 catalog 路径，应用不解析或检查 format 的存在性和类型匹配。指定 format 时，
-`order_variable` 不参与节点排序；节点顺序按 format 的存储顺序生成，SAS format 需要
-声明顺序时由调用方使用 `NOTSORTED`，`result_sort` 仍可覆盖最终展示顺序。未指定
-format 时沿用现有 `label_variable`、`order_variable` 和 `order_direction` 规则。
+保存 catalog 路径，应用不解析或检查 format 的存在性和类型匹配。
+
+2026-11-07 收紧：一个 level 要么 format 驱动，要么变量驱动，**两者互斥**。指定 format
+时不允许出现 `label_variable`、`order_variable`、`order_direction`（结构错误）；未指定
+format 时 `order_variable` 和 `order_direction` 必填，`label_variable` 可选。格式驱动时
+节点顺序由 format 决定：PROC FORMAT 中写 `NOTSORTED` 才按声明顺序输出，否则按原始值
+顺序，由调用方按需决定，应用不检查也不告警。`result_sort` 两种情形下都可覆盖展示顺序。
 
 当前版本边界：format 只负责提供完整节点列表和原始值到显示值的映射。ranges、
 `OTHER`、特殊 missing 和 multilabel format 暂不增加专门语义；需要这些效果时，调用方

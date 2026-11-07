@@ -13,8 +13,8 @@ template_sort_fixture <- function() {
       chunks = list(list(
         id = "c", type = "hierarchical_summary", source_data = "work.events",
         levels = list(list(
-          id = "l", variable = "SOC", format = "visit_fmt", order_variable = "SOC",
-          order_direction = "asc", node_role = "label", missing_policy = "exclude",
+          id = "l", variable = "SOC", format = "visit_fmt",
+          node_role = "label", missing_policy = "exclude",
           result_sort = list(
             metric = list(analysis_id = "a", row_id = "r", statistic_id = "n"),
             column_order = c(1L, 0L), direction = "desc"
@@ -138,4 +138,27 @@ testthat::test_that("primitive and nested denominator edits survive save and bun
       testthat::expect_identical(extract_denominator(imported$workspace$templates[[1L]]), expected)
     })
   }
+})
+
+# The level editor used to say the label and order variables were "ignored" when a
+# format was present. The model now rejects that combination outright, so the hint
+# must state the rule. A stale hint would send the user to a save that cannot pass.
+testthat::test_that("the level editor states that a format excludes label and order fields", {
+  source(file.path(project_root, "src", "ui", "metadata_editor_helpers.R"), local = FALSE)
+  source(file.path(project_root, "src", "ui", "metadata_editor_template.R"), local = FALSE)
+  chunk <- list(id = "c", type = "hierarchical_summary", source_data = "work.events",
+                levels = list(), analysis_blocks = list())
+  level <- list(id = "l", variable = "SOC", node_role = "label",
+                missing_policy = "exclude", format = "soc_fmt")
+  with_format <- as.character(level_ui(level, "chunk_1_", 1L, chunk))
+  testthat::expect_match(with_format, "cannot be combined with it", fixed = TRUE)
+  testthat::expect_match(with_format, "NOTSORTED", fixed = TRUE)
+  testthat::expect_false(grepl("are ignored", with_format, fixed = TRUE))
+
+  level$format <- NULL
+  level$order_variable <- "SOCN"
+  level$order_direction <- "asc"
+  without_format <- as.character(level_ui(level, "chunk_1_", 1L, chunk))
+  testthat::expect_match(without_format, "needs an order variable", fixed = TRUE)
+  testthat::expect_false(grepl("cannot be combined", without_format, fixed = TRUE))
 })
