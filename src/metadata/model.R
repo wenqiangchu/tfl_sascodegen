@@ -348,15 +348,28 @@ parse_header_value <- function(value, path, collector) {
                     "Header orientation must be 'portrait' or 'landscape'.")
     orientation <- NULL
   }
-  # Rows that fit on one page are a property of the layout, not of the data: the
-  # count depends on orientation, column widths, font size and cell padding. It
-  # cannot be derived here, so it is configured and defaulted to a measured
-  # value. Zero disables page breaking entirely.
+  # Printed lines that fit on one page are a property of the layout, not of the
+  # data: the count depends on orientation, column widths, font size and cell
+  # padding. It cannot be derived here, so it is configured and defaulted to a
+  # measured value. Zero disables page breaking entirely.
+  #
+  # Every page also spends two of those lines on its mandatory edge blanks, so a
+  # capacity below 3 cannot be honoured -- it would print three lines whatever the
+  # caller asked for. 1 and 2 are refused instead of silently inflated; 0 stays
+  # valid because it means "do not paginate at all".
   page_rows <- NULL
   if (has_field(value, "page_rows")) {
     page_rows <- parse_integer_value(get_field(value, "page_rows"),
                                      error_path_field(path, "page_rows"), collector,
                                      "page_rows", min_value = 0L)
+    if (!is.null(page_rows) && page_rows > 0L && page_rows < 3L) {
+      add_value_error(collector, error_path_field(path, "page_rows"),
+                      paste0("Field 'page_rows' must be 0 (no pagination) or at ",
+                             "least 3. Two of every page's lines are the mandatory ",
+                             "top and bottom blanks, so a smaller capacity cannot ",
+                             "be honoured."))
+      page_rows <- NULL
+    }
   }
   if (is.null(page_rows)) page_rows <- default_page_rows
   spans_raw <- parse_sequence_raw(
@@ -731,18 +744,21 @@ parse_level_value <- function(value, path, collector) {
   # label_variable and order_variable would each restate one of those from a
   # source that cannot serve values the data does not contain. Accepting them
   # would silently discard what the caller wrote, so the combination is
-  # rejected instead.
-  if (has_field(value, "format")) {
-    for (field in c("label_variable", "order_variable", "order_direction")) {
-      if (!has_field(value, field)) next
-      add_value_error(collector, error_path_field(path, field),
-                      sprintf(paste0("Field '%s' cannot be combined with 'format'. ",
-                                     "A format supplies the node domain, label and ",
-                                     "order; declare the level either with ",
-                                     "'format' or with 'order_variable' and ",
-                                     "'order_direction'."), field))
-    }
-  } else {
+  # rejected instead. The same list decides invalid_level below, so it is
+  # computed once: a second copy could drift and let an invalid level through.
+  format_conflicts <- if (!has_field(value, "format")) character(0L) else {
+    candidates <- c("label_variable", "order_variable", "order_direction")
+    candidates[vapply(candidates, function(field) has_field(value, field), logical(1L))]
+  }
+  for (field in format_conflicts) {
+    add_value_error(collector, error_path_field(path, field),
+                    sprintf(paste0("Field '%s' cannot be combined with 'format'. ",
+                                   "A format supplies the node domain, label and ",
+                                   "order; declare the level either with ",
+                                   "'format' or with 'order_variable' and ",
+                                   "'order_direction'."), field))
+  }
+  if (!has_field(value, "format")) {
     if (!has_field(value, "order_variable")) add_required_error(collector, path, "order_variable")
     if (!has_field(value, "order_direction")) add_required_error(collector, path, "order_direction")
   }
@@ -801,9 +817,7 @@ parse_level_value <- function(value, path, collector) {
   invalid_level <- is.null(id) || is.null(variable) || is.null(node_role) ||
     is.null(missing_policy) ||
     (has_field(value, "format") && is.null(format_name)) ||
-    (has_field(value, "format") &&
-     any(vapply(c("label_variable", "order_variable", "order_direction"),
-                function(field) has_field(value, field), logical(1L)))) ||
+    length(format_conflicts) > 0L ||
     (!has_field(value, "format") &&
      (is.null(order_variable) || is.null(order_direction)))
   if (invalid_level) return(NULL)

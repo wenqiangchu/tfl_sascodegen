@@ -17,7 +17,11 @@ custom_code:
        score with 3 for SEVERE would sort MILD first, because the emitter orders
        formatted numeric nodes by their unformatted value. */
     proc sql;
-      create table WORK.AE_MAXSEV as
+      /* Build the PT grain first and add the SOC reduction on top of it. Naming
+         the PT result AE_MAXSEV and then overwriting it would make the second
+         statement reference the name it is creating, which SAS warns about and
+         the runner treats as an unclassified failure. */
+      create table WORK.AE_PTSEV as
         select USUBJID,
                TRTA,
                AEBODSYS,
@@ -29,10 +33,6 @@ custom_code:
           from study.adae
          where SAFFL = 'Y' and TRTEMFL = 'Y'
          group by USUBJID, TRTA, AEBODSYS, AEDECOD;
-
-      create table WORK.AE_PTSEV as
-        select USUBJID, TRTA, AEBODSYS, AEDECOD, SEV_ORDER
-          from WORK.AE_MAXSEV;
 
       create table WORK.AE_MAXSEV as
         select a.*,

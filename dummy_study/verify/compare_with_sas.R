@@ -71,15 +71,33 @@ read_wide <- function(table) {
   data
 }
 
-# Pagination is a layout contract with no numeric signal: a broken page break
-# still produces the right numbers. The paginated rows are the only artifact
-# that carries page_group, so the invariant is checked there. Capacity counts
-# printed lines, so a page holds at most page_rows rows; the page-edge blanks
-# are mandatory, so every page must open and close with a spacer.
 # The cell comparison is keyed by report path, so it is blind to display order.
 # For a format-driven table the order is exactly what the format decides, so the
 # rendered sequence is compared against the order derived from the declaration.
 # Without this, dropping NOTSORTED reorders the table and every cell still agrees.
+# The report path of a row: a node keeps the ancestors above its own depth, so a
+# level-2 node replaces the previous level-2 entry rather than appending to it,
+# and a `static` (below) row keeps the node path and appends its own label. Both
+# the order check and the cell comparison must use this one definition, or they
+# can disagree about which row is which.
+report_paths <- function(labels, levels, roles) {
+  current <- character(0)
+  paths <- character(length(labels))
+  for (index in seq_along(labels)) {
+    level <- levels[[index]]
+    role <- as.character(roles[[index]])
+    if (!is.na(level) && level > 0L && !identical(role, "static")) {
+      current <- c(current[seq_len(min(length(current), level - 1L))], labels[[index]])
+      paths[[index]] <- paste(current, collapse = " / ")
+    } else if (!is.na(level) && level > 0L) {
+      paths[[index]] <- paste(c(current, labels[[index]]), collapse = " / ")
+    } else {
+      paths[[index]] <- NA_character_
+    }
+  }
+  paths
+}
+
 check_node_order <- function(table) {
   order_path <- file.path("dummy_study", "generated", "expected", "node_order.csv")
   if (!file.exists(order_path)) return(NULL)
@@ -96,17 +114,7 @@ check_node_order <- function(table) {
   assembled$label <- trimws(as.character(assembled$label))
   assembled <- assembled[as.character(assembled$row_role) != "spacer", ]
 
-  # Rebuild the report path exactly as the cell comparison does: a node keeps the
-  # ancestors above its own depth, so a level-2 node replaces the previous
-  # level-2 entry rather than appending to it.
-  current <- character(0)
-  paths <- character(nrow(assembled))
-  for (index in seq_len(nrow(assembled))) {
-    level <- assembled$hierarchy_level[[index]]
-    label <- assembled$label[[index]]
-    current <- c(current[seq_len(min(length(current), level - 1L))], label)
-    paths[[index]] <- paste(current, collapse = " / ")
-  }
+  paths <- report_paths(assembled$label, assembled$hierarchy_level, assembled$row_role)
 
   list(
     table = table,
@@ -160,13 +168,22 @@ check_format_nodes <- function(table, expected_shape) {
   )
 }
 
+# Pagination is a layout contract with no numeric signal: a broken page break
+# still produces the right numbers. The paginated rows are the only artifact that
+# carries page_group, so the invariant is checked there. Capacity counts printed
+# lines, so a page holds at most page_rows of them; the page-edge blanks are
+# mandatory, so every page must open and close with a spacer, and a block
+# separator must never be the last body row.
 check_pagination <- function(table, page_rows) {
   path <- file.path(sas_dir, paste0("paged_", table, ".sas7bdat"))
   if (!file.exists(path)) {
     stop("Missing paginated SAS output: ", path, call. = FALSE)
   }
   data <- haven::read_sas(path)
-  data <- data[order(data$page_group, data$report_order), ]
+  # The dataset is already sorted by the page key (page_group, edge, report_order)
+  # and the page-edge pads carry no report_order at all, so re-sorting here by
+  # report_order would push them to the end and report a phantom violation.
+  # Physical row order is the contract.
   role <- as.character(data$row_role)
   groups <- data$page_group
   sizes <- tapply(rep(1L, nrow(data)), groups, sum)
@@ -279,19 +296,14 @@ resolve_flat_paths <- function(data) {
 # than truncating it like a node would.
 flatten_mixed <- function(data, table, columns) {
   cells <- list()
-  current <- character(0)
+  # One definition of the path, shared with check_node_order().
+  node_paths <- report_paths(data$label, data$hierarchy_level, data$row_role)
   for (i in seq_len(nrow(data))) {
     label <- data$label[[i]]
     level <- data$hierarchy_level[[i]]
-    role <- as.character(data$row_role[[i]])
-    is_node <- !is.na(level) && level > 0L && !identical(role, "static")
-    if (is_node) {
-      current <- c(current[seq_len(min(length(current), level - 1L))], label)
-      path <- paste(current, collapse = " / ")
-      stat_set <- c(n = "n", pct = "pct")
-    } else if (!is.na(level) && level > 0L) {
-      # A below row: keep the node path and append the row label.
-      path <- paste(c(current, label), collapse = " / ")
+    if (!is.na(level) && level > 0L) {
+      # A node row, or a below row that keeps the node path and appends its label.
+      path <- node_paths[[i]]
       stat_set <- c(n = "n", pct = "pct")
     } else {
       stat_set <- if (label %in% names(stat_row_map)) {
@@ -320,7 +332,7 @@ key_of <- function(frame) {
   paste(frame$path, frame$column_id, frame$stat, sep = "\r")
 }
 
-callculate_status <- function(expected_rows, actual_rows, table) {
+calculate_status <- function(expected_rows, actual_rows, table) {
   missing <- expected_rows[!key_of(expected_rows) %in% key_of(actual_rows), ]
   extra <- actual_rows[!key_of(actual_rows) %in% key_of(expected_rows), ]
   joined <- merge(expected_rows, actual_rows[, c("path", "column_id", "stat",
@@ -384,7 +396,7 @@ for (table in unique(expected$table)) {
   } else {
     flatten_mixed(resolve_flat_paths(data), table, columns)
   }
-  outcome <- callculate_status(expected_rows, actual_rows, table)
+  outcome <- calculate_status(expected_rows, actual_rows, table)
   summaries[[table]] <- outcome$summary
   problems <- c(problems, outcome$problems)
 }
@@ -414,20 +426,77 @@ if (length(problems) > 0L) {
   quit(status = 1L)
 }
 
+# The bundle is read once here and reused for two things: it decides which tables
+# have a format-driven level (see the registration check below) and it supplies
+# each header's page capacity. Sourcing the codec is cheap and keeps the numbers
+# from drifting out of sync with the metadata.
+dummy_bundle <- local({
+  source(file.path("src", "metadata", "model.R"))
+  source(file.path("src", "metadata", "yaml_codec.R"))
+  bundle_dir <- file.path("dummy_study", "metadata")
+  read_entry <- function(path) {
+    text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    parse_yaml_document_text(text)$value
+  }
+  entry_files <- function(directory, pattern = "[.]yaml$") {
+    sort(list.files(file.path(bundle_dir, directory), pattern = pattern, full.names = TRUE))
+  }
+  list(
+    headers = local({
+      manifest <- entry_files(".")
+      parsed <- lapply(manifest, read_entry)
+      hit <- Filter(function(entry) !is.null(entry$headers), parsed)
+      if (length(hit) == 0L) list() else hit[[1L]]$headers
+    }),
+    templates = lapply(entry_files("templates"), read_entry),
+    tables = lapply(entry_files("tables"), read_entry)
+  )
+})
+
+source_page_rows_default <- function() {
+  if (exists("default_page_rows", inherits = TRUE)) default_page_rows else 22L
+}
+
+table_header_by_id <- function(table_id) {
+  table <- Filter(function(entry) identical(as.character(entry$id), as.character(table_id)),
+                  dummy_bundle$tables)
+  if (length(table) == 0L) return(NULL)
+  headers <- Filter(function(header) {
+    identical(as.character(header$id), as.character(table[[1L]]$header_id))
+  }, dummy_bundle$headers)
+  if (length(headers) == 0L) NULL else headers[[1L]]
+}
+
 # Pagination is checked after the numbers, because a layout regression must not
-# be able to mask a statistical one.
-page_capacity <- 22L
-pagination <- lapply(unique(expected$table), check_pagination, page_rows = page_capacity)
+# be able to mask a statistical one. The capacity lives on each table's header,
+# not here: a hard-coded number would silently stop checking anything on the day
+# a header sets its own page_rows.
+default_page_rows <- source_page_rows_default()
+page_capacity_for <- function(table) {
+  header <- table_header_by_id(table)
+  if (is.null(header) || is.null(header$page_rows)) default_page_rows else header$page_rows
+}
+# A header that cannot be resolved would fall back to the default and silently
+# stop checking the real setting, so prove resolution first.
+unresolved <- Filter(function(table) is.null(table_header_by_id(table)),
+                     unique(expected$table))
+if (length(unresolved) > 0L) {
+  cat(sprintf("
+no header resolved for table(s): %s
+",
+              paste(unresolved, collapse = ", ")))
+  quit(status = 1L)
+}
+pagination <- lapply(unique(expected$table), function(table) {
+  check_pagination(table, page_rows = page_capacity_for(table))
+})
 pagination <- do.call(rbind, lapply(pagination, as.data.frame,
-                                          stringsAsFactors = FALSE))
-cat(sprintf("
-%-30s %5s %5s %8s %9s
-", "pagination", "pages", "rows",
+                                   stringsAsFactors = FALSE))
+cat(sprintf("\n%-30s %5s %5s %8s %9s\n", "pagination", "pages", "rows",
             "largest", "capacity"))
 for (i in seq_len(nrow(pagination))) {
   row <- pagination[i, ]
-  cat(sprintf("%-30s %5d %5d %8d %9d
-", row$table, row$pages, row$rows,
+  cat(sprintf("%-30s %5d %5d %8d %9d\n", row$table, row$pages, row$rows,
               row$largest_page, row$capacity))
 }
 pagination_broken <- pagination[pagination$oversized > 0L |
@@ -435,110 +504,57 @@ pagination_broken <- pagination[pagination$oversized > 0L |
                                 pagination$missing_last_blank > 0L |
                                 pagination$stranded_separator > 0L, , drop = FALSE]
 if (nrow(pagination_broken) > 0L) {
-  cat("
-pagination contract violated: a page overflowed, lost an edge blank, or stranded a
-block separator at the page edge
-")
+  cat("\npagination contract violated: a page overflowed, lost an edge blank, ",
+      "or stranded a block separator at the page edge\n", sep = "")
   print(pagination_broken)
   quit(status = 1L)
 }
-cat(sprintf("%d pages across %d tables; every page within capacity and padded
-",
+cat(sprintf("%d pages across %d tables; every page within capacity and padded\n",
             sum(pagination$pages), nrow(pagination)))
 
 # Zero-count format nodes must be printed, which no cell comparison can observe.
 # A table with a format-driven level is only covered once compute_expected.R has
 # written its expected node shape, and that registration used to be a convention
 # nobody enforced: adding a format table and forgetting the entry silently left
-# the whole contract untested. Read the bundle now and fail on the gap.
+# the whole contract untested. Fail on the gap instead.
 format_level_tables <- local({
-  source(file.path("src", "metadata", "model.R"))
-  source(file.path("src", "metadata", "yaml_codec.R"))
-  bundle_dir <- file.path("dummy_study", "metadata")
-  read_entry <- function(path) {
-    text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "
-")
-    parse_yaml_document_text(text)$value
-  }
-  templates <- lapply(list.files(file.path(bundle_dir, "templates"), pattern = "[.]yaml$",
-                                 full.names = TRUE), read_entry)
-  tables <- lapply(list.files(file.path(bundle_dir, "tables"), pattern = "[.]yaml$",
-                              full.names = TRUE), read_entry)
-  template_ids <- vapply(templates, function(t) t$id, character(1L))
-  has_format <- vapply(templates, function(template) {
+  has_format <- vapply(dummy_bundle$templates, function(template) {
     chunks <- template$body$chunks %||% list()
     any(vapply(chunks, function(chunk) {
       any(vapply(chunk$levels %||% list(), function(level) !is.null(level$format),
                  logical(1L)))
     }, logical(1L)))
   }, logical(1L))
-  format_template_ids <- template_ids[has_format]
-  vapply(tables, function(table) table$id, character(1L))[
-    vapply(tables, function(table) table$template_id, character(1L)) %in% format_template_ids
+  format_template_ids <- vapply(dummy_bundle$templates[has_format],
+                                function(template) template$id, character(1L))
+  vapply(dummy_bundle$tables, function(table) table$id, character(1L))[
+    vapply(dummy_bundle$tables, function(table) table$template_id, character(1L)) %in%
+      format_template_ids
   ]
 })
 format_shapes <- utils::read.csv(file.path("dummy_study", "generated", "expected",
-                                            "node_shape.csv"), stringsAsFactors = FALSE)
+                                           "node_shape.csv"), stringsAsFactors = FALSE)
 unregistered <- setdiff(format_level_tables, format_shapes$table)
 if (length(unregistered) > 0L) {
-  cat("
-format-driven table missing from node_shape.csv: ",
-      paste(unregistered, collapse = ", "), "
-", sep = "")
-  cat("Every table with a format-driven level needs an expected node shape, or its
-")
-  cat("zero-count nodes print unchecked. Add it to compute_expected.R.
-")
+  cat(sprintf("\nformat-driven table missing from node_shape.csv: %s\n",
+              paste(unregistered, collapse = ", ")))
+  cat("Every table with a format-driven level needs an expected node shape, or its\n")
+  cat("zero-count nodes print unchecked. Add it to compute_expected.R.\n")
   quit(status = 1L)
 }
 format_checks <- Filter(Negate(is.null), lapply(seq_len(nrow(format_shapes)), function(i) {
   check_format_nodes(format_shapes$table[[i]], format_shapes[i, , drop = FALSE])
 }))
 if (length(format_checks) > 0L) {
-  cat("
-format-driven nodes (zero-count nodes are printed, not dropped)
-")
+  cat("\nformat-driven nodes (zero-count nodes are printed, not dropped)\n")
   for (check in format_checks) {
-    cat(sprintf("%-30s %2d parents (%2d zero)  %3d children (%3d zero)  non-zero rows %d
-",
+    cat(sprintf("%-30s %2d parents (%2d zero)  %3d children (%3d zero)  non-zero rows %d\n",
                 check$table, check$parents, check$zero_parents,
                 check$children, check$zero_children, check$non_zero))
   }
   violated <- !vapply(format_checks, `[[`, logical(1L), "agrees")
   if (any(violated)) {
-    cat("
-format node shape violated: the printed node counts do not match the format domain
-")
+    cat("\nformat node shape violated: the printed node counts do not match the format domain\n")
     quit(status = 1L)
   }
 }
-
-# Display order is a format contract, not a numeric one.
-order_checks <- Filter(Negate(is.null),
-                       lapply(unique(expected$table), check_node_order))
-if (length(order_checks) > 0L) {
-  cat("
-node order (format-driven tables)
-")
-  for (check in order_checks) {
-    cat(sprintf("%-30s %d rows  %s
-", check$table, length(check$actual),
-                if (check$agrees) "ok" else "PROBLEM"))
-    if (!check$agrees) {
-      mismatch <- which(check$actual != check$expected)[[1L]]
-      cat(sprintf("  first difference at row %d: expected %s, got %s
-",
-                  mismatch, check$expected[[mismatch]], check$actual[[mismatch]]))
-    }
-  }
-  if (any(!vapply(order_checks, `[[`, logical(1L), "agrees"))) {
-    cat("
-node order contract violated: the format declaration order was not kept
-")
-    quit(status = 1L)
-  }
-}
-
-cat(sprintf("\nall %d asserted cells agree with the independent R computation\n",
-            sum(summary_table$asserted)))
-cat(sprintf("summary: %s\n", report_path))

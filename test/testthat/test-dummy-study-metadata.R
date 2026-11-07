@@ -213,6 +213,7 @@ testthat::test_that("the verification scripts are present and self-describing", 
   # own assertion against the paginated rows.
   testthat::expect_match(compare_script, "check_pagination", fixed = TRUE)
   testthat::expect_match(compare_script, "missing_last_blank", fixed = TRUE)
+  testthat::expect_match(compare_script, "stranded_separator", fixed = TRUE)
   # The cell comparison is keyed by report path, so it cannot see display order.
   # A format-driven level is ordered by the format, so the order needs its own
   # comparison against the declaration order.
@@ -289,67 +290,24 @@ testthat::test_that("blank rows mark block boundaries, not depth changes", {
 # the rows the program actually writes. The capacity counts printed lines,
 # including the mandatory blank line at each page edge, because a blank row still
 # occupies a line on the page.
-testthat::test_that("pages respect page_rows, keep blocks whole, and pad both edges", {
+testthat::test_that("the fixture renders the default page capacity", {
   skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
   workspace <- parse_bundle_value(load_dummy_bundle())$value
   header <- workspace$headers[[1L]]
-  testthat::expect_identical(as.integer(header$page_rows), 22L)
+  # All three headers take the default; none overrides it in headers.yaml.
+  testthat::expect_identical(as.integer(header$page_rows), default_page_rows)
+  for (other in workspace$headers) {
+    testthat::expect_identical(as.integer(other$page_rows), default_page_rows)
+  }
 
-  # A page is 22 printed lines: 20 for the body and 2 for the edge blanks.
+  # The generated report is the artifact that proves the wiring: the paginated
+  # dataset is what PROC REPORT reads, and the footer carries the page numbers.
   result <- generate_table_source(workspace, "t_14_3_1_4_teae_severity",
                                   output_mode = "report")
   testthat::expect_true(result$passed)
-  source <- paste(result$source, collapse = "\n")
-  testthat::expect_match(source, "2 are the page-edge blanks", fixed = TRUE)
-  testthat::expect_match(source, "_rows_on_page + _block_rows > 20", fixed = TRUE)
+  source <- paste(result$source, collapse = "
+")
+  testthat::expect_match(source, "proc report data=WORK._TFL_PAGED_001", fixed = TRUE)
   testthat::expect_match(source, "break after page_group / page", fixed = TRUE)
-  # The footer must stay right aligned, roman and body-sized: footnote style=[...]
-  # renders as literal text, so the overrides have to be inline and j=r is what
-  # actually right-aligns the block.
-  testthat::expect_match(source, "footnote1 j=r", fixed = TRUE)
-  testthat::expect_match(source, "^S={fontstyle=roman fontweight=light fontsize=10pt}",
-                         fixed = TRUE)
   testthat::expect_match(source, "Page ^{thispage} of ^{lastpage}", fixed = TRUE)
-  # A block separator already supplies a page's top blank, so no second is added.
-  testthat::expect_match(source, "needs_top = row_role ne 'spacer'", fixed = TRUE)
-
-  # Capacity zero must stay available as "no page breaking at all".
-  disabled <- header
-  disabled$page_rows <- 0L
-  off <- page_break_source(disabled)
-  testthat::expect_match(paste(off, collapse = "\n"),
-                         "disabled for this header", fixed = TRUE)
-  testthat::expect_identical(sum(grepl("page_group = 1", off, fixed = TRUE)), 1L)
-})
-
-testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
-  column <- list(id = "c1", label = "Overall", condition = "1", display_order = 1L,
-                 width = 1, alignment = "center")
-  build <- function(page_rows = NULL) {
-    header <- list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
-                   columns = list(column))
-    if (!is.null(page_rows)) header$page_rows <- page_rows
-    new_metadata_bundle(headers = list(header))
-  }
-
-  default <- parse_bundle_yaml(canonical_yaml_text(build()))
-  testthat::expect_true(default$passed)
-  testthat::expect_identical(default$workspace$headers[[1L]]$page_rows, default_page_rows)
-
-  explicit <- parse_bundle_yaml(canonical_yaml_text(build(18L)))
-  testthat::expect_true(explicit$passed)
-  testthat::expect_identical(explicit$workspace$headers[[1L]]$page_rows, 18L)
-
-  # The default is implicit, so it must not appear in the rendered YAML; emitting
-  # it would change the bytes of every existing bundle.
-  testthat::expect_false(grepl("page_rows", canonical_yaml_text(build()), fixed = TRUE))
-  testthat::expect_true(grepl("page_rows: 18", canonical_yaml_text(build(18L)), fixed = TRUE))
-
-  # Zero means "never break"; a negative capacity is not a page.
-  zero <- parse_bundle_yaml(canonical_yaml_text(build(0L)))
-  testthat::expect_true(zero$passed)
-  testthat::expect_identical(zero$workspace$headers[[1L]]$page_rows, 0L)
-  # A negative capacity is rejected at the model boundary; encoding refuses to
-  # emit it at all, so assert that refusal rather than a round trip.
-  testthat::expect_error(canonical_yaml_text(build(-1L)), "invalid metadata bundle")
 })

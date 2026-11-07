@@ -405,3 +405,52 @@ testthat::test_that("a level rejects label and order fields together with format
                   "          order_direction: asc"))
   testthat::expect_false(parse_bundle_yaml(both)$passed)
 })
+
+testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
+  column <- list(id = "c1", label = "Overall", condition = "1", display_order = 1L,
+                 width = 1, alignment = "center")
+  build <- function(page_rows = NULL) {
+    header <- list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
+                   columns = list(column))
+    if (!is.null(page_rows)) header$page_rows <- page_rows
+    new_metadata_bundle(headers = list(header))
+  }
+
+  default <- parse_bundle_yaml(canonical_yaml_text(build()))
+  testthat::expect_true(default$passed)
+  testthat::expect_identical(default$workspace$headers[[1L]]$page_rows, default_page_rows)
+
+  explicit <- parse_bundle_yaml(canonical_yaml_text(build(18L)))
+  testthat::expect_true(explicit$passed)
+  testthat::expect_identical(explicit$workspace$headers[[1L]]$page_rows, 18L)
+
+  # The default is implicit, so it must not appear in the rendered YAML; emitting
+  # it would change the bytes of every existing bundle.
+  testthat::expect_false(grepl("page_rows", canonical_yaml_text(build()), fixed = TRUE))
+  testthat::expect_true(grepl("page_rows: 18", canonical_yaml_text(build(18L)), fixed = TRUE))
+
+  # Zero means "never break"; a negative capacity is not a page.
+  zero <- parse_bundle_yaml(canonical_yaml_text(build(0L)))
+  testthat::expect_true(zero$passed)
+  testthat::expect_identical(zero$workspace$headers[[1L]]$page_rows, 0L)
+  # A negative capacity is rejected at the model boundary; encoding refuses to
+  # emit it at all, so assert that refusal rather than a round trip.
+  testthat::expect_error(canonical_yaml_text(build(-1L)), "invalid metadata bundle")
+
+  # Two of the requested lines are the page-edge blanks, so a capacity below 3
+  # cannot be honoured: it would print three lines whatever the caller asked for.
+  # Smallest useful page is therefore 3, and 1 and 2 are refused rather than
+  # silently inflated.
+  smallest <- parse_bundle_yaml(canonical_yaml_text(build(3L)))
+  testthat::expect_true(smallest$passed)
+  testthat::expect_identical(smallest$workspace$headers[[1L]]$page_rows, 3L)
+  # Encoding refuses an invalid bundle outright, so the rejection is observed on
+  # the parsed value rather than through a canonical round trip.
+  for (too_small in c(1L, 2L)) {
+    header <- list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
+                   page_rows = too_small, columns = list(column))
+    errors <- parse_bundle_value(new_metadata_bundle(headers = list(header)))$errors
+    testthat::expect_true(length(errors) > 0L, label = as.character(too_small))
+    testthat::expect_true(any(grepl("page_rows", vapply(errors, `[[`, "", "path"))))
+  }
+})

@@ -29,6 +29,8 @@ from __future__ import annotations
 import csv
 import re
 import sys
+
+import yaml
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,19 +58,45 @@ def is_label_row(line):
     if not cells or not cells[0].isdigit():
         return False
     return "label" in (cell.lower() for cell in cells)
-TEMPLATE_ID = re.compile(r"^template_id:\s*'([^']+)'", re.M)
-LABEL_ROW_ID = re.compile(r"^\s*-\s*id:")
-LABEL_ROW_TYPE = re.compile(r"^\s*type:\s*'label'")
 
 
-def count_template_label_rows(path):
-    """Count the `type: 'label'` rows in a template, which sit under their id."""
-    lines = path.read_text(encoding="utf-8").splitlines()
-    count = 0
-    for previous, current in zip(lines, lines[1:]):
-        if LABEL_ROW_ID.match(previous) and LABEL_ROW_TYPE.match(current):
-            count += 1
-    return count
+def declared_label_texts(text):
+    """The label texts a shell lists in its §3 label rows.
+
+    A §3 table row that names `label` as its row type carries the visible label in
+    the third column, so the text itself is available. Comparing texts rather than
+    counting rows is what catches a renamed label: the count is unchanged, so a
+    count-only check would pass.
+    """
+    texts = []
+    for line in text.splitlines():
+        if not is_label_row(line):
+            continue
+        cells = [cell.strip().strip("*").strip() for cell in line.strip().strip("|").split("|")]
+        # Every §3 table puts the row label immediately after the index column,
+        # whatever the remaining columns are.
+        if len(cells) >= 2:
+            texts.append(cells[1])
+    return texts
+
+
+def template_label_texts(path):
+    """The `type: label` row labels a template emits, parsed rather than grepped."""
+    document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    texts = []
+
+    def walk(value):
+        if isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, dict):
+            if value.get("type") == "label" and "label" in value:
+                texts.append(str(value["label"]))
+            for item in value.values():
+                walk(item)
+
+    walk(document)
+    return texts
 
 
 def check_section_labels(name, text):
@@ -80,19 +108,24 @@ def check_section_labels(name, text):
     candidates = sorted(TABLES.glob(f"t_{number}_*.yaml"))
     if len(candidates) != 1:
         return [f"{name}: expected one table file for {number}, found {len(candidates)}"]
-    table_text = candidates[0].read_text(encoding="utf-8")
-    template_match = TEMPLATE_ID.search(table_text)
-    if not template_match:
+    table_document = yaml.safe_load(candidates[0].read_text(encoding="utf-8")) or {}
+    template_id = table_document.get("template_id")
+    if not template_id:
         return [f"{name}: {candidates[0].name} has no template_id"]
-    template_path = TEMPLATES / f"{template_match.group(1)}.yaml"
+    template_path = TEMPLATES / f"{template_id}.yaml"
     if not template_path.exists():
         return [f"{name}: missing template {template_path.name}"]
 
-    declared = sum(1 for line in text.splitlines() if is_label_row(line))
-    emitted = count_template_label_rows(template_path)
-    if declared != emitted:
-        return [f"{name}: §3 declares {declared} section label row(s) but "
-                f"{template_path.name} emits {emitted}"]
+    declared = declared_label_texts(text)
+    emitted = template_label_texts(template_path)
+    if len(declared) != len(emitted):
+        return [f"{name}: §3 declares {len(declared)} section label row(s) but "
+                f"{template_path.name} emits {len(emitted)}"]
+    if sorted(declared) != sorted(emitted):
+        missing = sorted(set(emitted) - set(declared))
+        extra = sorted(set(declared) - set(emitted))
+        return [f"{name}: §3 label texts differ from {template_path.name} "
+                f"(missing: {missing}, extra: {extra})"]
     return []
 
 

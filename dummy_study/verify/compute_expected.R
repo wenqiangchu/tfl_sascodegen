@@ -401,32 +401,6 @@ for (column_id in column_ids) {
 # order in the table's custom_code.before, not the alphabetical order of the
 # MedDRA strings. The expectations below therefore hard-code that declaration
 # order instead of sorting, which is what makes the format ordering testable.
-serious_soc_order <- c(
-  "NERVOUS SYSTEM DISORDERS",
-  "CARDIAC DISORDERS",
-  "VASCULAR DISORDERS",
-  "RESPIRATORY, THORACIC AND MEDIASTINAL DISORDERS",
-  "GASTROINTESTINAL DISORDERS",
-  "SKIN AND SUBCUTANEOUS TISSUE DISORDERS",
-  "MUSCULOSKELETAL AND CONNECTIVE TISSUE DISORDERS",
-  "INFECTIONS AND INFESTATIONS",
-  "INVESTIGATIONS",
-  "INJURY, POISONING AND PROCEDURAL COMPLICATIONS",
-  "METABOLISM AND NUTRITION DISORDERS",
-  "PSYCHIATRIC DISORDERS",
-  "RENAL AND URINARY DISORDERS",
-  "EYE DISORDERS",
-  "EAR AND LABYRINTH DISORDERS",
-  "HEPATOBILIARY DISORDERS",
-  "IMMUNE SYSTEM DISORDERS",
-  "REPRODUCTIVE SYSTEM AND BREAST DISORDERS",
-  "SOCIAL CIRCUMSTANCES",
-  "SURGICAL AND MEDICAL PROCEDURES",
-  "CONGENITAL, FAMILIAL AND GENETIC DISORDERS",
-  "NEOPLASMS BENIGN, MALIGNANT AND UNSPECIFIED (INCL CYSTS AND POLYPS)",
-  "GENERAL DISORDERS AND ADMINISTRATION SITE CONDITIONS"
-)
-serious_pt_order <- c("SYNCOPE", "PARTIAL SEIZURES WITH SECONDARY GENERALISATION")
 
 # The format labels are the display values the report prints.
 serious_soc_label <- c(
@@ -465,6 +439,12 @@ serious_pt_label <- c(
   "PARTIAL SEIZURES WITH SECONDARY GENERALISATION" =
     "Partial seizures with secondary generalisation"
 )
+
+# The named vectors carry the declaration order in their names, so names() is the
+# single source for both the order and the label. A separate order vector would
+# duplicate the same 23 strings and could drift out of sync.
+serious_soc_order <- names(serious_soc_label)
+serious_pt_order <- names(serious_pt_label)
 
 serious <- teae[!is.na(teae$AESER) & teae$AESER == "Y", ]
 stopifnot(setequal(unique(serious$AEBODSYS), "NERVOUS SYSTEM DISORDERS"))

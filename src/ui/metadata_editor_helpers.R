@@ -147,8 +147,7 @@ header_editor_data <- function(header) {
   as.data.frame(out, stringsAsFactors=FALSE)
 }
 
-header_from_editor_data <- function(id, source_data, data, orientation, original = NULL,
-                                    page_rows = NULL) {
+header_from_editor_data <- function(id, source_data, data, orientation, original = NULL) {
   text <- function(x) if (length(x) != 1L || is.na(x)) "" else as.character(x)
   columns <- lapply(seq_len(nrow(data)), function(i) {
     list(id=trimws(text(data$id[[i]])), label=text(data$label[[i]]),
@@ -171,9 +170,10 @@ header_from_editor_data <- function(id, source_data, data, orientation, original
                  orientation=as.character(orientation %||% ""))
   # Page capacity is not edited in the UI, so it carries over from the original
   # header. Dropping it here would reset every header to the default on any edit
-  # and change the canonical field order.
-  if (is.null(page_rows) && !is.null(original)) page_rows <- original$page_rows
-  if (!is.null(page_rows)) result$page_rows <- page_rows
+  # and change the canonical field order. There is deliberately no separate
+  # page_rows argument: two ways to supply the same value can disagree, and one
+  # of them previously put the value in the wrong slot.
+  if (!is.null(original) && !is.null(original$page_rows)) result$page_rows <- original$page_rows
   if (length(spans)) result$spanning_headers <- spans
   result$columns <- columns
   if (!is.null(original)) {
@@ -181,9 +181,16 @@ header_from_editor_data <- function(id, source_data, data, orientation, original
     # Reconstructed span IDs and field order are not evidence of a user edit.
     # The baseline must not pass `original` back in: that re-enters this branch
     # and recurses without bound. Carry only the non-edited page capacity.
+    # The baseline must not pass `original` back in: that re-enters this branch
+    # and recurses without bound. It has to describe the same shape as `result`
+    # though, page capacity included, or an untouched header would never compare
+    # equal and every open/save would mark it dirty.
     baseline <- header_from_editor_data(original$id, original$source_data,
-                                        header_editor_data(original), original$orientation,
-                                        page_rows = page_rows)
+                                        header_editor_data(original), original$orientation)
+    if (!is.null(result$page_rows)) {
+      baseline$page_rows <- result$page_rows
+      baseline <- baseline[names(result)[names(result) %in% names(baseline)]]
+    }
     if (workspace_canonical_equal(baseline, result)) return(clone_metadata_value(original))
   }
   result

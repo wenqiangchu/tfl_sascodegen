@@ -26,7 +26,7 @@ testthat::test_that("unchanged header collection preserves imported IDs and save
   original <- header_span_editor_fixture()
   collected <- header_from_editor_data(original$id, original$source_data,
                                        header_editor_data(original), original$orientation,
-                                       original = original, page_rows = original$page_rows)
+                                       original = original)
   testthat::expect_identical(collected, original)
   workspace <- new_metadata_workspace(new_metadata_bundle(headers = list(original)))
   saved <- workspace_update(workspace, workspace_target("header", original$id), collected)
@@ -79,6 +79,6 @@ testthat::test_that("changed headers keep canonical field order and distinct lab
   header <- saved$workspace$headers[[1L]]
   testthat::expect_identical(header_from_editor_data(
     header$id, header$source_data, header_editor_data(header), header$orientation,
-    original = header, page_rows = header$page_rows
+    original = header
   ), header)
 })

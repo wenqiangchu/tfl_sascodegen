@@ -722,3 +722,37 @@ P1-7 方案 A 处理：改名为 `_tfl_gap` 并**移出 `keep` 列表**，只在
 不含该列；空行本身则由 `row_role = 'spacer'` 的位置与 `check_pagination()` 共同覆盖。
 
 已确认产物中不再有该列（`asm_*.sas7bdat` 的列清单里没有 `gap_before`）。
+
+## 12. P2 风格与一致性清理（P2-8，12 项）
+
+1. `model.R` 的互斥字段列表原本写了两遍（报错一次、`invalid_level` 一次）。改为先算
+   `format_conflicts`，两处复用，避免漂移让非法 level 漏过。
+2. `page_rows` 取 1 或 2 时，`usable = max(page_rows - 2, 1) = 1`，加两行垫行后每页 3 行，
+   **超出所设容量**。现在 1 和 2 直接报结构错误，0 仍然表示「不分页」。
+3. `header_from_editor_data()` 同时保留显式 `page_rows` 参数与从 `original` 回退两条路径。
+   删除该参数，只从 `original` 取；同步 `metadata_editor_runtime.R` 与两个测试的调用。
+   递归风险用「baseline 不把 `original` 传回去」的方式规避，并显式把 `page_rows` 补进
+   baseline 参与比较，否则未修改的 header 会被误判为脏。
+4. 分页临时变量统一加 `_tfl_` 前缀（`_tfl_block_start` / `_tfl_block_id` /
+   `_tfl_block_rows` / `_tfl_rows_on_page` / `_tfl_fits` / `_tfl_needs_top` / `_tfl_edge`），
+   并在最终数据集里 `drop`，只留 `page_group`，避免与用户自定义列重名。
+5. 去掉魔数 `report_order = 1000000`：改为 `_tfl_edge`（页首 0 / 正文 1 / 页尾 2）作为
+   页内排序键，不再依赖 `report_order` 的量级。`page_padding_source()` 的参数仍然只用于
+   注释，已在该函数注释里说明。
+6. `footnote1` 是全局语句，`ods rtf close;` 之后补 `footnote;`，否则页脚会带到调用方
+   后续输出。两个断言 `endsWith(source, "ods rtf close;")` 相应更新。
+7. `compare_with_sas.R`：`callculate_status` → `calculate_status`；分页注释从
+   `check_node_order` 上方移到 `check_pagination` 上方；字符串内的物理换行改为 `\n`；
+   容量不再写死 `22L`，改为从 bundle 的 header 读 `page_rows`（并断言所有表都能解析到
+   header，否则回退默认值会静默停止校验）。
+8. `check_node_order()` 与 `flatten_mixed()` 共用新的 `report_paths()`，两者不再可能对
+   「哪一行是哪一行」给出不同答案。
+9. `compute_expected.R` 的 `serious_soc_order` 与 `names(serious_soc_label)` 重复，删除前者。
+10. `t_14_3_1_4` 的 `custom_code.before` 不再建 `AE_MAXSEV` → 复制成 `AE_PTSEV` →
+    覆盖 `AE_MAXSEV`，直接建 `AE_PTSEV` 再算 `AE_MAXSEV`。重跑确认 1012 行、0 ERROR、
+    324 条预期 `duplicate_key` 告警不变。
+11. `check_shells.py` 第 5 项改用 YAML 解析：比较 label **文本集合**而非行数。已验证
+    把 `Age (years)` 改名会失败（仅比行数时不会）。
+12. 测试职责：`page_rows` 的解析/往返测试与 `page_break_source` 的测试移入
+    `test-yaml-codec.R` / `test-report-source.R`；`test-dummy-study-metadata.R` 只保留
+    夹具自身断言（三个 header 都用默认容量、报告读 `_TFL_PAGED_001`）。

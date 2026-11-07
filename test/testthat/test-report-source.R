@@ -66,7 +66,10 @@ testthat::test_that("RTF source preserves custom hooks around the fixed report i
   positions <- vapply(markers, function(marker) regexpr(marker, source, fixed = TRUE)[[1L]], integer(1L))
   testthat::expect_true(all(positions > 0L))
   testthat::expect_true(all(diff(positions) > 0L))
-  testthat::expect_true(endsWith(source, "ods rtf close;"))
+  # ODS RTF CLOSE is the last reporting statement; the footnote reset that
+  # follows it is global cleanup, not report output.
+  testthat::expect_true(endsWith(source, "ods rtf close;
+footnote;"))
   testthat::expect_identical(source, generate_table_source(bundle, "t_demog")$source)
 })
 
@@ -452,6 +455,53 @@ testthat::test_that("the assembled dataset carries no internal bookkeeping colum
   testthat::expect_match(spacing, "_tfl_gap = _n_ > 1 and", fixed = TRUE)
 })
 
+# The pagination contract itself belongs with the report source, not with the
+# dummy study: capacity counting, edge padding, disabling, and the footer.
+testthat::test_that("pagination counts printed lines, pads edges, and can be disabled", {
+  header <- report_fixture()$headers[[1L]]
+  header$page_rows <- 22L
+  source <- paste(page_break_source(header), collapse = "
+")
+  # 22 printed lines, 20 of them body rows: the two edge blanks are mandatory.
+  testthat::expect_match(source, "_tfl_block_rows <= 20", fixed = TRUE)
+  testthat::expect_match(source, "_tfl_rows_on_page + 1 > 20", fixed = TRUE)
+  # The top blank is not doubled when the page already opens with a separator.
+  testthat::expect_match(source, "_tfl_needs_top = row_role ne 'spacer'", fixed = TRUE)
+  # Every page gets a bottom pad regardless.
+  testthat::expect_match(source, "_tfl_edge = 2", fixed = TRUE)
+
+  # 0 means "do not paginate": one page group, pass-through, no block machinery.
+  header$page_rows <- 0L
+  off <- paste(page_break_source(header), collapse = "
+")
+  testthat::expect_match(off, "disabled for this header", fixed = TRUE)
+  testthat::expect_match(off, "page_group = 1", fixed = TRUE)
+  testthat::expect_false(grepl("_TFL_BLOCKS_001", off, fixed = TRUE))
+
+  # A capacity of 3 is the smallest that fits its own two edge blanks.
+  header$page_rows <- 3L
+  smallest <- paste(page_break_source(header), collapse = "
+")
+  testthat::expect_match(smallest, "_tfl_block_rows <= 1", fixed = TRUE)
+})
+
+testthat::test_that("the footer is right aligned, roman and body sized", {
+  source <- paste(rtf_report_source(
+    list(header = report_fixture("landscape")$headers[[1L]],
+         table = list(id = "t"), template = list(body = list(stub_header = "Stub"))),
+    report_page_layout(report_fixture("landscape")$headers[[1L]])
+  ), collapse = "
+")
+  # footnote style=[...] is emitted as literal text and applies nothing, so the
+  # overrides have to be inline and j=r is what right-aligns the block.
+  testthat::expect_match(source, "footnote1 j=r", fixed = TRUE)
+  testthat::expect_match(source, "^S={fontstyle=roman fontweight=light fontsize=10pt}",
+                         fixed = TRUE)
+  testthat::expect_match(source, "Page ^{thispage} of ^{lastpage}", fixed = TRUE)
+  # footnote is global; leaving it set would leak onto the caller's next output.
+  testthat::expect_true(endsWith(source, "footnote;"))
+})
+
 # Page assignment is a pure function of the printed row roles and the capacity, so
 # it is checked against a reference implementation rather than by eyeballing SAS
 # output. The reference mirrors the SAS step in page_break_source() exactly.
@@ -533,12 +583,12 @@ testthat::test_that("page assignment fits every page and never ends one on a sep
 testthat::test_that("the page assignment step guards oversized blocks and separators", {
   source <- paste(page_break_source(list(page_rows = 22L)), collapse = "\n")
   # Every row, including a block's first, must run the capacity check.
-  testthat::expect_match(source, "if _rows_on_page + 1 > 20 then do;", fixed = TRUE)
+  testthat::expect_match(source, "if _tfl_rows_on_page + 1 > 20 then do;", fixed = TRUE)
   # An oversized block must not be allowed to start on a page with no room left
   # for its separator plus a content row.
   # usable - 2 rows still have to be free, so the separator and one content row
   # both fit. For page_rows = 22 that is 18.
-  testthat::expect_match(source, "not _fits and 18 - _rows_on_page < 2", fixed = TRUE)
+  testthat::expect_match(source, "not _tfl_fits and 18 - _tfl_rows_on_page < 2", fixed = TRUE)
   # The comment must state the exception rather than claim blocks never split.
   testthat::expect_false(grepl("never split across pages", source, fixed = TRUE))
   testthat::expect_match(source, "taller than a whole page", fixed = TRUE)

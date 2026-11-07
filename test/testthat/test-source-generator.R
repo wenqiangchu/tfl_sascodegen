@@ -80,7 +80,9 @@ testthat::test_that("source sections preserve custom code and opaque SAS referen
   testthat::expect_true(startsWith(result$source, "%let before=1;"))
   testthat::expect_lt(regexpr("%put after;", result$source, fixed = TRUE)[[1L]],
                       regexpr("proc report", result$source, fixed = TRUE)[[1L]])
-  testthat::expect_true(endsWith(result$source, "ods rtf close;"))
+  # ODS RTF CLOSE ends the report; the footnote reset after it is global cleanup.
+  testthat::expect_true(endsWith(result$source, "ods rtf close;
+footnote;"))
   testthat::expect_match(result$source, "set &lib..&member;", fixed = TRUE)
   testthat::expect_match(result$source, "SAFFL = 'Y'", fixed = TRUE)
   testthat::expect_match(result$source, "Derive header column membership", fixed = TRUE)
