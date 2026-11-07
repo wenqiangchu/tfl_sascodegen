@@ -433,6 +433,25 @@ testthat::test_that("header catalog includes every declared column without consu
   testthat::expect_false(grepl("_TFL_MEM_001", catalog, fixed = TRUE))
 })
 
+# QC compares WORK._TFL_ASM_001 against a saved baseline with `proc compare ...
+# listvar`, so any extra column is reported as a variable difference against every
+# baseline produced before it existed. gap_before is internal bookkeeping for the
+# blank-row rule and must not survive into that dataset.
+testthat::test_that("the assembled dataset carries no internal bookkeeping columns", {
+  bundle <- report_fixture()
+  source <- generate_table_source(bundle, "t_demog")$source
+  assembly <- substr(source, 1L, regexpr("Update the fixed report input", source, fixed = TRUE)[[1L]])
+  # The blank-row step is the only place gap_before is computed, and its keep
+  # list is what decides whether the column reaches _TFL_ASM_001.
+  spacing <- strsplit(assembly, "data _TFL_SPACING_001;", fixed = TRUE)[[1L]][[2L]]
+  keep_line <- regmatches(spacing, regexpr("keep [^;]*;", spacing))[[1L]]
+  testthat::expect_match(keep_line, "report_order", fixed = TRUE)
+  testthat::expect_false(grepl("gap_before", keep_line, fixed = TRUE),
+                         label = keep_line)
+  # The rule still has to work; only the column is dropped from the output.
+  testthat::expect_match(spacing, "_tfl_gap = _n_ > 1 and", fixed = TRUE)
+})
+
 # Page assignment is a pure function of the printed row roles and the capacity, so
 # it is checked against a reference implementation rather than by eyeballing SAS
 # output. The reference mirrors the SAS step in page_break_source() exactly.

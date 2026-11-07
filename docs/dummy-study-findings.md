@@ -628,9 +628,14 @@ gap_before = chunk_order 变化                      # 新 chunk
 12 个候选，减去首行 1 个、再算上块边界，实际 10 个。原规则的 1 个空行是纯属巧合
 （只在 `hierarchy_level` 1→2 变化处触发）。
 
-**`gap_before` 已进入产物**：作为 `_TFL_ASM_001` 的一列保留（`keep report_order gap_before ...`），
-但 `proc report` 不引用它，**不出现在 RTF 里**。这样空行规则可以被直接断言，
-而不是像以前那样只能数 `row_role='spacer'` 的个数反推。
+**空行规则如何验证**：初版把 `gap_before` 作为 `_TFL_ASM_001` 的一列保留，以便直接断言
+规则而不是数 `row_role='spacer'` 的个数反推。
+
+> **2026-11-07 更正（P1-7）**：该列已从产物中移除。QC 模式执行
+> `proc compare base=tables.<id> compare=WORK._TFL_ASM_001 listvar;`，任何额外列都会被
+> 报告为与既有基线的变量差异，因此 `gap_before` 这类内部记账列不能留在 `_TFL_ASM_001` 里。
+> 现改为数据步内的临时变量 `_tfl_gap`（不进入 `keep` 列表），空行规则改由断言生成的
+> SAS 语句与 spacer 位置来验证。
 
 **新增/更新 guard**：
 1. `test-dummy-study-metadata.R` 新增一条，断言新判据存在、旧判据 `previous_level` 已消失；

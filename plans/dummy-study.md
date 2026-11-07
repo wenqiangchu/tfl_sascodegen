@@ -565,7 +565,8 @@ format 声明顺序（SEVERE → MODERATE → MILD）。
 
 2. **空行规则语义错误**（§6.11）：原「深度变化即插空行」把 SOC 与其 PT 切断。
    改为「块边界」判定——新 chunk、顶层节点、或 below 行块结束。14.3.1.2 空行 46→23，
-   14.3.2.1 1→10（后者原本只是巧合）。`gap_before` 作为产物列保留但不进 RTF。
+   14.3.2.1 1→10（后者原本只是巧合）。`gap_before` 最初作为产物列保留，P1-7 之后改为
+   数据步内临时变量 `_tfl_gap`，不再进入 `_TFL_ASM_001`（见 §11）。
 
 **待办**：14.3.1.4 重构为解释 2（SOC/PT 下各有 below 严重程度行）；分页（`page_rows`
 可配、SAS 侧 retain 累积、Page x of Y、每页首尾空行）。
@@ -709,3 +710,15 @@ format 声明顺序（SEVERE → MODERATE → MILD）。
 
 `compare_with_sas.R` 的 `check_pagination()` 新增 `stranded_separator`（页尾连续两个
 空行即判违规）。
+
+## 11. QC 兼容性：`gap_before` 不再进入 `_TFL_ASM_001`
+
+`compare` 模式执行 `proc compare base=tables.<table_id> compare=WORK._TFL_ASM_001 listvar;`。
+`listvar` 会报告变量集合的差异，所以任何新增列都会让**所有既有 QC 基线**报出变量不一致。
+
+`gap_before` 是空行规则的内部记账变量，用户指南的 ASM 字段表里也没有它，因此按
+P1-7 方案 A 处理：改名为 `_tfl_gap` 并**移出 `keep` 列表**，只在数据步内使用。空行规则
+仍可验证——`test-report-source.R` 断言数据步里存在 `_tfl_gap` 的判定式，且 `keep` 列表
+不含该列；空行本身则由 `row_role = 'spacer'` 的位置与 `check_pagination()` 共同覆盖。
+
+已确认产物中不再有该列（`asm_*.sas7bdat` 的列清单里没有 `gap_before`）。
