@@ -229,6 +229,23 @@ testthat::test_that("the verification scripts are present and self-describing", 
   # Registering a format table used to be a convention nothing enforced.
   testthat::expect_match(compare_script, "unregistered", fixed = TRUE)
   testthat::expect_match(compare_script, "format_level_tables", fixed = TRUE)
+
+  # Defining a check is not running one. Each guard must also be *called*, and the
+  # run must end by reporting the total it verified: a truncated script that keeps
+  # the definitions and loses the calls greps exactly the same as a complete one,
+  # which is how one round of edits silently removed the order check.
+  defined <- c("check_pagination", "check_node_order", "check_format_nodes")
+  for (fn in defined) {
+    # Once to define it, at least once to call it. Counting the bare name is
+    # enough: the call sites pass it to lapply, so there is no "name(" to match.
+    mentions <- length(regmatches(compare_script,
+      gregexpr(fn, compare_script, fixed = TRUE))[[1L]])
+    testthat::expect_gte(mentions, 2L, label = paste(fn, "is defined but never called"))
+  }
+  testthat::expect_match(compare_script, "asserted cells agree with the independent R computation",
+                         fixed = TRUE)
+  # And the script must actually be runnable end to end, not truncated mid-file.
+  testthat::expect_no_error(parse(file.path(verify_dir, "compare_with_sas.R")))
 })
 
 # 14.3.1.5 exists only to exercise format-driven levels: a format supplies node

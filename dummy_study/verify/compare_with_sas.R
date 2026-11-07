@@ -558,3 +558,28 @@ if (length(format_checks) > 0L) {
     quit(status = 1L)
   }
 }
+
+# Display order is a format contract, not a numeric one: the cell comparison is
+# keyed by report path, so reordering the table leaves every cell in agreement.
+order_checks <- Filter(Negate(is.null),
+                       lapply(unique(expected$table), check_node_order))
+if (length(order_checks) > 0L) {
+  cat("\nnode order (format-driven tables)\n")
+  for (check in order_checks) {
+    cat(sprintf("%-30s %d rows  %s\n", check$table, length(check$actual),
+                if (check$agrees) "ok" else "PROBLEM"))
+    if (!check$agrees) {
+      mismatch <- which(check$actual != check$expected)[[1L]]
+      cat(sprintf("  first difference at row %d: expected %s, got %s\n",
+                  mismatch, check$expected[[mismatch]], check$actual[[mismatch]]))
+    }
+  }
+  if (any(!vapply(order_checks, `[[`, logical(1L), "agrees"))) {
+    cat("\nnode order contract violated: the format declaration order was not kept\n")
+    quit(status = 1L)
+  }
+}
+
+cat(sprintf("\nall %d asserted cells agree with the independent R computation\n",
+            sum(summary_table$asserted)))
+cat(sprintf("summary: %s\n", report_path))
