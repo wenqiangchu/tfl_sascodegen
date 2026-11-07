@@ -83,11 +83,12 @@ testthat::test_that("template collection and save preserve imported result sorti
 })
 
 # A level driven by `format` must not carry label_variable / order_variable /
-# order_direction; the model rejects the combination. The level editor always has
-# an order_direction select with no blank option, so the browser posts "asc" for
-# every level whether or not a format is set. Collecting that value made a
-# format-driven template impossible to save at all: the draft never passed the
-# model and an unrelated edit was lost.
+# order_direction; the model rejects the combination. The order_direction select
+# used to have no blank option, so the browser posted "asc" for every level
+# whether or not a format was set, which made a format-driven template impossible
+# to save at all. The select now offers a blank choice, and the collector still
+# drops the fields defensively: a level whose format was just added can carry
+# values forward from its previously saved, format-free shape.
 testthat::test_that("a format level saves even when the editor posts order fields", {
   ui_environment <- template_contract_ui_environment()
   fixture <- template_sort_fixture()
@@ -99,10 +100,10 @@ testthat::test_that("a format level saves even when the editor posts order field
     active_editor(list(document_type = "template", document_id = "tpl"))
     active_draft(list(operation = "update", original = fixture$templates[[1L]]))
     template_value(decorated)
-    # What the browser actually posts: the format is untouched and the
-    # order_direction select reports its default.
+    # What the browser actually posts when the format is untouched: the blank
+    # option, i.e. an empty string.
     session$setInputs(template_stub_header = "Updated SOC",
-                      chunk_1_level_1_order_direction = "asc")
+                      chunk_1_level_1_order_direction = "")
 
     collected <- collect_template_from_ui(strip_ids = TRUE)
     level <- collected$body$chunks[[1L]]$levels[[1L]]
@@ -232,4 +233,33 @@ testthat::test_that("the level editor states that a format excludes label and or
   without_format <- as.character(level_ui(level, "chunk_1_", 1L, chunk))
   testthat::expect_match(without_format, "needs an order variable", fixed = TRUE)
   testthat::expect_false(grepl("cannot be combined", without_format, fixed = TRUE))
+})
+
+# A select with no blank option cannot express "unset", so order_direction could
+# never be cleared once set: the browser always had to post asc or desc.
+testthat::test_that("the order direction select offers an unset choice", {
+  source_text <- paste(readLines(file.path(project_root, "src", "ui",
+                                           "metadata_editor_template.R"),
+                                 warn = FALSE), collapse = "\n")
+  testthat::expect_match(source_text, '"(not set)" = ""', fixed = TRUE)
+  # And it defaults to unset rather than to asc.
+  testthat::expect_match(source_text,
+                         'selected = level$order_direction %||% ""', fixed = TRUE)
+
+  ui_environment <- template_contract_ui_environment()
+  fixture <- template_sort_fixture()
+  decorated <- ui_environment$decorate_template_ui_ids(fixture$templates[[1L]])
+
+  shiny::testServer(ui_environment$metadata_editor_server_impl, {
+    workspace(new_metadata_workspace(fixture))
+    metadata_loaded(TRUE)
+    active_editor(list(document_type = "template", document_id = "tpl"))
+    active_draft(list(operation = "update", original = fixture$templates[[1L]]))
+    template_value(decorated)
+    # Clearing the select must remove the field rather than pin it to asc.
+    session$setInputs(template_stub_header = "Cleared",
+                      chunk_1_level_1_order_direction = "")
+    collected <- collect_template_from_ui(strip_ids = TRUE)
+    testthat::expect_null(collected$body$chunks[[1L]]$levels[[1L]]$order_direction)
+  })
 })

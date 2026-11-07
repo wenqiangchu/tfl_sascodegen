@@ -99,7 +99,8 @@ level_ui <- function(level, prefix, index, chunk) {
     format_note,
     chunk_field_row(
       chunk_field(4, selectInput(paste0(p, "order_direction"), "Order direction",
-                                 c("asc", "desc"), selected = level$order_direction %||% "asc")),
+                                 c("(not set)" = "", "asc" = "asc", "desc" = "desc"),
+                                 selected = level$order_direction %||% "")),
       chunk_field(4, selectInput(paste0(p, "node_role"), "Node role",
                                  c("label", "analysis"), selected = level$node_role)),
       chunk_field(4, textInput(paste0(p, "node_analysis_id"), "Node analysis ID",
