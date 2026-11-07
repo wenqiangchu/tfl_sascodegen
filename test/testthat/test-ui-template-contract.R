@@ -82,6 +82,77 @@ testthat::test_that("template collection and save preserve imported result sorti
   })
 })
 
+# A level driven by `format` must not carry label_variable / order_variable /
+# order_direction; the model rejects the combination. The level editor always has
+# an order_direction select with no blank option, so the browser posts "asc" for
+# every level whether or not a format is set. Collecting that value made a
+# format-driven template impossible to save at all: the draft never passed the
+# model and an unrelated edit was lost.
+testthat::test_that("a format level saves even when the editor posts order fields", {
+  ui_environment <- template_contract_ui_environment()
+  fixture <- template_sort_fixture()
+  decorated <- ui_environment$decorate_template_ui_ids(fixture$templates[[1L]])
+
+  shiny::testServer(ui_environment$metadata_editor_server_impl, {
+    workspace(new_metadata_workspace(fixture))
+    metadata_loaded(TRUE)
+    active_editor(list(document_type = "template", document_id = "tpl"))
+    active_draft(list(operation = "update", original = fixture$templates[[1L]]))
+    template_value(decorated)
+    # What the browser actually posts: the format is untouched and the
+    # order_direction select reports its default.
+    session$setInputs(template_stub_header = "Updated SOC",
+                      chunk_1_level_1_order_direction = "asc")
+
+    collected <- collect_template_from_ui(strip_ids = TRUE)
+    level <- collected$body$chunks[[1L]]$levels[[1L]]
+    testthat::expect_identical(level$format, "visit_fmt")
+    testthat::expect_null(level$order_direction)
+    testthat::expect_null(level$order_variable)
+    testthat::expect_null(level$label_variable)
+
+    save_active("template")
+    saved <- workspace_saved_snapshot(workspace())$templates[[1L]]
+    testthat::expect_identical(saved$body$stub_header, "Updated SOC")
+    testthat::expect_identical(saved$body$chunks[[1L]]$levels[[1L]]$format, "visit_fmt")
+    testthat::expect_null(saved$body$chunks[[1L]]$levels[[1L]]$order_direction)
+  })
+})
+
+# Clearing the format must let the order fields be used again: without a format
+# they are required, so dropping them unconditionally would make the level
+# unsavable the other way round.
+testthat::test_that("clearing the format lets the order fields be saved again", {
+  ui_environment <- template_contract_ui_environment()
+  fixture <- template_sort_fixture()
+  decorated <- ui_environment$decorate_template_ui_ids(fixture$templates[[1L]])
+
+  shiny::testServer(ui_environment$metadata_editor_server_impl, {
+    workspace(new_metadata_workspace(fixture))
+    metadata_loaded(TRUE)
+    active_editor(list(document_type = "template", document_id = "tpl"))
+    active_draft(list(operation = "update", original = fixture$templates[[1L]]))
+    template_value(decorated)
+    session$setInputs(template_stub_header = "Updated SOC",
+                      chunk_1_level_1_format = "",
+                      chunk_1_level_1_order_variable = "SOC",
+                      chunk_1_level_1_order_direction = "desc")
+
+    collected <- collect_template_from_ui(strip_ids = TRUE)
+    level <- collected$body$chunks[[1L]]$levels[[1L]]
+    testthat::expect_null(level$format)
+    testthat::expect_identical(level$order_variable, "SOC")
+    testthat::expect_identical(level$order_direction, "desc")
+
+    save_active("template")
+    saved <- workspace_saved_snapshot(workspace())$templates[[1L]]
+    testthat::expect_identical(saved$body$stub_header, "Updated SOC")
+    testthat::expect_null(saved$body$chunks[[1L]]$levels[[1L]]$format)
+    testthat::expect_identical(saved$body$chunks[[1L]]$levels[[1L]]$order_variable, "SOC")
+    testthat::expect_identical(saved$body$chunks[[1L]]$levels[[1L]]$order_direction, "desc")
+  })
+})
+
 testthat::test_that("primitive and nested denominator edits survive save and bundle export", {
   ui_environment <- template_contract_ui_environment()
   cases <- list(
