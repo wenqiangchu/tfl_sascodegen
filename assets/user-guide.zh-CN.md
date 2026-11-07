@@ -146,8 +146,10 @@ SAS 执行、结果正确性和 RTF 外观由使用者手动验收。
 
 纸张固定为 Letter，使用内置 `Styles.Rtf`（`style=rtf`）。左右页边距显式设为各
 1 英寸，因此纵向可用宽度为 6.5 英寸，横向为 9 英寸；左侧行标签列宽为可用宽度
-减去 Header 各列宽度之和。字体、边框沿用 RTF 样式。每列表头显示来自对应
-population/header membership 的 `(N = xx)`，空列显示 `(N = 0)`。
+减去 Header 各列宽度之和、两侧外框（各 0.75 pt）以及 0.25 英寸的 fit reserve。
+外框固定 0.75 pt；fit reserve 存在的原因是单元格内边距与边框都不在声明的列宽里，
+栅格没有余量时经典 ODS RTF 会把表格拆成横向重复的面板。字体、边框沿用 RTF 样式。
+每列表头显示来自对应 population/header membership 的 `(N = xx)`，空列显示 `(N = 0)`。
 
 源码顺序为 `custom_code.before → population/header → 分析与表组装 → custom_code.after
 → 分页 → PROC REPORT → ODS RTF CLOSE`。Demo 已包含 before 和 after 示例。
@@ -169,9 +171,15 @@ after 代码需原地修改 `WORK._TFL_ASM_001`，并保留以下字段：
 `_TFL_PAGED_001` 只额外增加 `page_group`。也就是说报告**不再**直接读 `_TFL_ASM_001`。
 QC compare 模式不分页，直接比对 `WORK._TFL_ASM_001`，因此版式不影响 QC 路径。
 
-Label 行不加粗。Chunk 边界和不同层级的切换处各留一行空白；边界重合只插入一行，
-同级连续行不额外插空。跨页重复列标题。暂不生成标题、脚注、自动标签换行或
-层级标题与下一行同页的规则；用户标签中的 RTF 内容保留。
+Label 行不加粗。一行空白标记一个**块边界**：新 chunk、顶层节点、或刚结束自身 below
+行的节点。边界重合只插入一行。同深度的连续节点不插空，因为缩进已表达嵌套关系；
+带 below 行的节点才插空，因为那些行与下一个同级节点缩进相同。跨页重复列标题。
+
+分页由 Header 的 `page_rows` 控制（默认 22 个打印行，`0` 关闭分页）。每页首尾各一行
+空白行，因此正文最多 `page_rows - 2` 行；重复列标题不计入。块不跨页，唯一例外是
+单块本身高于一整页——它无处可放，因此填满当前页后继续。每页页脚为右对齐、罗马体
+10pt 的 `Page x of Y`。暂不生成标题、自动标签换行或层级标题与下一行同页的规则；
+用户标签中的 RTF 内容保留。
 
 `Download metadata` 下载最近一次保存的 metadata，不会隐式保存当前未保存修改。
 `Download demo package` 与当前 workspace 无关。

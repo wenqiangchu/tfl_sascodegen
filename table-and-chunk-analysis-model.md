@@ -352,6 +352,7 @@ columns:
 | id | string | 工作区内唯一的 header ID。 |
 | source_data | non-empty string | 外部 SAS 数据集引用；原样保留，不表示上传文件或物理路径。可使用 `adsl`、`adam.adsl`、`&ADSL` 或 `&lib..&member` 等调用方提供的 SAS 文本。 |
 | orientation | enum，必填 | portrait 或 landscape；Header 编辑器与 canonical YAML 保存该值，Report 源码据此计算 Letter 页面可用宽度。导入不推断默认值；该字段不属于 Table。 |
+| page_rows | integer，可选 | 每页最多容纳的**打印行**数，含每页首尾各一行强制空白行；实际正文容量为 `page_rows - 2`。默认 22；`0` 表示不分页。分页是版式属性（取决于纸张方向、列宽、字号、内边距），因此不从数据推导。canonical YAML **仅在取值不等于默认值时**写出该字段。该字段不属于 Table。 |
 | spanning_headers | sequence，可选 | 跨列表头；每项有 id、level、label。 |
 | columns | sequence | 有序展示列。 |
 | columns[].id | string | header column 的逻辑 ID。 |

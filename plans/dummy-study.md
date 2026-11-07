@@ -622,8 +622,9 @@ format 声明顺序（SEVERE → MODERATE → MILD）。
 
 ### 10.1 目标
 
-把 `levels[].format` 这条路径变成被真正执行、被真正断言的路径。此前 6 张表虽然覆盖了
-`format`（14.3.2.1 的 `visit` 层用数值型 format），但从未覆盖两个组合：
+把 `levels[].format` 这条路径变成被真正执行、被真正断言的路径。此前 6 张表**没有任何一张
+使用 format**：14.3.2.1 的 `visit` 层原本用数值型 format，已在 P4 改为无 format 的
+`order_variable`，`TFLSEV` 也在 14.3.1.4 重构时移除。因此两个组合从未被覆盖：
 
 1. **首层用字符型 format**；
 2. **父层和子层都用 format**（完整的格式化值组合）。

@@ -1274,7 +1274,7 @@ procedure 的限制；不更改 YAML、workspace、UI、统计量或 categorical
 | hierarchical render 的 `row_sequence` | container 独占的连续最终行号，从 1 开始；仅在 `first.order_key` 时递增。输入 `SET` 必须排除旧的 block-local `row_sequence`，避免覆盖 retained counter。 |
 | `chunk_order`、`column_order` | 分别限定 table 内 chunk 顺序和行内 Header column 位置；不同 container 可各自从 row_sequence=1 开始。 |
 | `_TFL_CELLS_001` / `_TFL_WIDE_001` | 按 chunk_order / row_sequence / column_order 排序，再按 chunk_order / row_sequence 将每行所有列组装为一条宽表记录。 |
-| `WORK._TFL_ASM_001` | 在宽表基础上按既有 chunk/level 边界插入 spacer；非 spacer 行必须完整保留宽表顺序、身份、label、indent 和 cells。 |
+| `WORK._TFL_ASM_001` | 在宽表基础上按**块边界**插入 spacer（新 chunk、顶层节点、刚结束 below 行的节点）；非 spacer 行必须完整保留宽表顺序、身份、label、indent 和 cells。 |
 
 `_TFL_HFLAT_*` 及 nested result 保持只读；新的 row_sequence 只写入 container
 render output，再由 table assembly 消费。上述对象仅存在于生成 SAS 的 WORK
@@ -1640,6 +1640,11 @@ format 名称、定义和原始变量类型仍由调用方保证；应用不新�
 边框共 1.5 pt。Header 声明的列宽、Letter 纸张及一英寸左右页边距保持原意。
 该修复不新增 metadata 字段；预计会改变历史 RTF 的分页和表格结构。
 
+> **2026-11-07 更正**：仅预留 1.5 pt 边框远不足以避免分栏。单元格内边距与边框都不在
+> 声明的列宽里，二分探针测得真实阈值约 0.1 英寸，因此改为预留 `fit_reserve = 0.25`
+> 英寸（2.5 倍安全余量）。1.5 pt 的边框扣除仍然保留，但已不再是唯一的预留。
+> 见 `docs/dummy-study-findings.md` §6.8。
+
 ### 2026-11-02 未格式化层级的 sibling counter 生命周期
 
 独立 study 参考计算发现：未格式化父层的 `sibling_order` 随 assigned 数据进入
@@ -1647,3 +1652,34 @@ format 名称、定义和原始变量类型仍由调用方保证；应用不新�
 这在旧程序和当前程序均存在，不能以新旧输出一致判定正确。计数器只用于当前
 节点发现步骤，输出时丢弃；供后续层使用的只有完整 `node_order_path`。
 以独立的 SOC/PT、Parameter/Visit 和历史 PT 最大严重程度分组排序验证修复。
+
+### 分页：`page_rows` 契约
+
+分页不是数据属性而是版式属性（取决于纸张方向、列宽、字号、单元格内边距），因此作为
+**header 字段**保存，不从数据推导、不硬编码。
+
+| 项 | 契约 |
+| --- | --- |
+| 字段 | `headers[].page_rows`，可选整数 |
+| 默认值 | `default_page_rows = 22` |
+| 取值 | 整数且 ≥ 0；`0` 表示**不分页**（整表连续输出，用于不需要版式的调用方） |
+| 计数口径 | **打印行**总数，含每页首尾各一行强制空白行；重复列头不计（它是表头不是正文行） |
+| 可用容量 | `usable = max(page_rows - 2, 1)`，即扣掉页首/页尾两行垫行 |
+| 归一化输出 | 仅当 `page_rows` **不等于默认值**时才写入 YAML |
+
+实测依据（`PROC REPORT` 单块高度 + Word COM `ComputeStatistics(2)`）：dummy study 六张表
+每页实测数据行 14.0–20.8，故 22 打印行在每张表上都至少留一行余量。
+
+分页在 SAS 侧执行：按块累加高度、生成 `page_group`，再 `break after page_group / page`。
+**块不跨页**，唯一例外是单块本身就高于一整页（否则无处可放）。每页首尾各一行空白行；
+续页若已由块分隔行开篇则不再叠加第二行。
+
+分页位于 `custom_code.after` **之后**（见第 4 组第 6 条），报告读 `WORK._TFL_PAGED_001`；
+`compare` 模式不分页，直接比对 `WORK._TFL_ASM_001`。
+
+> **待定（D1）**：默认值不写入 YAML，意味着将来修改 `default_page_rows` 会**静默改变**
+> 既有 bundle 的含义。候选方案：(a) 把「默认 22」写进 schema v2 契约，改默认值必须升
+> schema；(b) 始终输出该字段，代价是既有 bundle 字节变化一次。**尚未决定。**
+>
+> **待定（D2）**：`default_page_rows = 22` 是否偏大。当前 `check_pagination()` 只校验逻辑
+> 容量，无法发现 Word 实际渲染溢出。是否降低默认值或增加渲染级校验，**尚未决定。**

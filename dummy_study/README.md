@@ -18,7 +18,9 @@
 ## 分页
 
 分页是 **header 级**版式属性，不是表格或行的属性：一页能放多少行取决于纸张方向、
-列宽、字号与单元格内边距，因此由 `metadata/headers.yaml` 的 `page_rows` 显式配置。
+列宽、字号与单元格内边距，因此由 header 的 `page_rows` 配置。本仓库的
+`metadata/headers.yaml` **未显式写出该字段**，三个 header 都沿用默认值 22
+（canonical YAML 只在取值不等于默认值时才输出它）。
 
 | 值 | 含义 |
 | --- | --- |

@@ -37,10 +37,11 @@ inspect the program and the RTF in your own SAS environment.
 Programs use Letter paper and the built-in `Styles.Rtf` style (`style=rtf`).
 Left and right margins are explicitly one inch, giving 6.5 inches in portrait
 or 9 inches in landscape. The stub width is that usable width minus the sum
-of the Header column widths and 1.5 points reserved for the two outer borders.
-The outer border width is fixed at 0.75 point to keep classic ODS RTF from
-splitting the stub and treatment columns into separate panels. Fonts otherwise
-follow the RTF style. Column
+of the Header column widths, the two outer borders at 0.75 point each, and a
+0.25 inch fit reserve. The outer border width is fixed at 0.75 point; the fit
+reserve exists because cell padding and borders are not part of the declared
+column widths, and classic ODS RTF splits the table into horizontally repeated
+panels when the grid has no slack. Fonts otherwise follow the RTF style. Column
 labels and spanning headers follow the metadata; each column also shows
 `(N = xx)` from its population/header membership, including `(N = 0)`.
 
@@ -69,11 +70,21 @@ the report does not read `_TFL_ASM_001` directly. Compare mode skips pagination
 and diffs `WORK._TFL_ASM_001` against the saved table, so the QC path is
 unaffected by page layout.
 
-Label rows use normal font weight. One blank row separates chunks and changes
-between hierarchical levels; coincident boundaries produce one blank row.
-Consecutive rows at the same level do not receive extra gaps. ODS RTF repeats
-column headers across pages. No titles, footnotes, automatic label wrapping,
-or keep-with-next rules are generated. User-supplied label RTF is preserved.
+Label rows use normal font weight. One blank row marks a **block boundary**: a
+new chunk, a top-level node, or a node following the below rows it owns.
+Coincident boundaries produce one blank row. Consecutive nodes at the same depth
+receive no gap, because indentation already expresses the nesting; a node with
+below rows does, because those rows share the indent of the next sibling.
+ODS RTF repeats column headers across pages.
+
+Pages are paginated by the Header's `page_rows` (default 22 printed lines, `0`
+disables breaking). Every page opens and closes with one blank line, so at most
+`page_rows - 2` body lines are used, and repeated column headers do not count
+toward it. A block is never split across pages, with one exception: a block
+taller than a whole page cannot fit anywhere, so it fills the page and continues.
+Each page carries a right-aligned roman 10pt `Page x of Y` footer. No titles,
+automatic label wrapping, or keep-with-next rules are generated. User-supplied
+label RTF is preserved.
 
 ## Bundle layout
 
