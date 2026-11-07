@@ -515,11 +515,41 @@ order_rows <- unlist(lapply(declared_soc_order, function(soc_label) {
     paste(soc_label, pt_label, sep = " / ")
   })))
 }))
-utils::write.csv(data.frame(table = "t_14_3_1_5_serious_teae",
-                            position = seq_along(order_rows),
-                            path = order_rows,
-                            stringsAsFactors = FALSE),
-                 node_order_path, row.names = FALSE)
+node_order_table <- data.frame(table = "t_14_3_1_5_serious_teae",
+                                position = seq_along(order_rows),
+                                path = order_rows,
+                                stringsAsFactors = FALSE)
+utils::write.csv(node_order_table, node_order_path, row.names = FALSE)
+
+# The printed node shape is its own contract: a format supplies values the data
+# does not contain, so the zero-count nodes have to be printed rather than
+# dropped. A dropped node has no cell to disagree with, so the cell comparison
+# cannot see it and the shape has to be stated explicitly. Counted from the
+# declaration order above, not from the data.
+node_shape_path <- file.path(out_dir, "node_shape.csv")
+expected_cells <- do.call(rbind, expected)
+shape_counts <- lapply(unique(node_order_table$table), function(table_id) {
+  paths <- node_order_table$path[node_order_table$table == table_id]
+  depths <- lengths(strsplit(paths, " / ", fixed = TRUE))
+  parents <- paths[depths == 1L]
+  children <- paths[depths == 2L]
+  zero <- expected_cells[expected_cells$table == table_id &
+                           expected_cells$stat == "n", ]
+  zero_parent <- vapply(parents, function(path) {
+    hit <- zero$path == path
+    length(hit) > 0L && all(zero$value[hit] == 0)
+  }, logical(1L))
+  zero_child <- vapply(children, function(path) {
+    hit <- zero$path == path
+    length(hit) > 0L && all(zero$value[hit] == 0)
+  }, logical(1L))
+  data.frame(table = table_id,
+             parents = length(parents), zero_parents = sum(zero_parent),
+             children = length(children), zero_children = sum(zero_child),
+             non_zero = length(paths) - sum(zero_parent) - sum(zero_child),
+             stringsAsFactors = FALSE)
+})
+utils::write.csv(do.call(rbind, shape_counts), node_shape_path, row.names = FALSE)
 row.names(result) <- NULL
 utils::write.csv(result, file.path(out_dir, "expected.csv"), row.names = FALSE)
 

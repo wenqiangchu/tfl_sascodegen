@@ -120,7 +120,7 @@ check_node_order <- function(table) {
 # contract for a format-driven table is that the zero-count nodes are *printed*
 # rather than dropped. Value comparison cannot show that: an absent node has no
 # cell to disagree with. This asserts the shape directly.
-check_format_nodes <- function(table, sas_vars) {
+check_format_nodes <- function(table, expected_shape) {
   asm_path <- file.path(sas_dir, paste0("asm_", table, ".sas7bdat"))
   if (!file.exists(asm_path)) return(NULL)
   assembled <- haven::read_sas(asm_path)
@@ -138,18 +138,25 @@ check_format_nodes <- function(table, sas_vars) {
   parent_zero <- zero[!is.na(levels) & levels == 1L]
   child_zero <- zero[!is.na(levels) & levels == 2L]
 
-  # Every child in the format must appear under every formatted parent, so the
-  # child count is parents x distinct PTs. This is the documented behaviour of
-  # combining a format with a formatted child, not an accident.
+  actual <- c(parents = nrow(parents), zero_parents = sum(parent_zero),
+              children = nrow(children), zero_children = sum(child_zero),
+              non_zero = sum(!zero))
+  # Compare against the counts the independent computation derived from the format
+  # declaration, not against a divisibility rule. `children %% parents == 0` also
+  # holds for one parent with two children, so it cannot tell a full format domain
+  # from one whose zero-count nodes were dropped -- and a dropped node has no cell
+  # to disagree with, which is what makes this check necessary at all.
+  want <- c(parents = expected_shape$parents, zero_parents = expected_shape$zero_parents,
+            children = expected_shape$children, zero_children = expected_shape$zero_children,
+            non_zero = expected_shape$non_zero)
   list(
     table = table,
-    parents = nrow(parents),
-    children = nrow(children),
-    zero_parents = sum(parent_zero),
-    zero_children = sum(child_zero),
-    non_zero = sum(!zero),
-    agrees = nrow(children) %% max(nrow(parents), 1L) == 0L &&
-      nrow(children) > 0L && nrow(parents) > 0L
+    parents = actual[["parents"]],
+    children = actual[["children"]],
+    zero_parents = actual[["zero_parents"]],
+    zero_children = actual[["zero_children"]],
+    non_zero = actual[["non_zero"]],
+    agrees = identical(unname(actual), unname(want))
   )
 }
 
@@ -440,12 +447,53 @@ cat(sprintf("%d pages across %d tables; every page within capacity and padded
             sum(pagination$pages), nrow(pagination)))
 
 # Zero-count format nodes must be printed, which no cell comparison can observe.
-# Only tables named in node_order.csv have format-driven levels, so only those
-# carry the zero-count contract.
-format_tables <- unique(utils::read.csv(file.path("dummy_study", "generated",
-                                                 "expected", "node_order.csv"),
-                                       stringsAsFactors = FALSE)$table)
-format_checks <- Filter(Negate(is.null), lapply(format_tables, check_format_nodes))
+# A table with a format-driven level is only covered once compute_expected.R has
+# written its expected node shape, and that registration used to be a convention
+# nobody enforced: adding a format table and forgetting the entry silently left
+# the whole contract untested. Read the bundle now and fail on the gap.
+format_level_tables <- local({
+  source(file.path("src", "metadata", "model.R"))
+  source(file.path("src", "metadata", "yaml_codec.R"))
+  bundle_dir <- file.path("dummy_study", "metadata")
+  read_entry <- function(path) {
+    text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "
+")
+    parse_yaml_document_text(text)$value
+  }
+  templates <- lapply(list.files(file.path(bundle_dir, "templates"), pattern = "[.]yaml$",
+                                 full.names = TRUE), read_entry)
+  tables <- lapply(list.files(file.path(bundle_dir, "tables"), pattern = "[.]yaml$",
+                              full.names = TRUE), read_entry)
+  template_ids <- vapply(templates, function(t) t$id, character(1L))
+  has_format <- vapply(templates, function(template) {
+    chunks <- template$body$chunks %||% list()
+    any(vapply(chunks, function(chunk) {
+      any(vapply(chunk$levels %||% list(), function(level) !is.null(level$format),
+                 logical(1L)))
+    }, logical(1L)))
+  }, logical(1L))
+  format_template_ids <- template_ids[has_format]
+  vapply(tables, function(table) table$id, character(1L))[
+    vapply(tables, function(table) table$template_id, character(1L)) %in% format_template_ids
+  ]
+})
+format_shapes <- utils::read.csv(file.path("dummy_study", "generated", "expected",
+                                            "node_shape.csv"), stringsAsFactors = FALSE)
+unregistered <- setdiff(format_level_tables, format_shapes$table)
+if (length(unregistered) > 0L) {
+  cat("
+format-driven table missing from node_shape.csv: ",
+      paste(unregistered, collapse = ", "), "
+", sep = "")
+  cat("Every table with a format-driven level needs an expected node shape, or its
+")
+  cat("zero-count nodes print unchecked. Add it to compute_expected.R.
+")
+  quit(status = 1L)
+}
+format_checks <- Filter(Negate(is.null), lapply(seq_len(nrow(format_shapes)), function(i) {
+  check_format_nodes(format_shapes$table[[i]], format_shapes[i, , drop = FALSE])
+}))
 if (length(format_checks) > 0L) {
   cat("
 format-driven nodes (zero-count nodes are printed, not dropped)
@@ -459,7 +507,7 @@ format-driven nodes (zero-count nodes are printed, not dropped)
   violated <- !vapply(format_checks, `[[`, logical(1L), "agrees")
   if (any(violated)) {
     cat("
-format node shape violated: children are not evenly distributed over parents
+format node shape violated: the printed node counts do not match the format domain
 ")
     quit(status = 1L)
   }

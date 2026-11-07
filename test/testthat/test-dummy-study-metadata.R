@@ -219,8 +219,15 @@ testthat::test_that("the verification scripts are present and self-describing", 
   testthat::expect_match(compare_script, "check_node_order", fixed = TRUE)
   testthat::expect_match(expected_script, "node_order.csv", fixed = TRUE)
   # A missing zero-count node has no cell to disagree with, so the printed node
-  # shape needs its own check.
+  # shape needs its own check, with the counts written by the independent
+  # computation rather than a divisibility rule that one parent also satisfies.
   testthat::expect_match(compare_script, "check_format_nodes", fixed = TRUE)
+  testthat::expect_match(expected_script, "node_shape.csv", fixed = TRUE)
+  testthat::expect_match(compare_script, "node_shape.csv", fixed = TRUE)
+  testthat::expect_match(compare_script, "zero_children", fixed = TRUE)
+  # Registering a format table used to be a convention nothing enforced.
+  testthat::expect_match(compare_script, "unregistered", fixed = TRUE)
+  testthat::expect_match(compare_script, "format_level_tables", fixed = TRUE)
 })
 
 # 14.3.1.5 exists only to exercise format-driven levels: a format supplies node

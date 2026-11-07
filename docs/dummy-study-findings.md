@@ -865,6 +865,37 @@ node order contract violated: the format declaration order was not kept
 
 进程退出码 1；恢复后回到 `ok`、退出码 0。
 
+### 后续修正（P1-5）：`check_format_nodes()` 原本无法检出「零频节点被丢弃」
+
+第一版的通过判据是 `children %% parents == 0 && children > 0 && parents > 0`。这个式子
+**无法区分完整值域和被截断的值域**：
+
+| 情形 | parents | children | `children %% parents == 0` |
+| --- | ---: | ---: | --- |
+| 完整（23 SOC × 2 PT） | 23 | 46 | TRUE |
+| 22 个 SOC 被丢弃 | 1 | 2 | **TRUE** |
+| 只剩 1 个父、44 个子 | 1 | 44 | **TRUE** |
+
+真正兜住这种情况的其实是 `check_node_order()`（逐行比对 69 行路径），而
+`check_format_nodes()` 只是把 23/22/46/44/3 打印出来、并未断言。参数 `sas_vars` 也从未使用。
+
+修正为方案 A：`compute_expected.R` 额外写出 `generated/expected/node_shape.csv`，内容是
+**从 format 声明顺序推出**的 `parents / zero_parents / children / zero_children / non_zero`
+（14.3.1.5 为 23 / 22 / 46 / 44 / 3）；`check_format_nodes()` 逐项 `identical()`，不再做
+整除判断，未使用的参数已删除。
+
+同时把「format 表必须登记」从约定变成强制：脚本直接读 bundle，找出所有含 format level 的
+表，若某表不在 `node_shape.csv` 里就打印表名并 `quit(status = 1L)`。此前新增一张 format
+表却忘了登记，会让整条零频契约静默失效。
+
+**故障注入验证**（三次，均确认退出码）：
+
+| 注入 | 退出码 | 谁报的 |
+| --- | ---: | --- |
+| `$tflssoc` 只留 `NERVOUS SYSTEM DISORDERS` | 1 | 单元格比对（`missing_in_sas`） |
+| `node_shape.csv` 改成 1/0/2/0/1 | 1 | `check_format_nodes` 单独报出 |
+| `node_shape.csv` 删掉该表 | 1 | 「format-driven table missing」守卫 |
+
 ### 教训
 
 1. **fixture 的目的是覆盖组合，不是覆盖代码行。** 7 张表里 6 张都"有 format 或字符变量"，
