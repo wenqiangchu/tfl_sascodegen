@@ -252,8 +252,13 @@ testthat::test_that("pages respect page_rows, keep blocks whole, and pad both ed
   testthat::expect_match(source, "2 are the page-edge blanks", fixed = TRUE)
   testthat::expect_match(source, "_rows_on_page + _block_rows > 20", fixed = TRUE)
   testthat::expect_match(source, "break after page_group / page", fixed = TRUE)
-  testthat::expect_match(source, "footnote \"Page ^{thispage} of ^{lastpage}\"",
+  # The footer must stay right aligned, roman and body-sized: footnote style=[...]
+  # renders as literal text, so the overrides have to be inline and j=r is what
+  # actually right-aligns the block.
+  testthat::expect_match(source, "footnote1 j=r", fixed = TRUE)
+  testthat::expect_match(source, "^S={fontstyle=roman fontweight=light fontsize=10pt}",
                          fixed = TRUE)
+  testthat::expect_match(source, "Page ^{thispage} of ^{lastpage}", fixed = TRUE)
   # A block separator already supplies a page's top blank, so no second is added.
   testthat::expect_match(source, "needs_top = row_role ne 'spacer'", fixed = TRUE)
 

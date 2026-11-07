@@ -734,7 +734,30 @@ level 级 `format` 的地方（14.3.2.1 已在 P4 移除 `$TFLVISIT`），重构
 
 这样每页首尾恰好一行空白，不会出现连续两个空行。
 
-### SAS 数据步的两个坑
+### 页脚：`footnote style=[...]` 会被当字面文字输出
+
+想让「Page x of Y」右对齐且与正文同字体，第一版写成
+`footnote style=[fontstyle=roman textalign=right] "Page ..."`。结果 RTF 里出现的是
+**这段属性文本本身**（`{style=[fontstyle=roman ...] Page ...}`），属性完全没生效。
+
+正确写法有两条约束：
+
+- **对齐用 `j=r`**，不是 `textalign=right`。`j=` 是 `FOOTNOTE` 语句自己的参数；
+- **字体/字号要用行内 `^S={...}`**，并与 `footnote1 j=r` 放在同一条语句里。
+
+实测最终形态：
+
+```sas
+footnote1 j=r "^S={fontstyle=roman fontweight=light fontsize=10pt}"
+  "Page ^{thispage} of ^{lastpage}";
+```
+
+RTF 里体现为 `\\pard\\plain\\intbl\\sb10\\sa10\\qr\\f1\\fs20\\cf1{\\b0\\i0...`，
+即 `\\qr`（右对齐）、`\\b0\\i0`（非粗非斜）、`\\fs20`（10pt）。
+`\\fs20` 是刻意与正文一致：正文数据格也是 `\\fs20`（10pt），
+表头是 `\\fs22`，标题是 `\\fs26`。
+
+### SAS 数据步的三个坑
 
 1. **`set <数据集>(obs=0)` 放在第一个 `set` 会终止整个 data step**。想借空数据集拿到
    变量结构时，必须写成 `if 0 then set ...;` 再 `set 驱动数据集;`，否则第二个 `set`
