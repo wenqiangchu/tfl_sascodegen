@@ -150,15 +150,14 @@ hierarchical_formatted_level_source <- function(plan, level_order) {
   format_spec <- paste0(level$format, ".")
   class_setup <- if (level_order == 1L) c(
     "  parent_node_key = '';",
-    # The seed writes a missing value before SET defines the variable, so its type
-    # must be declared. Without it CALL MISSING creates a numeric AEBODSYS and the
-    # character format then fails with "already defined as character and numeric".
-    # Only a character format needs this: the documented convention prefixes those
-    # with '$', and a numeric format already matches the type CALL MISSING picks.
-    if (startsWith(level$format, "$")) {
-      paste0("  length ", level$variable, " $&_TFL_HLABEL_LEN_",
-             sprintf("%03d", plan$batch_order), ";")
-    },
+    # The seed writes a missing value before SET defines the variable, so the type
+    # and length must be established first. Inherit them from the input dataset:
+    # `if 0` never executes and never reaches EOF, and it is right for character
+    # and numeric alike. Declaring an explicit character length instead would have
+    # to take it from somewhere -- the formatted label is shorter than the raw
+    # value whenever a format abbreviates it, and a truncated value matches no
+    # format entry at all.
+    paste0("  if 0 then set ", input, "(keep=", level$variable, ");"),
     "  /* A catalog-only seed establishes the root domain even when SET reaches EOF immediately. */",
     "  if _n_ = 1 then do;",
     paste0("    call missing(", level$variable, ");"),

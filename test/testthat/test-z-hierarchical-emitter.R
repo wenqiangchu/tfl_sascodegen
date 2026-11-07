@@ -355,22 +355,28 @@ testthat::test_that("empty formatted roots seed only the catalog and joins retai
   root <- paste(hierarchical_formatted_level_source(plan, 1L), collapse = "\n")
   testthat::expect_match(root,
     "if _n_ = 1 then do;\n    call missing(SOC);\n    flag = .; output;\n  end;", fixed = TRUE)
-  # The seed writes a missing value before SET defines the variable, so the type
-  # has to be declared. Without it SAS creates a numeric SOC and the character
-  # format then fails with "already defined as character and numeric" -- which is
-  # exactly what a first level driven by a character format hits.
-  testthat::expect_match(root, "length SOC $", fixed = TRUE)
-  testthat::expect_lt(regexpr("length SOC $", root, fixed = TRUE)[[1L]],
+  # The seed writes a missing value before SET defines the variable, so type and
+  # length must come from somewhere. Inheriting them from the input dataset is the
+  # only source that is correct for both: a character length taken from the
+  # formatted label truncates the raw value whenever the label is shorter, and the
+  # truncated value then matches no format entry at all.
+  testthat::expect_match(root, "if 0 then set _TFL_HNODE_001(keep=SOC);", fixed = TRUE)
+  testthat::expect_lt(regexpr("if 0 then set _TFL_HNODE_001(keep=SOC);", root, fixed = TRUE)[[1L]],
                       regexpr("call missing(SOC);", root, fixed = TRUE)[[1L]])
-  # A numeric format must not get a character declaration: CALL MISSING already
-  # picks the numeric type, and the `$` in `$soc_fmt` is what separates the two.
+  # No explicit length: it would have to guess the type from the format prefix.
+  testthat::expect_false(grepl("length SOC $", root, fixed = TRUE))
+  # And the same holds for a numeric format, with no branch between the two.
   chunk$levels[[1L]]$format <- "num_fmt"
   plan$chunks[[1L]] <- chunk
   numeric_root <- paste(hierarchical_formatted_level_source(plan, 1L), collapse = "
 ")
-  testthat::expect_false(grepl("length SOC $", numeric_root, fixed = TRUE))
+  testthat::expect_match(numeric_root, "if 0 then set _TFL_HNODE_001(keep=SOC);", fixed = TRUE)
+  testthat::expect_false(grepl("length SOC", numeric_root, fixed = TRUE))
+  # The seed must emit before the driving SET pulls the observed rows in. Match the
+  # driving SET only: "if 0 then set ..." on the same dataset comes first by design.
   testthat::expect_lt(regexpr("flag = .; output;", root, fixed = TRUE)[[1L]],
-                      regexpr("set _TFL_HNODE_001(keep=SOC);", root, fixed = TRUE)[[1L]])
+                      regexpr("
+  set _TFL_HNODE_001(keep=SOC);", root, fixed = TRUE)[[1L]])
   observed_section <- strsplit(root, "data _TFL_HFOBS_001_001;", fixed = TRUE)[[1L]][[2L]]
   testthat::expect_match(observed_section, "set _TFL_HNODE_001;", fixed = TRUE)
   testthat::expect_false(grepl("flag = .; output;", observed_section, fixed = TRUE))

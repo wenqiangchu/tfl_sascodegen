@@ -873,6 +873,42 @@ node order contract violated: the format declaration order was not kept
 2. **按主键 join 的比对只能验值，不能验序。** 凡是"顺序本身是契约"的输出（format 定序、
    `result_sort`、`NOTSORTED`），都必须另有一条按序列比对的断言。
 
+## 6.15 首层字符 format 的种子行不能按标签长度声明变量
+
+14.3.1.5 修复「`call missing` 隐式建数值型」时，第一版用的是
+
+```sas
+length AEBODSYS $&_TFL_HLABEL_LEN_001;
+```
+
+这修好了型别，但引入了截断风险：`_TFL_HLABEL_LEN_<batch>` 是**格式化后标签**的长度
+（`vlength(put(var, fmt.))`，且有 `max(256, ...)` 下限），不是原变量的长度。当 format
+把长值缩写成短标签时，种子步的变量长度小于源变量，`SET` 读入的值被截断。
+
+**SAS 探针实测**（原值 259 字节，format 标签 `'LBL'`，均不带 `NOTSORTED` 之外的特殊设置）：
+
+| 种子写法 | 读入长度 | `put(SOC, $sh.)` |
+| --- | ---: | --- |
+| `length SOC $256;`（按标签长度） | **256（截断）** | `NER` —— **完全未命中任何 format 条目** |
+| `if 0 then set src(keep=SOC);`（继承源） | 258 | `LBL` —— 正确 |
+
+注意后果比"key 对不上"更严重：截断后的值查不到 format 条目，`PUT` 直接返回截断前缀，
+于是**节点标题变成 `NER` 而不是 `Nerv`**，节点值域也随之分裂（同时出现 `Nerv`/`NER`
+两类节点）。同时 SAS 打出 `WARNING: 输入数据集为变量"xxx"指定了多个长度。这会造成数据截断。`
+
+因此改为在 `call missing` 之前用 `if 0 then set <input>(keep=<variable>);` 继承类型与长度：
+`if 0` 永不执行、不会触发 EOF，且对字符和数值都正确，不需要 `startsWith(format, "$")`
+分支。（`$` 前缀本就不是"文档约定"，而是 SAS 规则：字符 format 必须以 `$` 开头。）
+
+**为什么 14.3.1.5 没触发**：`AEBODSYS` 长 67 字节，而标签长度下限是 256，67 < 256 所以
+不会被截断。要复现必须让原值超过 256 字节。
+
+**为什么没有留下 SAS 运行期夹具**：SAS 对 format 的 START 值有 262 字节上限（实测：更长
+的 START 会导致引号字符串解析失败/查找失常），而标签长度下限是 256，两者之间只有 6 字节
+窗口，且在该窗口内 `PROC MEANS / PRELOADFMT` 仍会把超长值当作未匹配。构造一个既不依赖
+SAS 未文档化边界、又能稳定表达"截断"的夹具成本高于收益，因此改为：单元测试断言种子行
+使用 `if 0 then set` 且不再出现按标签长度的 `length`，缺陷证据由本节的上表记录。
+
 ## 7. 证据位置
 
 | 内容 | 位置 |
