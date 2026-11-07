@@ -45,10 +45,10 @@ labels and spanning headers follow the metadata; each column also shows
 `(N = xx)` from its population/header membership, including `(N = 0)`.
 
 The generated order is custom code **before**, population/header derivation,
-analysis and table assembly, custom code **after**, and finally `PROC REPORT`
-and `ODS RTF CLOSE`. The demo includes both custom-code fields. The report
-always reads `WORK._TFL_ASM_001`; edits in **after** must write back to that
-dataset and retain these fields:
+analysis and table assembly, custom code **after**, page pagination, and
+finally `PROC REPORT` and `ODS RTF CLOSE`. The demo includes both custom-code
+fields. Your **after** code must update `WORK._TFL_ASM_001` in place and retain
+these fields:
 
 | Field | Use |
 | --- | --- |
@@ -61,6 +61,13 @@ The assembly also retains `chunk_order`, `row_sequence`, `chunk_id`, `row_id`,
 `runtime_row_id`, `row_role`, `hierarchy_level`, and `node_key` for identifying
 rows in custom code. Runtime identities and all report datasets remain in
 SAS WORK and are not metadata fields.
+
+Pagination runs **after** your **after** code, so its edits are carried into the
+pages. It reads `WORK._TFL_ASM_001` and writes `WORK._TFL_PAGED_001`, which is
+what `PROC REPORT` renders; `_TFL_PAGED_001` adds only `page_group`. That means
+the report does not read `_TFL_ASM_001` directly. Compare mode skips pagination
+and diffs `WORK._TFL_ASM_001` against the saved table, so the QC path is
+unaffected by page layout.
 
 Label rows use normal font weight. One blank row separates chunks and changes
 between hierarchical levels; coincident boundaries produce one blank row.

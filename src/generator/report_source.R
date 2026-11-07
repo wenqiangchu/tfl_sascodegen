@@ -155,10 +155,11 @@ table_assembly_source <- function(outputs, resolved) {
     paste0("  keep report_order gap_before ", identities, " ", column_text, ";"),
     "run;",
     "/* Custom code after may update this dataset in place before final output. */",
+    "/* Pagination runs later, in the report section, so that an in-place edit of",
+    "   this dataset is carried into the pages instead of being overwritten. */",
     "proc sort data=_TFL_SPACING_001 out=WORK._TFL_ASM_001;",
     "  by report_order;",
-    "run;",
-    page_break_source(resolved$header)
+    "run;"
   )
 }
 
@@ -311,6 +312,11 @@ rtf_report_source <- function(resolved, layout) {
   header <- resolved$header
   columns <- report_column_names(header)
   c(
+    # Pagination belongs to the report, not to the assembly. The custom-code
+    # contract lets `after` update WORK._TFL_ASM_001 in place, so pagination has
+    # to read that dataset after the hook has run. Compare mode therefore never
+    # paginates: it diffs WORK._TFL_ASM_001 directly.
+    page_break_source(header),
     "/* Write the RTF in the caller's current SAS working directory. */",
     paste0("options papersize=letter orientation=", header$orientation,
            " leftmargin=1in rightmargin=1in nodate nonumber;"),

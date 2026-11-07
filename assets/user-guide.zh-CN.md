@@ -150,8 +150,8 @@ SAS 执行、结果正确性和 RTF 外观由使用者手动验收。
 population/header membership 的 `(N = xx)`，空列显示 `(N = 0)`。
 
 源码顺序为 `custom_code.before → population/header → 分析与表组装 → custom_code.after
-→ PROC REPORT → ODS RTF CLOSE`。Demo 已包含 before 和 after 示例。报告固定读取
-`WORK._TFL_ASM_001`；after 修改结果时应写回同名数据集，并保留以下字段：
+→ 分页 → PROC REPORT → ODS RTF CLOSE`。Demo 已包含 before 和 after 示例。
+after 代码需原地修改 `WORK._TFL_ASM_001`，并保留以下字段：
 
 | 字段 | 用途 |
 | --- | --- |
@@ -163,6 +163,11 @@ population/header membership 的 `(N = xx)`，空列显示 `(N = 0)`。
 数据集中同时保留 `chunk_order`、`row_sequence`、`chunk_id`、`row_id`、
 `runtime_row_id`、`row_role`、`hierarchy_level` 和 `node_key`，供自定义代码定位行。
 这些 SAS 运行期字段不写入 metadata。
+
+分页在 custom code **after** 之后执行，因此 after 的修改会进入页面。分页读取
+`WORK._TFL_ASM_001` 并写出 `WORK._TFL_PAGED_001`，由 `PROC REPORT` 渲染；
+`_TFL_PAGED_001` 只额外增加 `page_group`。也就是说报告**不再**直接读 `_TFL_ASM_001`。
+QC compare 模式不分页，直接比对 `WORK._TFL_ASM_001`，因此版式不影响 QC 路径。
 
 Label 行不加粗。Chunk 边界和不同层级的切换处各留一行空白；边界重合只插入一行，
 同级连续行不额外插空。跨页重复列标题。暂不生成标题、脚注、自动标签换行或

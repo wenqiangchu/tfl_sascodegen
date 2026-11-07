@@ -56,14 +56,51 @@ testthat::test_that("RTF source preserves custom hooks around the fixed report i
   source <- result$source
   testthat::expect_true(startsWith(source, bundle$tables[[1L]]$custom_code$before))
   testthat::expect_match(source, bundle$tables[[1L]]$custom_code$after, fixed = TRUE)
+  # Pagination must run after custom_code.after: the contract is that after edits
+  # WORK._TFL_ASM_001 in place, so anything that reads or replaces that dataset
+  # has to come later or the edit is silently discarded.
   markers <- c("Project setup before", "Select the table population", "Assemble table rows",
-               "Update the fixed report input", "ods rtf file='t_demog.rtf' style=rtf;",
+               "Update the fixed report input", "data _TFL_BLOCKS_001;",
+               "ods rtf file='t_demog.rtf' style=rtf;",
                "proc report data=WORK._TFL_PAGED_001", "ods rtf close;")
   positions <- vapply(markers, function(marker) regexpr(marker, source, fixed = TRUE)[[1L]], integer(1L))
   testthat::expect_true(all(positions > 0L))
   testthat::expect_true(all(diff(positions) > 0L))
   testthat::expect_true(endsWith(source, "ods rtf close;"))
   testthat::expect_identical(source, generate_table_source(bundle, "t_demog")$source)
+})
+
+# The assembly section ends at WORK._TFL_ASM_001 because that is the dataset the
+# custom-code contract exposes. Pagination used to be appended to the assembly
+# section, which ran it before custom_code.after and threw the edit away.
+testthat::test_that("custom_code.after runs before pagination, not after it", {
+  bundle <- report_fixture()
+  source <- generate_table_source(bundle, "t_demog")$source
+  order <- function(text) regexpr(text, source, fixed = TRUE)[[1L]]
+  after_at <- order("Update the fixed report input")
+  paginate_at <- order("data _TFL_BLOCKS_001;")
+  report_at <- order("proc report data=WORK._TFL_PAGED_001")
+  testthat::expect_true(after_at > 0L)
+  testthat::expect_true(paginate_at > after_at)
+  testthat::expect_true(report_at > paginate_at)
+
+  # The assembly step must hand over the dataset the contract names, and the last
+  # thing before custom_code.after must be that hand-over -- no pagination.
+  before_after <- substr(source, 1L, after_at)
+  testthat::expect_match(before_after, "out=WORK._TFL_ASM_001", fixed = TRUE)
+  testthat::expect_false(grepl("_TFL_BLOCKS_001", before_after, fixed = TRUE))
+  testthat::expect_false(grepl("_TFL_PAGED_001", before_after, fixed = TRUE))
+})
+
+# Compare mode only diffs WORK._TFL_ASM_001 against the saved table, so building
+# pages there is dead work that also hides the fact that the QC path never sees
+# the paginated dataset.
+testthat::test_that("compare mode does not paginate", {
+  source <- generate_table_source(report_fixture(), "t_demog", output_mode = "compare")$source
+  testthat::expect_false(grepl("_TFL_BLOCKS_001", source, fixed = TRUE))
+  testthat::expect_false(grepl("_TFL_PAGED_001", source, fixed = TRUE))
+  testthat::expect_false(grepl("page_group", source, fixed = TRUE))
+  testthat::expect_match(source, "proc compare", fixed = TRUE)
 })
 
 testthat::test_that("Letter layout reserves margins and borders without changing header widths", {

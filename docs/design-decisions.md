@@ -1071,8 +1071,10 @@ Shiny 的当前控件值与最近一次生成时捕获的 `generated_options` �
    `counting_unit` 键；刻意不含 `column_order`，因为 header 展开会把同一
    source 重复按列广播。`counting_unit: record` 的键为 `source_row`（恒唯一），
    因此既不生成检查也不生成去重代码。每个重复键最多报告一次。
-3. `report` 模式在 analysis、assembly 和 `custom_code.after` 后添加 `PROC REPORT`
-   与既有 ODS RTF 源码。`compare` 模式在同一位置添加：
+3. `report` 模式在 analysis、assembly 和 `custom_code.after` 后添加**分页**、`PROC REPORT`
+   与既有 ODS RTF 源码。分页必须位于 `custom_code.after` **之后**：after 的契约是原地
+   改写 `WORK._TFL_ASM_001`，分页若前置会读取尚未被改写的版本并覆盖它，使编辑被静默
+   丢弃（见「分页」小节）。`compare` 模式不分页，直接比对 `WORK._TFL_ASM_001`：
 
    ```sas
    proc compare base=tables.<table_id> compare=WORK._TFL_ASM_001 listvar;
