@@ -424,10 +424,18 @@ testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
   testthat::expect_true(explicit$passed)
   testthat::expect_identical(explicit$workspace$headers[[1L]]$page_rows, 18L)
 
-  # The default is implicit, so it must not appear in the rendered YAML; emitting
-  # it would change the bytes of every existing bundle.
-  testthat::expect_false(grepl("page_rows", canonical_yaml_text(build()), fixed = TRUE))
+  # The capacity is always written, including when it equals the default, so a
+  # bundle states its own layout instead of inheriting whatever default_page_rows
+  # happens to be when it is read. Changing the constant must not silently change
+  # what an existing file means.
+  testthat::expect_true(grepl(sprintf("page_rows: %d", default_page_rows),
+                              canonical_yaml_text(build()), fixed = TRUE))
   testthat::expect_true(grepl("page_rows: 18", canonical_yaml_text(build(18L)), fixed = TRUE))
+  # And it survives two round trips unchanged, so the emitted value is stable.
+  twice <- parse_bundle_yaml(canonical_yaml_text(
+    parse_bundle_yaml(canonical_yaml_text(build()))$workspace))
+  testthat::expect_true(grepl(sprintf("page_rows: %d", default_page_rows),
+                              canonical_yaml_text(twice$workspace), fixed = TRUE))
 
   # Zero means "never break"; a negative capacity is not a page.
   zero <- parse_bundle_yaml(canonical_yaml_text(build(0L)))

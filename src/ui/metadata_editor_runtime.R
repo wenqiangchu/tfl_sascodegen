@@ -114,10 +114,11 @@ metadata_editor_server_impl <- function(input, output, session) {
             node_role=as.character(input[[paste0(lp,"node_role")]] %||% old$node_role %||% "label"),
             missing_policy=as.character(input[[paste0(lp,"missing_policy")]] %||% old$missing_policy %||% "exclude"))
           # A level is either format-driven or variable-driven; the model rejects
-          # the combination. The order_direction select has no blank option, so the
-          # browser posts "asc" for every level, format-driven ones included. Carry
-          # the order fields only when there is no format, otherwise the collected
-          # draft fails validation and the level cannot be saved at all.
+          # the combination. The select now has a blank option, so a format-driven
+          # level posts nothing, but the fields can still be carried over from a
+          # previously saved level whose format was just added. Skip them whenever
+          # a format is present, otherwise the collected draft fails validation and
+          # the level cannot be saved at all.
           format_driven <- !is.null(format_name)
           if (format_driven) z$format <- format_name
           if (!format_driven && !is.null(order_variable)) z$order_variable <- order_variable
@@ -166,7 +167,8 @@ metadata_editor_server_impl <- function(input, output, session) {
     value <- current_base(); if (is.null(value)) return(NULL)
     data <- header_table() %||% header_editor_data(value)
     header_from_editor_data(value$id, input$header_source_data, data,
-                            input$header_orientation %||% value$orientation, original = value)
+                            input$header_orientation %||% value$orientation,
+                            page_rows = input$header_page_rows, original = value)
   }
   collect_table_from_ui <- function() {
     value <- current_base(); if (is.null(value)) return(NULL)
@@ -213,6 +215,7 @@ metadata_editor_server_impl <- function(input, output, session) {
     if (type=="header") {
       updateTextInput(session,"header_source_data",value=value$source_data %||% "")
       updateSelectInput(session,"header_orientation",selected=value$orientation %||% "")
+      updateNumericInput(session,"header_page_rows",value=value$page_rows %||% default_page_rows)
       header_table(header_editor_data(value))
     }
     if (type=="table") {

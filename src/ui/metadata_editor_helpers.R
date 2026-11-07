@@ -147,7 +147,8 @@ header_editor_data <- function(header) {
   as.data.frame(out, stringsAsFactors=FALSE)
 }
 
-header_from_editor_data <- function(id, source_data, data, orientation, original = NULL) {
+header_from_editor_data <- function(id, source_data, data, orientation,
+                                    page_rows = NULL, original = NULL) {
   text <- function(x) if (length(x) != 1L || is.na(x)) "" else as.character(x)
   columns <- lapply(seq_len(nrow(data)), function(i) {
     list(id=trimws(text(data$id[[i]])), label=text(data$label[[i]]),
@@ -168,29 +169,35 @@ header_from_editor_data <- function(id, source_data, data, orientation, original
   }
   result <- list(id=id, source_data=as.character(source_data %||% ""),
                  orientation=as.character(orientation %||% ""))
-  # Page capacity is not edited in the UI, so it carries over from the original
-  # header. Dropping it here would reset every header to the default on any edit
-  # and change the canonical field order. There is deliberately no separate
-  # page_rows argument: two ways to supply the same value can disagree, and one
-  # of them previously put the value in the wrong slot.
-  if (!is.null(original) && !is.null(original$page_rows)) result$page_rows <- original$page_rows
+  # Page capacity is edited, so the posted value wins. A NULL or NA means the
+  # control was not rendered yet (it posts NULL before the first update, and NA
+  # when the box is empty), so the stored value carries over -- that is what keeps
+  # an unrelated edit from resetting it. Blank and unset are the same case on
+  # purpose: treating them differently would leave `result` without the field
+  # while the baseline has it, and the header would look edited forever.
+  capacity <- page_rows
+  blank <- is.null(capacity) || (length(capacity) == 1L && is.na(capacity))
+  if (blank && !is.null(original)) capacity <- original$page_rows
+  if (!is.null(capacity) && length(capacity) == 1L && !is.na(capacity)) {
+    result$page_rows <- as.integer(capacity)
+  }
   if (length(spans)) result$spanning_headers <- spans
   result$columns <- columns
   if (!is.null(original)) {
     # Compare both sides through the same label-based editor representation.
     # Reconstructed span IDs and field order are not evidence of a user edit.
+    #
     # The baseline must not pass `original` back in: that re-enters this branch
-    # and recurses without bound. Carry only the non-edited page capacity.
-    # The baseline must not pass `original` back in: that re-enters this branch
-    # and recurses without bound. It has to describe the same shape as `result`
-    # though, page capacity included, or an untouched header would never compare
+    # and recurses without bound. It still has to describe the same shape as
+    # `result`, page capacity included, or an untouched header would never compare
     # equal and every open/save would mark it dirty.
+    #
+    # It carries the *stored* capacity, not the posted one: the baseline answers
+    # "what would an unedited header look like", so passing `result$page_rows`
+    # would make a capacity change compare equal and silently revert it.
     baseline <- header_from_editor_data(original$id, original$source_data,
-                                        header_editor_data(original), original$orientation)
-    if (!is.null(result$page_rows)) {
-      baseline$page_rows <- result$page_rows
-      baseline <- baseline[names(result)[names(result) %in% names(baseline)]]
-    }
+                                        header_editor_data(original), original$orientation,
+                                        page_rows = original$page_rows)
     if (workspace_canonical_equal(baseline, result)) return(clone_metadata_value(original))
   }
   result

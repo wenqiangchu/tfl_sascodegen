@@ -82,3 +82,57 @@ testthat::test_that("changed headers keep canonical field order and distinct lab
     original = header
   ), header)
 })
+
+testthat::test_that("the page capacity is editable and round-trips through the editor", {
+  original <- header_span_editor_fixture()
+  data <- header_editor_data(original)
+
+  # The posted value wins over the stored one.
+  lowered <- header_from_editor_data(original$id, original$source_data, data,
+                                     original$orientation, page_rows = 18L,
+                                     original = original)
+  testthat::expect_identical(lowered$page_rows, 18L)
+
+  # 0 is a real value ("do not paginate"), not "unset": it must survive the
+  # conversion rather than fall back to the original.
+  disabled <- header_from_editor_data(original$id, original$source_data, data,
+                                      original$orientation, page_rows = 0L,
+                                      original = original)
+  testthat::expect_identical(disabled$page_rows, 0L)
+
+  # An empty or not-yet-rendered control posts NULL/NA; the original value carries
+  # over so an unrelated edit does not silently reset the capacity.
+  untouched <- header_from_editor_data(original$id, original$source_data, data,
+                                       original$orientation, page_rows = NULL,
+                                       original = original)
+  testthat::expect_identical(untouched$page_rows, original$page_rows)
+  blank <- header_from_editor_data(original$id, original$source_data, data,
+                                   original$orientation, page_rows = NA_integer_,
+                                   original = original)
+  testthat::expect_identical(blank, original)
+
+  # Changing only the capacity is an edit, and reverting it is not.
+  testthat::expect_false(workspace_canonical_equal(lowered, original))
+  reverted <- header_from_editor_data(original$id, original$source_data, data,
+                                      original$orientation,
+                                      page_rows = original$page_rows, original = original)
+  testthat::expect_identical(reverted, original)
+})
+
+testthat::test_that("the page capacity control is rendered and wired", {
+  ui <- paste(readLines(file.path(project_root, "src", "ui", "metadata_editor_ui.R"),
+                        warn = FALSE), collapse = "\n")
+  testthat::expect_match(ui, "header_page_rows", fixed = TRUE)
+  # The minimum has to agree with the parser, which refuses 1 and 2 because two
+  # of every page's printed lines are the mandatory edge blanks.
+  testthat::expect_match(ui, "min = 0", fixed = TRUE)
+  testthat::expect_match(ui, "minimum is 3", fixed = TRUE)
+
+  runtime <- paste(readLines(file.path(project_root, "src", "ui", "metadata_editor_runtime.R"),
+                             warn = FALSE), collapse = "\n")
+  # Collected on save and refreshed when another header is selected; missing
+  # either half leaves the control showing a stale value.
+  testthat::expect_match(runtime, "page_rows = input$header_page_rows", fixed = TRUE)
+  testthat::expect_match(runtime, "updateNumericInput(session,\"header_page_rows\"",
+                         fixed = TRUE)
+})

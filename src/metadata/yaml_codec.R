@@ -368,9 +368,11 @@ render_header_yaml <- function(value, indent) {
   yaml_emit_scalar(context, indent, "id", value$id)
   yaml_emit_scalar(context, indent, "source_data", value$source_data)
   yaml_emit_scalar(context, indent, "orientation", value$orientation)
-  # Absent means "use the default", so emitting it unconditionally would change
-  # the bytes of every existing bundle and break exact round trips.
-  if (!is.null(value$page_rows) && !identical(as.integer(value$page_rows), default_page_rows)) {
+  # The capacity is written even when it equals the default. Omitting it made the
+  # file's meaning depend on whatever default_page_rows was at read time, so
+  # changing that constant silently changed every existing bundle. Writing it
+  # keeps a bundle self-describing: the layout it specifies is the layout it gets.
+  if (!is.null(value$page_rows)) {
     yaml_emit_scalar(context, indent, "page_rows", value$page_rows, "integer")
   }
   if (!is.null(value$spanning_headers) && length(value$spanning_headers) > 0L) {

@@ -77,8 +77,11 @@ receive no gap, because indentation already expresses the nesting; a node with
 below rows does, because those rows share the indent of the next sibling.
 ODS RTF repeats column headers across pages.
 
-Pages are paginated by the Header's `page_rows` (default 22 printed lines, `0`
-disables breaking). Every page opens and closes with one blank line, so at most
+Pages are paginated by the Header's `page_rows`, edited as **Page capacity** on
+the Header tab (default 22 printed lines, `0` disables breaking, otherwise the
+minimum is 3). The value is always saved in the bundle, including when it equals
+the default, so a bundle states its own layout instead of inheriting whatever the
+current default happens to be. Every page opens and closes with one blank line, so at most
 `page_rows - 2` body lines are used, and repeated column headers do not count
 toward it. A block is never split across pages, with one exception: a block
 taller than a whole page cannot fit anywhere, so it fills the page and continues.
