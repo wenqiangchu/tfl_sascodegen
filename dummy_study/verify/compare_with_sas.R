@@ -165,6 +165,12 @@ check_pagination <- function(table, page_rows) {
   sizes <- tapply(rep(1L, nrow(data)), groups, sum)
   first_blank <- tapply(role, groups, function(x) x[[1L]] == "spacer")
   last_blank <- tapply(role, groups, function(x) x[[length(x)]] == "spacer")
+  # A block separator belongs to the block after it, so it can never be the last
+  # body row of a page. The page's own bottom pad always follows it, so two
+  # consecutive blanks at the end mean a separator was stranded at the page edge.
+  double_trailing_blank <- tapply(role, groups, function(x) {
+    length(x) >= 2L && x[[length(x)]] == "spacer" && x[[length(x) - 1L]] == "spacer"
+  })
   list(
     table = table,
     pages = length(unique(groups)),
@@ -173,7 +179,8 @@ check_pagination <- function(table, page_rows) {
     capacity = page_rows,
     oversized = sum(sizes > page_rows),
     missing_first_blank = sum(!first_blank),
-    missing_last_blank = sum(!last_blank)
+    missing_last_blank = sum(!last_blank),
+    stranded_separator = sum(double_trailing_blank)
   )
 }
 
@@ -418,10 +425,12 @@ for (i in seq_len(nrow(pagination))) {
 }
 pagination_broken <- pagination[pagination$oversized > 0L |
                                 pagination$missing_first_blank > 0L |
-                                pagination$missing_last_blank > 0L, , drop = FALSE]
+                                pagination$missing_last_blank > 0L |
+                                pagination$stranded_separator > 0L, , drop = FALSE]
 if (nrow(pagination_broken) > 0L) {
   cat("
-pagination contract violated: a page overflowed or lost an edge blank
+pagination contract violated: a page overflowed, lost an edge blank, or stranded a
+block separator at the page edge
 ")
   print(pagination_broken)
   quit(status = 1L)

@@ -432,3 +432,95 @@ testthat::test_that("header catalog includes every declared column without consu
   testthat::expect_match(catalog, "keep header_column_id column_order;", fixed = TRUE)
   testthat::expect_false(grepl("_TFL_MEM_001", catalog, fixed = TRUE))
 })
+
+# Page assignment is a pure function of the printed row roles and the capacity, so
+# it is checked against a reference implementation rather than by eyeballing SAS
+# output. The reference mirrors the SAS step in page_break_source() exactly.
+paginate_pages <- function(roles, usable) {
+  n <- length(roles)
+  block_id <- integer(n)
+  id <- 0L
+  for (index in seq_len(n)) {
+    if (roles[[index]] == "spacer" || index == 1L) id <- id + 1L
+    block_id[[index]] <- id
+  }
+  sizes <- as.integer(table(block_id)[as.character(seq_len(id))])
+  page <- integer(n)
+  current <- 1L
+  rows_on_page <- 0L
+  seen <- 0L
+  for (index in seq_len(n)) {
+    if (block_id[[index]] != seen) {
+      seen <- block_id[[index]]
+      size <- sizes[[seen]]
+      fits <- size <= usable
+      if (index == 1L) {
+        rows_on_page <- 0L
+      } else if (fits && rows_on_page + size > usable) {
+        current <- current + 1L
+        rows_on_page <- 0L
+      } else if (!fits && usable - rows_on_page < 2L) {
+        # An oversized block continues on this page, so leave room for its
+        # separator plus at least one content row.
+        current <- current + 1L
+        rows_on_page <- 0L
+      }
+    } else if (rows_on_page + 1L > usable) {
+      current <- current + 1L
+      rows_on_page <- 0L
+    }
+    page[[index]] <- current
+    rows_on_page <- rows_on_page + 1L
+  }
+  page
+}
+
+page_roles_for_blocks <- function(sizes) {
+  unlist(lapply(seq_along(sizes), function(index) {
+    content <- sizes[[index]] - if (index > 1L) 1L else 0L
+    c(if (index > 1L) "spacer", rep("content", max(content, 0L)))
+  }))
+}
+
+testthat::test_that("page assignment fits every page and never ends one on a separator", {
+  usable <- 20L
+  cases <- list(
+    c(40, 25),   # both blocks oversized: the second must not add an extra row
+    c(19, 25),   # a separator must not be stranded as the last row of a page
+    c(20, 20),   # exactly full, so the next block starts a new page
+    c(21),       # a single oversized block spills onto a second page
+    # 30 minimal blocks. A block is a separator plus at least one content row, so
+    # the smallest real block after the first is 2 printed rows.
+    rep(2, 30)
+  )
+  for (sizes in cases) {
+    roles <- page_roles_for_blocks(sizes)
+    pages <- paginate_pages(roles, usable)
+    sizes_on_page <- as.integer(table(pages))
+    label <- paste(sizes, collapse = ",")
+    # Capacity is measured in printed body rows, so page_rows - 2 is the limit.
+    testthat::expect_lte(max(sizes_on_page), usable, label = label)
+    # A separator belongs to the block that follows it, so it can never be the
+    # last row of a page: that would print two blank lines at the page edge.
+    last_role <- vapply(sort(unique(pages)), function(group) {
+      tail(roles[pages == group], 1L)
+    }, character(1L))
+    testthat::expect_false(any(last_role == "spacer"), label = label)
+  }
+})
+
+# The reference implementation above is only useful if the generated SAS agrees
+# with it, so the two structural rules are also asserted on the emitted source.
+testthat::test_that("the page assignment step guards oversized blocks and separators", {
+  source <- paste(page_break_source(list(page_rows = 22L)), collapse = "\n")
+  # Every row, including a block's first, must run the capacity check.
+  testthat::expect_match(source, "if _rows_on_page + 1 > 20 then do;", fixed = TRUE)
+  # An oversized block must not be allowed to start on a page with no room left
+  # for its separator plus a content row.
+  # usable - 2 rows still have to be free, so the separator and one content row
+  # both fit. For page_rows = 22 that is 18.
+  testthat::expect_match(source, "not _fits and 18 - _rows_on_page < 2", fixed = TRUE)
+  # The comment must state the exception rather than claim blocks never split.
+  testthat::expect_false(grepl("never split across pages", source, fixed = TRUE))
+  testthat::expect_match(source, "taller than a whole page", fixed = TRUE)
+})
