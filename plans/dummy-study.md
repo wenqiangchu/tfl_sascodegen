@@ -585,3 +585,35 @@ format 声明顺序（SEVERE → MODERATE → MILD）。
 
 **代价**：dummy study 6 张表不再有任何 level 级 `format` 用法，
 该功能改由 `test/fixtures/sas/runtime_v2/run_formats.py` 覆盖。
+
+### 布局修正三（分页：`page_rows` / `Page x of Y` / 页边空白行）
+
+需求（已确认）：
+
+1. `page_rows` 作为 **header 级**配置，默认 22，`0` 表示不分页；
+2. 分页在 **SAS 侧**完成（不引入 R 侧后处理）；
+3. 每页正文首尾各一行空白；
+4. `Page x of Y` 页脚；
+5. 块不得跨页切开。
+
+实现：`src/generator/report_source.R` 新增 `page_break_source()`（按块累加高度、生成
+`page_group`）与 `page_padding_source()`（插入页首/页尾垫行）；`rtf_report_source()`
+改为读 `_TFL_PAGED_001`，加 `define page_group / order noprint`、
+`break after page_group / page` 和 `footnote "Page ^{thispage} of ^{lastpage}"`。
+`compare_source()` 仍比对 `_TFL_ASM_001`，分页是版式而非数据。
+
+三个实测结论（详见 `docs/dummy-study-findings.md` §6.13）：
+
+- **容量要按打印行计**。只数数据行会让「20 数据行 + 4 空行」的块溢出，因为空行也占行；
+  标题行由 ODS 每页重复，不占预算。
+- **块高于一整页时必须允许切开**。14.3.1.2 最大 SOC 挂 34 个 PT（单块 35 行 > 20 容量），
+  任何页都放不下；加了「仅超页块可切」后 6 张表全部 `pages == groups`。
+- **页首垫行不叠加**。块分隔空行属于它后面的块，因此续页页首天然是空行；只在页首
+  非空行时补垫，页尾每页补垫。
+
+另外踩到 SAS 数据步三个坑（`set obs=0` 放在首个 `set` 会终止 step、`call missing(of _all_)`
+会清掉保存变量、多对多 join 让 1012 行涨到 6381 行），均已记入 §6.13。
+
+结果：**90 页**（1/2/1/16/64/6），每页 ≤ 22 打印行且首尾各一空行，P5 断言 10680 格
+仍全一致。`compare_with_sas.R` 新增 `check_pagination()`，把「不超容量 + 页首尾均有垫行」
+变成可失败的断言（已注入故障验证其会失败）。

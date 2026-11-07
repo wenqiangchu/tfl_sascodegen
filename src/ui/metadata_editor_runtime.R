@@ -159,7 +159,8 @@ metadata_editor_server_impl <- function(input, output, session) {
     value <- current_base(); if (is.null(value)) return(NULL)
     data <- header_table() %||% header_editor_data(value)
     header_from_editor_data(value$id, input$header_source_data, data,
-                            input$header_orientation %||% value$orientation, original = value)
+                            input$header_orientation %||% value$orientation, original = value,
+                            page_rows = value$page_rows)
   }
   collect_table_from_ui <- function() {
     value <- current_base(); if (is.null(value)) return(NULL)

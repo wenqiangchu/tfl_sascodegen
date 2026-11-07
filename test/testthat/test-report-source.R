@@ -58,7 +58,7 @@ testthat::test_that("RTF source preserves custom hooks around the fixed report i
   testthat::expect_match(source, bundle$tables[[1L]]$custom_code$after, fixed = TRUE)
   markers <- c("Project setup before", "Select the table population", "Assemble table rows",
                "Update the fixed report input", "ods rtf file='t_demog.rtf' style=rtf;",
-               "proc report data=WORK._TFL_ASM_001", "ods rtf close;")
+               "proc report data=WORK._TFL_PAGED_001", "ods rtf close;")
   positions <- vapply(markers, function(marker) regexpr(marker, source, fixed = TRUE)[[1L]], integer(1L))
   testthat::expect_true(all(positions > 0L))
   testthat::expect_true(all(diff(positions) > 0L))
@@ -209,7 +209,7 @@ testthat::test_that("generation options control duplicate checks and report vers
   testthat::expect_true(qc_checked$passed)
   testthat::expect_match(report$source, "WARNING: [USER] duplicate_key", fixed = TRUE)
   testthat::expect_false(grepl("WARNING: [USER] duplicate_key", no_duplicates$source, fixed = TRUE))
-  testthat::expect_match(report$source, "proc report data=WORK._TFL_ASM_001", fixed = TRUE)
+  testthat::expect_match(report$source, "proc report data=WORK._TFL_PAGED_001", fixed = TRUE)
   testthat::expect_false(grepl("proc compare", report$source, ignore.case = TRUE))
   testthat::expect_match(qc$source, "proc compare base=tables.t_demog compare=WORK._TFL_ASM_001 listvar;", fixed = TRUE)
   testthat::expect_false(grepl("ods rtf file=", qc$source, fixed = TRUE))

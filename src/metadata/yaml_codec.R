@@ -368,6 +368,11 @@ render_header_yaml <- function(value, indent) {
   yaml_emit_scalar(context, indent, "id", value$id)
   yaml_emit_scalar(context, indent, "source_data", value$source_data)
   yaml_emit_scalar(context, indent, "orientation", value$orientation)
+  # Absent means "use the default", so emitting it unconditionally would change
+  # the bytes of every existing bundle and break exact round trips.
+  if (!is.null(value$page_rows) && !identical(as.integer(value$page_rows), default_page_rows)) {
+    yaml_emit_scalar(context, indent, "page_rows", value$page_rows, "integer")
+  }
   if (!is.null(value$spanning_headers) && length(value$spanning_headers) > 0L) {
     yaml_emit_sequence(context, indent, "spanning_headers", value$spanning_headers,
                        render_spanning_header_yaml)

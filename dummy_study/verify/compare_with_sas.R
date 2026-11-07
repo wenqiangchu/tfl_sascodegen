@@ -71,6 +71,35 @@ read_wide <- function(table) {
   data
 }
 
+# Pagination is a layout contract with no numeric signal: a broken page break
+# still produces the right numbers. The paginated rows are the only artifact
+# that carries page_group, so the invariant is checked there. Capacity counts
+# printed lines, so a page holds at most page_rows rows; the page-edge blanks
+# are mandatory, so every page must open and close with a spacer.
+check_pagination <- function(table, page_rows) {
+  path <- file.path(sas_dir, paste0("paged_", table, ".sas7bdat"))
+  if (!file.exists(path)) {
+    stop("Missing paginated SAS output: ", path, call. = FALSE)
+  }
+  data <- haven::read_sas(path)
+  data <- data[order(data$page_group, data$report_order), ]
+  role <- as.character(data$row_role)
+  groups <- data$page_group
+  sizes <- tapply(rep(1L, nrow(data)), groups, sum)
+  first_blank <- tapply(role, groups, function(x) x[[1L]] == "spacer")
+  last_blank <- tapply(role, groups, function(x) x[[length(x)]] == "spacer")
+  list(
+    table = table,
+    pages = length(unique(groups)),
+    rows = nrow(data),
+    largest_page = max(sizes),
+    capacity = page_rows,
+    oversized = sum(sizes > page_rows),
+    missing_first_blank = sum(!first_blank),
+    missing_last_blank = sum(!last_blank)
+  )
+}
+
 build_cell <- function(table, path, column_id, stat, text, slice) {
   parsed <- cell_number(text, slice)
   data.frame(table = table, path = path, column_id = column_id, stat = stat,
@@ -293,6 +322,36 @@ if (length(problems) > 0L) {
   cat(sprintf("\nsummary: %s\n", report_path))
   quit(status = 1L)
 }
+
+# Pagination is checked after the numbers, because a layout regression must not
+# be able to mask a statistical one.
+page_capacity <- 22L
+pagination <- lapply(unique(expected$table), check_pagination, page_rows = page_capacity)
+pagination <- do.call(rbind, lapply(pagination, as.data.frame,
+                                          stringsAsFactors = FALSE))
+cat(sprintf("
+%-30s %5s %5s %8s %9s
+", "pagination", "pages", "rows",
+            "largest", "capacity"))
+for (i in seq_len(nrow(pagination))) {
+  row <- pagination[i, ]
+  cat(sprintf("%-30s %5d %5d %8d %9d
+", row$table, row$pages, row$rows,
+              row$largest_page, row$capacity))
+}
+pagination_broken <- pagination[pagination$oversized > 0L |
+                                pagination$missing_first_blank > 0L |
+                                pagination$missing_last_blank > 0L, , drop = FALSE]
+if (nrow(pagination_broken) > 0L) {
+  cat("
+pagination contract violated: a page overflowed or lost an edge blank
+")
+  print(pagination_broken)
+  quit(status = 1L)
+}
+cat(sprintf("%d pages across %d tables; every page within capacity and padded
+",
+            sum(pagination$pages), nrow(pagination)))
 
 cat(sprintf("\nall %d asserted cells agree with the independent R computation\n",
             sum(summary_table$asserted)))

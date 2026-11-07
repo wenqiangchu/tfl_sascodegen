@@ -147,7 +147,8 @@ header_editor_data <- function(header) {
   as.data.frame(out, stringsAsFactors=FALSE)
 }
 
-header_from_editor_data <- function(id, source_data, data, orientation, original = NULL) {
+header_from_editor_data <- function(id, source_data, data, orientation, original = NULL,
+                                    page_rows = NULL) {
   text <- function(x) if (length(x) != 1L || is.na(x)) "" else as.character(x)
   columns <- lapply(seq_len(nrow(data)), function(i) {
     list(id=trimws(text(data$id[[i]])), label=text(data$label[[i]]),
@@ -168,13 +169,21 @@ header_from_editor_data <- function(id, source_data, data, orientation, original
   }
   result <- list(id=id, source_data=as.character(source_data %||% ""),
                  orientation=as.character(orientation %||% ""))
+  # Page capacity is not edited in the UI, so it carries over from the original
+  # header. Dropping it here would reset every header to the default on any edit
+  # and change the canonical field order.
+  if (is.null(page_rows) && !is.null(original)) page_rows <- original$page_rows
+  if (!is.null(page_rows)) result$page_rows <- page_rows
   if (length(spans)) result$spanning_headers <- spans
   result$columns <- columns
   if (!is.null(original)) {
     # Compare both sides through the same label-based editor representation.
     # Reconstructed span IDs and field order are not evidence of a user edit.
+    # The baseline must not pass `original` back in: that re-enters this branch
+    # and recurses without bound. Carry only the non-edited page capacity.
     baseline <- header_from_editor_data(original$id, original$source_data,
-                                        header_editor_data(original), original$orientation)
+                                        header_editor_data(original), original$orientation,
+                                        page_rows = page_rows)
     if (workspace_canonical_equal(baseline, result)) return(clone_metadata_value(original))
   }
   result

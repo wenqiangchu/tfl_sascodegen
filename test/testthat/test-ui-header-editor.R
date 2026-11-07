@@ -11,6 +11,9 @@ header_span_editor_fixture <- function() {
   columns[[1L]]$spanning_header_2 <- "dose"
   list(
     id = "header", source_data = "&lib..adsl", orientation = "landscape",
+    # Header parsing always materialises the page capacity, so fixtures must
+    # carry it too or every comparison looks like a user edit.
+    page_rows = default_page_rows,
     spanning_headers = list(
       list(id = "treatment", level = 1L, label = "Treatment"),
       list(id = "second_treatment", level = 1L, label = "Treatment"),
@@ -23,7 +26,7 @@ testthat::test_that("unchanged header collection preserves imported IDs and save
   original <- header_span_editor_fixture()
   collected <- header_from_editor_data(original$id, original$source_data,
                                        header_editor_data(original), original$orientation,
-                                       original = original)
+                                       original = original, page_rows = original$page_rows)
   testthat::expect_identical(collected, original)
   workspace <- new_metadata_workspace(new_metadata_bundle(headers = list(original)))
   saved <- workspace_update(workspace, workspace_target("header", original$id), collected)
@@ -76,6 +79,6 @@ testthat::test_that("changed headers keep canonical field order and distinct lab
   header <- saved$workspace$headers[[1L]]
   testthat::expect_identical(header_from_editor_data(
     header$id, header$source_data, header_editor_data(header), header$orientation,
-    original = header
+    original = header, page_rows = header$page_rows
   ), header)
 })

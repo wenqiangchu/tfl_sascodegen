@@ -208,6 +208,10 @@ testthat::test_that("the verification scripts are present and self-describing", 
   # rule for halves, otherwise a correct value fails on a formatting difference.
   testthat::expect_match(compare_script, "sas_round", fixed = TRUE)
   testthat::expect_match(compare_script, "digits", fixed = TRUE)
+  # A broken page break still yields the right numbers, so pagination needs its
+  # own assertion against the paginated rows.
+  testthat::expect_match(compare_script, "check_pagination", fixed = TRUE)
+  testthat::expect_match(compare_script, "missing_last_blank", fixed = TRUE)
 })
 
 # The blank-line rule is a layout contract with no numeric signal, so the only
@@ -228,4 +232,68 @@ testthat::test_that("blank rows mark block boundaries, not depth changes", {
                          fixed = TRUE)
   # The retired condition must be gone: it is what split the SOC/PT nesting.
   testthat::expect_false(grepl("previous_level", source, fixed = TRUE))
+})
+
+# Pagination is a layout contract, so it is asserted on the emitted source and on
+# the rows the program actually writes. The capacity counts printed lines,
+# including the mandatory blank line at each page edge, because a blank row still
+# occupies a line on the page.
+testthat::test_that("pages respect page_rows, keep blocks whole, and pad both edges", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  workspace <- parse_bundle_value(load_dummy_bundle())$value
+  header <- workspace$headers[[1L]]
+  testthat::expect_identical(as.integer(header$page_rows), 22L)
+
+  # A page is 22 printed lines: 20 for the body and 2 for the edge blanks.
+  result <- generate_table_source(workspace, "t_14_3_1_4_teae_severity",
+                                  output_mode = "report")
+  testthat::expect_true(result$passed)
+  source <- paste(result$source, collapse = "\n")
+  testthat::expect_match(source, "2 are the page-edge blanks", fixed = TRUE)
+  testthat::expect_match(source, "_rows_on_page + _block_rows > 20", fixed = TRUE)
+  testthat::expect_match(source, "break after page_group / page", fixed = TRUE)
+  testthat::expect_match(source, "footnote \"Page ^{thispage} of ^{lastpage}\"",
+                         fixed = TRUE)
+  # A block separator already supplies a page's top blank, so no second is added.
+  testthat::expect_match(source, "needs_top = row_role ne 'spacer'", fixed = TRUE)
+
+  # Capacity zero must stay available as "no page breaking at all".
+  disabled <- header
+  disabled$page_rows <- 0L
+  off <- page_break_source(disabled)
+  testthat::expect_match(paste(off, collapse = "\n"),
+                         "disabled for this header", fixed = TRUE)
+  testthat::expect_identical(sum(grepl("page_group = 1", off, fixed = TRUE)), 1L)
+})
+
+testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
+  column <- list(id = "c1", label = "Overall", condition = "1", display_order = 1L,
+                 width = 1, alignment = "center")
+  build <- function(page_rows = NULL) {
+    header <- list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
+                   columns = list(column))
+    if (!is.null(page_rows)) header$page_rows <- page_rows
+    new_metadata_bundle(headers = list(header))
+  }
+
+  default <- parse_bundle_yaml(canonical_yaml_text(build()))
+  testthat::expect_true(default$passed)
+  testthat::expect_identical(default$workspace$headers[[1L]]$page_rows, default_page_rows)
+
+  explicit <- parse_bundle_yaml(canonical_yaml_text(build(18L)))
+  testthat::expect_true(explicit$passed)
+  testthat::expect_identical(explicit$workspace$headers[[1L]]$page_rows, 18L)
+
+  # The default is implicit, so it must not appear in the rendered YAML; emitting
+  # it would change the bytes of every existing bundle.
+  testthat::expect_false(grepl("page_rows", canonical_yaml_text(build()), fixed = TRUE))
+  testthat::expect_true(grepl("page_rows: 18", canonical_yaml_text(build(18L)), fixed = TRUE))
+
+  # Zero means "never break"; a negative capacity is not a page.
+  zero <- parse_bundle_yaml(canonical_yaml_text(build(0L)))
+  testthat::expect_true(zero$passed)
+  testthat::expect_identical(zero$workspace$headers[[1L]]$page_rows, 0L)
+  # A negative capacity is rejected at the model boundary; encoding refuses to
+  # emit it at all, so assert that refusal rather than a round trip.
+  testthat::expect_error(canonical_yaml_text(build(-1L)), "invalid metadata bundle")
 })

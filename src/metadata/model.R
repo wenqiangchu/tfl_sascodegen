@@ -1,5 +1,11 @@
 # Metadata value model and strict structural decoding helpers.
 
+# Data rows that fit on one printed page. Measured with Word on the dummy study
+# layout (letter, 1in margins, 9pt cells): 21-23 rows depending on the table, so
+# 22 is the middle. It is a layout property, not a data property, and changes
+# with orientation, column widths, font size and cell padding.
+default_page_rows <- 22L
+
 is_mapping_value <- function(value) {
   is.list(value) && (length(value) == 0L ||
     (!is.null(names(value)) && all(!is.na(names(value))) &&
@@ -325,7 +331,7 @@ validate_header_spanning <- function(header, path, collector) {
 }
 
 parse_header_value <- function(value, path, collector) {
-  allowed <- c("id", "source_data", "orientation", "spanning_headers", "columns")
+  allowed <- c("id", "source_data", "orientation", "page_rows", "spanning_headers", "columns")
   required <- c("id", "source_data", "orientation", "columns")
   if (!check_mapping(value, path, collector, allowed, required)) return(NULL)
   id <- parse_id_value(get_field(value, "id"), error_path_field(path, "id"), collector)
@@ -340,6 +346,17 @@ parse_header_value <- function(value, path, collector) {
                     "Header orientation must be 'portrait' or 'landscape'.")
     orientation <- NULL
   }
+  # Rows that fit on one page are a property of the layout, not of the data: the
+  # count depends on orientation, column widths, font size and cell padding. It
+  # cannot be derived here, so it is configured and defaulted to a measured
+  # value. Zero disables page breaking entirely.
+  page_rows <- NULL
+  if (has_field(value, "page_rows")) {
+    page_rows <- parse_integer_value(get_field(value, "page_rows"),
+                                     error_path_field(path, "page_rows"), collector,
+                                     "page_rows", min_value = 0L)
+  }
+  if (is.null(page_rows)) page_rows <- default_page_rows
   spans_raw <- parse_sequence_raw(
     get_field(value, "spanning_headers"), error_path_field(path, "spanning_headers"),
     collector, "spanning_headers", required = FALSE, allow_empty = TRUE
@@ -382,14 +399,15 @@ parse_header_value <- function(value, path, collector) {
     add_value_error(collector, error_path_field(path, "columns"),
                     "Column display_order values must be consecutive and match sequence order.")
   }
-  header <- list(id = id, source_data = source_data, orientation = orientation, columns = columns)
+  header <- list(id = id, source_data = source_data, orientation = orientation,
+                 page_rows = page_rows, columns = columns)
   if (length(spans) > 0L) {
     check_unique_ids(spans,
                      lapply(seq_along(spans), function(i)
                        error_path_index(error_path_field(path, "spanning_headers"), i - 1L)),
                      collector)
     header <- list(id = id, source_data = source_data, orientation = orientation,
-                   spanning_headers = spans, columns = columns)
+                   page_rows = page_rows, spanning_headers = spans, columns = columns)
   }
   validate_header_spanning(header, path, collector)
   header

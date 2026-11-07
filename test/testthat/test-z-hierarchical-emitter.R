@@ -260,7 +260,7 @@ testthat::test_that("hierarchical report rows include nodes, below rows, and lev
     "order_key = cats(display_order_path, 'B', put(block_order, z10.), put(row_order, z10.));",
     "node_order_path = cats(display_parent_path, 'C', put(sibling_order, z10.));",
     "by order_key column_order;", "if first.order_key then row_sequence + 1;",
-    "(hierarchy_level = 1 and row_role ne 'static') or", "proc report data=WORK._TFL_ASM_001"
+    "(hierarchy_level = 1 and row_role ne 'static') or", "proc report data=WORK._TFL_PAGED_001"
   )) testthat::expect_true(grepl(marker, source, fixed = TRUE), info = marker)
   testthat::expect_equal(length(regmatches(source, gregexpr("if not (SAFFL = 'Y') then delete;", source, fixed = TRUE))[[1L]]), 1L)
   testthat::expect_equal(length(regmatches(source, gregexpr("proc means", source, fixed = TRUE))[[1L]]), 1L)

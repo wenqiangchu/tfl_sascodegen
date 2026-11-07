@@ -157,7 +157,126 @@ table_assembly_source <- function(outputs, resolved) {
     "/* Custom code after may update this dataset in place before final output. */",
     "proc sort data=_TFL_SPACING_001 out=WORK._TFL_ASM_001;",
     "  by report_order;",
-    "run;"
+    "run;",
+    page_break_source(resolved$header)
+  )
+}
+
+# Rows per page cannot be derived from the metadata: it depends on orientation,
+# column widths, font size and cell padding, so the header carries a measured
+# number. The count is the total printed body lines, including the mandatory
+# blank line at the top and bottom of every page. Zero means "never break a
+# page", which keeps the unpaginated behaviour for callers that do not care
+# about page layout.
+page_break_source <- function(header) {
+  page_rows <- header$page_rows %||% default_page_rows
+  if (is.null(page_rows) || !is.finite(page_rows) || page_rows <= 0L) {
+    return(c("/* Page breaking is disabled for this header. */",
+             "data _TFL_PAGED_001;",
+             "  set _TFL_ASM_001;",
+             "  page_group = 1;",
+             "run;"))
+  }
+  page_rows <- as.integer(page_rows)
+  # Two lines of every page are reserved for the mandatory blank line at the
+  # top and bottom, so only the remainder can hold block rows. Keep at least one
+  # row of capacity so a small page_rows still makes progress.
+  usable <- max(page_rows - 2L, 1L)
+  c(
+    paste0("/* Group rows into pages of at most ", page_rows, " printed rows. */"),
+    paste0("/* ", usable, " of them hold block rows; 2 are the page-edge blanks. */"),
+    "/* A block is a chunk or hierarchy-node run, so it is never split across pages. */",
+    "/* A page group opens when the next block would overflow the capacity. */",
+    "/* Blocks start at a blank row: the spacer is emitted at a block boundary. */",
+    "/* Blank rows occupy a printed line, so they count toward the capacity. */",
+    "data _TFL_BLOCKS_001;",
+    "  set _TFL_ASM_001;",
+    "  block_start = row_role = 'spacer' or _n_ = 1;",
+    "  retain block_id 0;",
+    "  if block_start then block_id + 1;",
+    "run;",
+    "proc sql noprint;",
+    "  create table _TFL_BLOCKSIZE_001 as",
+    "  select block_id, count(*) as block_rows",
+    "  from _TFL_BLOCKS_001",
+    "  group by block_id;",
+    "  /* Carry each block's height onto its rows so page assignment is one pass. */",
+    "  create table _TFL_BLOCKED_001 as",
+    "  select r.*, s.block_rows as _block_size",
+    "  from _TFL_BLOCKS_001 as r left join _TFL_BLOCKSIZE_001 as s",
+    "    on r.block_id = s.block_id",
+    "  order by r.report_order;",
+    "quit;",
+    "/* Assign pages row by row. A block that fits is never split: it either",
+    "   joins the open page or starts a new one. A block taller than a whole page",
+    "   cannot fit anywhere, so it fills the open page and continues on the next.",
+    "   Splitting only such blocks keeps every page within the capacity. */",
+    "data _TFL_PAGED_001;",
+    "  set _TFL_BLOCKED_001;",
+    "  by block_id;",
+    "  retain page_group 1 _rows_on_page 0 _block_rows 0 _fits 0;",
+    "  if first.block_id then do;",
+    "    _block_rows = _block_size;",
+    paste0("    _fits = _block_rows <= ", usable, ";"),
+    "    if _n_ = 1 then do; page_group = 1; _rows_on_page = 0; end;",
+    paste0("    else if _fits and _rows_on_page + _block_rows > ", usable, " then do;"),
+    "      page_group + 1; _rows_on_page = 0;",
+    "    end;",
+    "  end;",
+    "  else do;",
+    paste0("    if _rows_on_page + 1 > ", usable, " then do;"),
+    "      page_group + 1; _rows_on_page = 0;",
+    "    end;",
+    "  end;",
+    "  _rows_on_page + 1;",
+    "run;",
+    page_padding_source(usable)
+  )
+}
+
+# Every page opens and closes with exactly one blank line. A page that already
+# starts with a block separator has its top blank, so no second one is added;
+# the bottom blank is always new because a block separator belongs to the block
+# that follows it and therefore never ends a page.
+page_padding_source <- function(usable) {
+  c(
+    "/* Record the first row role of each page group. */",
+    "proc sort data=_TFL_PAGED_001 out=_TFL_PAGED_S_001;",
+    "  by page_group report_order;",
+    "run;",
+    "data _TFL_PAGEEDGE_001;",
+    "  set _TFL_PAGED_S_001;",
+    "  by page_group;",
+    "  if first.page_group;",
+    "  /* A page already opening with a separator has its top blank line. */",
+    "  needs_top = row_role ne 'spacer';",
+    "  keep page_group needs_top;",
+    "run;",
+    "/* Pad rows reuse the report's own columns, so no identity is listed here.",
+    "   The structural copy must come after the driving SET: an obs=0 SET placed",
+    "   first reaches end-of-file and ends the step before any row is read. */",
+    "data _TFL_PADTOP_001;",
+    "  if 0 then set _TFL_PAGED_S_001;",
+    "  set _TFL_PAGEEDGE_001;",
+    "  if needs_top;",
+    "  row_role = 'spacer'; indent_level = 0; label = '';",
+    "  report_order = 0;",
+    "run;",
+    "/* One bottom pad on every page. Sorting by page_group then report_order",
+    "   places it after the body, because body orders are positive and small. */",
+    "data _TFL_PADBOT_001;",
+    "  if 0 then set _TFL_PAGED_S_001;",
+    "  set _TFL_PAGEEDGE_001;",
+    "  row_role = 'spacer'; indent_level = 0; label = '';",
+    "  report_order = 1000000;",
+    "run;",
+    "data _TFL_PADDED_001;",
+    "  set _TFL_PADTOP_001 _TFL_PAGED_S_001 _TFL_PADBOT_001;",
+    "run;",
+    "proc sort data=_TFL_PADDED_001 out=WORK._TFL_PAGED_001;",
+    "  by page_group report_order;",
+    "run;",
+    paste0("/* Capacity actually available per page: ", usable, " block rows. */")
   )
 }
 
@@ -199,12 +318,16 @@ rtf_report_source <- function(resolved, layout) {
     "footnote;",
     "ods escapechar='^';",
     paste0("ods rtf file=", sas_character_literal(paste0(resolved$table$id, ".rtf")), " style=rtf;"),
+    "/* Page x of Y: ODS resolves the fields when the document is opened. */",
+    "footnote \"Page ^{thispage} of ^{lastpage}\";",
     "/* ODS RTF repeats the report column headers across page breaks. */",
-    "proc report data=WORK._TFL_ASM_001 nowd missing",
+    "proc report data=WORK._TFL_PAGED_001 nowd missing",
     paste0("    style(report)=[outputwidth=100% borderwidth=", sas_report_number(layout$border_width_pt), "pt]"),
     "    style(header)=[protectspecialchars=off]",
     "    style(column)=[protectspecialchars=off asis=on];",
-    paste0("  columns report_order indent_level label ", report_header_columns(header), ";"),
+    paste0("  columns page_group report_order indent_level label ",
+           report_header_columns(header), ";"),
+    "  define page_group / order noprint;",
     "  define report_order / order order=internal noprint;",
     "  define indent_level / display noprint;",
     paste0("  define label / display ", sas_character_literal(resolved$template$body$stub_header %||% ""),
@@ -220,6 +343,8 @@ rtf_report_source <- function(resolved, layout) {
     "    call define(_col_, 'style/merge',",
     "      cats('style=[pretext=\"^R/RTF''\\li', strip(put(indent_level * 200, best32.))) || ' ''\"]');",
     "  endcomp;",
+    "  /* Start each page group on a fresh page. */",
+    "  break after page_group / page;",
     "run;",
     "ods rtf close;"
   )

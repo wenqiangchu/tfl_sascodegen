@@ -14,68 +14,74 @@ testthat::test_that("imported spanning headers navigate cleanly and retain real 
   app$wait_for_js("document.querySelector('#bundle.shiny-bound-input') !== null", timeout = 10000)
   app$upload_file(bundle = archive)
   app$click("confirm_import")
-  app$wait_for_idle(1000)
+  shiny_wait_for_stable(app, 1000)
 
   guarded <- function() grepl("Discard the current changes to continue?", app$get_html("body"), fixed = TRUE)
   open_header <- function() {
     app$set_inputs(main_nav = "metadata")
-    app$wait_for_idle(300)
+    shiny_wait_for_stable(app, 300)
     app$set_inputs(metadata_panel = "header")
-    app$wait_for_idle(500)
+    shiny_wait_for_stable(app, 500)
   }
   edit_span <- function(value) {
     # Exercise DT's typed cell-edit event by committing its actual inline editor.
+    # The editor only exists once DT has rendered the row, so wait for it first.
+    shiny_wait_for_rows(app, "#header_columns_table", 1)
     app$run_js(sprintf(
       "var cell = $('#header_columns_table tbody tr:first-child td:nth-child(7)'); cell.trigger('dblclick'); cell.find('input').val(%s).trigger('blur');",
       jsonlite::toJSON(value, auto_unbox = TRUE)
     ))
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
   }
   open_header()
+  # DT renders after the Shiny output flushes, so reading the table without
+  # waiting for its body races the browser.
+  shiny_wait_for_text(app, "#header_columns_table", "Treatment")
   testthat::expect_match(app$get_html("#header_columns_table"), "Treatment", fixed = TRUE)
   app$set_inputs(metadata_panel = "population")
-  app$wait_for_idle(400)
+  shiny_wait_for_stable(app, 400)
   testthat::expect_false(guarded())
   # Stop here on regression so later actions do not interact with the modal.
   if (!guarded()) {
     for (destination in c("table_metadata", "template_editor", "generate_sas")) {
       open_header()
       app$set_inputs(main_nav = destination)
-      app$wait_for_idle(500)
+      shiny_wait_for_stable(app, 500)
       testthat::expect_false(guarded(), info = destination)
     }
     open_header()
     app$click("header_save")
-    app$wait_for_idle(500)
+    shiny_wait_for_stable(app, 500)
+    shiny_wait_for_rows(app, "#header_list", 2)
     app$click(selector = "#header_list table tbody tr:nth-child(2) td:first-child")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
     testthat::expect_false(guarded())
     app$click(selector = "#header_list table tbody tr:nth-child(1) td:first-child")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
 
     edit_span("Changed treatment")
     testthat::expect_match(app$get_html("#header_columns_table"), "Changed treatment", fixed = TRUE)
     app$set_inputs(main_nav = "table_metadata")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
     testthat::expect_true(guarded())
     app$click("guard_cancel")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
     edit_span("Treatment")
     app$set_inputs(main_nav = "table_metadata")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
     testthat::expect_false(guarded())
 
     open_header()
     app$set_inputs(header_source_data = "work.changed")
     app$set_inputs(metadata_panel = "population")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
     testthat::expect_true(guarded())
     app$click("guard_discard")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
     open_header()
     testthat::expect_identical(app$get_value(input = "header_source_data"), "adam.adsl")
     app$set_inputs(main_nav = "generate_sas")
-    app$wait_for_idle(400)
+    shiny_wait_for_stable(app, 400)
     testthat::expect_false(guarded())
   }
 })
