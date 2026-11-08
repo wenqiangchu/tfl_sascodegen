@@ -441,14 +441,12 @@ serious_pt_label <- c(
 )
 
 # The named vectors carry the declaration order in their names, so names() is the
-# single source for both the order and the label. A separate order vector would
-# duplicate the same 23 strings and could drift out of sync.
-serious_soc_order <- names(serious_soc_label)
-serious_pt_order <- names(serious_pt_label)
+# single source for both the order and the label. There is deliberately no separate
+# order vector: it would duplicate the same 23 strings and could drift.
 
 serious <- teae[!is.na(teae$AESER) & teae$AESER == "Y", ]
 stopifnot(setequal(unique(serious$AEBODSYS), "NERVOUS SYSTEM DISORDERS"))
-stopifnot(all(unique(serious$AEDECOD) %in% serious_pt_order))
+stopifnot(all(unique(serious$AEDECOD) %in% names(serious_pt_label)))
 
 for (column_id in column_ids) {
   in_column <- if (identical(column_id, "overall")) rep(TRUE, nrow(serious)) else
@@ -457,7 +455,7 @@ for (column_id in column_ids) {
     sum(adsl$TRT01A == arm_values[[column_id]], na.rm = TRUE)
   serious_arm <- serious[in_column, ]
 
-  for (soc in serious_soc_order) {
+  for (soc in names(serious_soc_label)) {
     soc_label <- serious_soc_label[[soc]]
     soc_rows <- serious_arm[!is.na(serious_arm$AEBODSYS) &
                               serious_arm$AEBODSYS == soc, ]
@@ -465,7 +463,7 @@ for (column_id in column_ids) {
     expected <- emit(expected, "t_14_3_1_5_serious_teae", soc_label, soc_label, 1L,
                      column_id, list(n = n_soc, pct = 100 * n_soc / denominator),
                      asserted = c("n", "pct"))
-    for (pt in serious_pt_order) {
+    for (pt in names(serious_pt_label)) {
       pt_label <- serious_pt_label[[pt]]
       pt_rows <- soc_rows[!is.na(soc_rows$AEDECOD) & soc_rows$AEDECOD == pt, ]
       n_pt <- subject_count(pt_rows)
@@ -488,8 +486,9 @@ result <- result[order(result$table, result$path, result$column_id, result$stat)
 # the format declaration order, which NOTSORTED preserves; without NOTSORTED SAS
 # falls back to the raw value order and this sequence would no longer match.
 node_order_path <- file.path(out_dir, "node_order.csv")
-declared_soc_order <- vapply(serious_soc_order, function(soc) serious_soc_label[[soc]],
-                             character(1L), USE.NAMES = FALSE)
+# The declaration order is the label vector itself; unname() drops the raw SOC
+# codes, which are only needed to look the label up.
+declared_soc_order <- unname(serious_soc_label)
 order_rows <- unlist(lapply(declared_soc_order, function(soc_label) {
   c(soc_label, unlist(lapply(unname(serious_pt_label), function(pt_label) {
     paste(soc_label, pt_label, sep = " / ")
@@ -507,22 +506,29 @@ utils::write.csv(node_order_table, node_order_path, row.names = FALSE)
 # cannot see it and the shape has to be stated explicitly. Counted from the
 # declaration order above, not from the data.
 node_shape_path <- file.path(out_dir, "node_shape.csv")
-expected_cells <- do.call(rbind, expected)
 shape_counts <- lapply(unique(node_order_table$table), function(table_id) {
   paths <- node_order_table$path[node_order_table$table == table_id]
   depths <- lengths(strsplit(paths, " / ", fixed = TRUE))
   parents <- paths[depths == 1L]
   children <- paths[depths == 2L]
-  zero <- expected_cells[expected_cells$table == table_id &
-                           expected_cells$stat == "n", ]
-  zero_parent <- vapply(parents, function(path) {
-    hit <- zero$path == path
-    length(hit) > 0L && all(zero$value[hit] == 0)
-  }, logical(1L))
-  zero_child <- vapply(children, function(path) {
-    hit <- zero$path == path
-    length(hit) > 0L && all(zero$value[hit] == 0)
-  }, logical(1L))
+  expected_n <- result[result$table == table_id & result$stat == "n", ]
+  # A path with no expected cells is a bug in this script, not a zero-count node:
+  # it would otherwise be scored as zero by the predicate below and quietly assert
+  # the wrong shape. Fail loudly so a drifted label is caught here.
+  missing_paths <- setdiff(paths, expected_n$path)
+  if (length(missing_paths)) {
+    stop("node_order paths without expected cells: ",
+         paste(utils::head(missing_paths), collapse = "; "), call. = FALSE)
+  }
+  # any(hit), not length(hit) > 0: hit has one element per expected cell, so its
+  # length is always positive and all(logical(0) == 0) is TRUE as well. That
+  # combination scored a path which matched nothing as zero-frequency.
+  is_zero_node <- function(path) {
+    hit <- expected_n$path == path
+    any(hit) && all(expected_n$value[hit] == 0)
+  }
+  zero_parent <- vapply(parents, is_zero_node, logical(1L))
+  zero_child <- vapply(children, is_zero_node, logical(1L))
   data.frame(table = table_id,
              parents = length(parents), zero_parents = sum(zero_parent),
              children = length(children), zero_children = sum(zero_child),

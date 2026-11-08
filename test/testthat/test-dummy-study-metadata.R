@@ -328,3 +328,24 @@ testthat::test_that("the fixture renders the default page capacity", {
   testthat::expect_match(source, "break after page_group / page", fixed = TRUE)
   testthat::expect_match(source, "Page ^{thispage} of ^{lastpage}", fixed = TRUE)
 })
+
+testthat::test_that("the zero-count predicate cannot pass on a path that matches nothing", {
+  # compute_expected.R decides zero-frequency nodes with
+  #   hit <- zero$path == path; any(hit) && all(zero$value[hit] == 0)
+  # A predicate written as length(hit) > 0 is always true -- hit has one element
+  # per expected cell -- and all(logical(0) == 0) is true as well, so a path that
+  # matched nothing would be recorded as zero-frequency. Every node would then be
+  # "zero" the moment a label drifted, and node_shape.csv would assert the wrong
+  # shape while the P1-5 guard still reported success.
+  verify_dir <- file.path(project_root, "dummy_study", "verify")
+  expected_script <- paste(readLines(file.path(verify_dir, "compute_expected.R"),
+                                     warn = FALSE), collapse = "\n")
+  testthat::expect_match(expected_script, "any(hit)", fixed = TRUE)
+  testthat::expect_false(grepl("length(hit) > 0L", expected_script, fixed = TRUE))
+  # A node_order path with no expected cells is a bug in this script, not evidence
+  # that the node is zero. It must stop rather than be silently counted.
+  testthat::expect_match(expected_script, "paths without expected cells", fixed = TRUE)
+  # The two zero-frequency predicates are the same function applied to parents and
+  # children, not two copies that can drift.
+  testthat::expect_match(expected_script, "is_zero_node", fixed = TRUE)
+})
