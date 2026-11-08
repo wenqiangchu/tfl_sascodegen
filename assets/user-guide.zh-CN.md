@@ -170,8 +170,8 @@ after 代码需原地修改 `WORK._TFL_ASM_001`，并保留以下字段：
 `report_order` 对 `WORK._TFL_ASM_001` 重新排序再划分块，因此 after 代码可以追加或插入
 行，不必保证物理顺序与 `report_order` 一致（必要时用 `proc append ... force`）。分页读取
 `WORK._TFL_ASM_001` 并写出 `WORK._TFL_PAGED_001`，由 `PROC REPORT` 渲染；
-`_TFL_PAGED_001` 额外增加 `page_group`（页码）与 `_tfl_print_order`（该行在页内的
-打印顺序，报告按它排序）。也就是说报告**不再**直接读 `_TFL_ASM_001`。分页的其余
+`_TFL_PAGED_001` 额外增加 `page_group`（页码）与 `_tfl_print_order`（该行在整张表中的
+打印顺序，报告按它排序；它是最终排序后的 `_n_`，跨页连续编号，不按页重新计数）。也就是说报告**不再**直接读 `_TFL_ASM_001`。分页的其余
 内部变量都已从该数据集丢弃。
 QC compare 模式不分页，直接比对 `WORK._TFL_ASM_001`，因此版式不影响 QC 路径。
 

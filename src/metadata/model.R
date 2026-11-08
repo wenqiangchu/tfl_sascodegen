@@ -3,14 +3,21 @@
 # Printed lines that fit on one page: body lines plus the mandatory blank line at
 # the top and bottom of every page.
 #
-# 22 printed lines means 20 body lines. Measured with Word on the dummy study
-# layout (letter landscape, 1in margins, 10pt body cells), the fullest page of each
-# multi-page table holds 22, 21 and 22 printed body lines respectively for
-# 14.3.1.2, 14.3.1.4 and 14.1.2. So the headroom at 22 is roughly one to two lines,
-# not the comfortable margin an earlier comment claimed -- a table whose labels wrap
-# to a second line could overflow. Whether 22 is the right default is still open
-# (D2 in docs/design-decisions.md); this constant is not a validated measurement of
-# the largest safe page.
+# 22 printed lines means 20 body lines.
+#
+# What is actually known: with 22, Word rendering of the seven dummy-study tables
+# produces exactly as many pages as the pagination step produced page groups (1, 2,
+# 1, 17, 64, 5, 6) and no table splits across a page boundary. So 22 does not
+# overflow these layouts.
+#
+# What is NOT known is the headroom. Counting body lines per page cannot measure it:
+# the fullest pages hold 22, 21 and 22 printed lines for 14.3.1.2, 14.3.1.4 and
+# 14.1.2 precisely because the algorithm stops at 22, so those counts only prove the
+# limit is respected. How much more a physical page could hold has never been
+# measured, and an earlier comment here claimed a comfortable margin that was never
+# established. Whether 22 is the right default is still open (D2 in
+# docs/design-decisions.md); this constant is not a validated measurement of the
+# largest safe page.
 #
 # It is a layout property, not a data property, so it changes with orientation,
 # column widths, font size and cell padding.
