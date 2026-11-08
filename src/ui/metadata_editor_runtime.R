@@ -113,18 +113,17 @@ metadata_editor_server_impl <- function(input, output, session) {
             variable=as.character(input[[paste0(lp,"variable")]] %||% old$variable %||% ""),
             node_role=as.character(input[[paste0(lp,"node_role")]] %||% old$node_role %||% "label"),
             missing_policy=as.character(input[[paste0(lp,"missing_policy")]] %||% old$missing_policy %||% "exclude"))
-          # A level is either format-driven or variable-driven; the model rejects
-          # the combination. The select now has a blank option, so a format-driven
-          # level posts nothing, but the fields can still be carried over from a
-          # previously saved level whose format was just added. Skip them whenever
-          # a format is present, otherwise the collected draft fails validation and
-          # the level cannot be saved at all.
-          format_driven <- !is.null(format_name)
-          if (format_driven) z$format <- format_name
-          if (!format_driven && !is.null(order_variable)) z$order_variable <- order_variable
-          if (!format_driven && !is.null(order_direction)) z$order_direction <- order_direction
+          # A level is either format-driven or variable-driven, and the model
+          # rejects the combination. The collector does not enforce that, because
+          # dropping the fields here would silently discard values the user typed:
+          # the save would report success with the input gone. The order_direction
+          # select has a blank option, so a format-driven level normally posts
+          # nothing and trim_optional leaves the field out. If the user does fill
+          # one in, the draft fails validation and the error names the field.
+          if (!is.null(format_name)) z$format <- format_name
+          if (!is.null(order_variable)) z$order_variable <- order_variable
+          if (!is.null(order_direction)) z$order_direction <- order_direction
           for (field in c("parent_level","label_variable","node_analysis_id","missing_label")) {
-            if (format_driven && identical(field, "label_variable")) next
             v <- trim_optional(input[[paste0(lp,field)]] %||% old[[field]]); if (!is.null(v)) z[[field]] <- v
           }
           # Sorting has no form control; preserve the imported contract so an

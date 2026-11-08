@@ -86,9 +86,8 @@ testthat::test_that("template collection and save preserve imported result sorti
 # order_direction; the model rejects the combination. The order_direction select
 # used to have no blank option, so the browser posted "asc" for every level
 # whether or not a format was set, which made a format-driven template impossible
-# to save at all. The select now offers a blank choice, and the collector still
-# drops the fields defensively: a level whose format was just added can carry
-# values forward from its previously saved, format-free shape.
+# to save at all. The select now offers a blank choice, so an untouched
+# format-driven level posts "" and the field is simply absent.
 testthat::test_that("a format level saves even when the editor posts order fields", {
   ui_environment <- template_contract_ui_environment()
   fixture <- template_sort_fixture()
@@ -261,5 +260,68 @@ testthat::test_that("the order direction select offers an unset choice", {
                       chunk_1_level_1_order_direction = "")
     collected <- collect_template_from_ui(strip_ids = TRUE)
     testthat::expect_null(collected$body$chunks[[1L]]$levels[[1L]]$order_direction)
+  })
+})
+
+# The collector must not decide which fields the user is allowed to fill in. It
+# previously dropped label_variable / order_variable / order_direction whenever a
+# format was present, which silently discarded values the user had typed: the save
+# reported success and the values were gone. The model rejects the combination, so
+# that rejection is what the user should see, with the field named.
+testthat::test_that("order fields the user typed on a format level reach the model", {
+  ui_environment <- template_contract_ui_environment()
+  fixture <- template_sort_fixture()
+  decorated <- ui_environment$decorate_template_ui_ids(fixture$templates[[1L]])
+
+  shiny::testServer(ui_environment$metadata_editor_server_impl, {
+    workspace(new_metadata_workspace(fixture))
+    metadata_loaded(TRUE)
+    active_editor(list(document_type = "template", document_id = "tpl"))
+    active_draft(list(operation = "update", original = fixture$templates[[1L]]))
+    template_value(decorated)
+    # The user deliberately types an order variable on a format-driven level.
+    session$setInputs(template_stub_header = "SOC table",
+                      chunk_1_level_1_order_variable = "SOCN",
+                      chunk_1_level_1_label_variable = "SOCLAB")
+
+    collected <- collect_template_from_ui(strip_ids = TRUE)
+    level <- collected$body$chunks[[1L]]$levels[[1L]]
+    # Nothing may be silently removed before the model sees it.
+    testthat::expect_identical(level$order_variable, "SOCN")
+    testthat::expect_identical(level$label_variable, "SOCLAB")
+
+    # And the save is refused, naming the field.
+    errors <- parse_bundle_value(
+      new_metadata_bundle(templates = list(collected)))$errors
+    testthat::expect_true(length(errors) > 0L)
+    messages <- vapply(errors, `[[`, "", "message")
+    testthat::expect_true(any(grepl("order_variable", messages, fixed = TRUE)) ||
+                          any(grepl("order_variable",
+                                    vapply(errors, `[[`, "", "path"))))
+  })
+})
+
+# A deliberate order_direction choice on a format level is also a user statement,
+# not something to drop on the way to the model.
+testthat::test_that("a chosen order direction on a format level is not discarded", {
+  ui_environment <- template_contract_ui_environment()
+  fixture <- template_sort_fixture()
+  decorated <- ui_environment$decorate_template_ui_ids(fixture$templates[[1L]])
+
+  shiny::testServer(ui_environment$metadata_editor_server_impl, {
+    workspace(new_metadata_workspace(fixture))
+    metadata_loaded(TRUE)
+    active_editor(list(document_type = "template", document_id = "tpl"))
+    active_draft(list(operation = "update", original = fixture$templates[[1L]]))
+    template_value(decorated)
+    session$setInputs(template_stub_header = "SOC table",
+                      chunk_1_level_1_order_direction = "desc")
+
+    collected <- collect_template_from_ui(strip_ids = TRUE)
+    testthat::expect_identical(
+      collected$body$chunks[[1L]]$levels[[1L]]$order_direction, "desc")
+    errors <- parse_bundle_value(
+      new_metadata_bundle(templates = list(collected)))$errors
+    testthat::expect_true(length(errors) > 0L)
   })
 })
