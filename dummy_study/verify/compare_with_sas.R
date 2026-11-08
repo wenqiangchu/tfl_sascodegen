@@ -460,9 +460,7 @@ if (length(problems) > 0L) {
 # model's error instead of crashing on a helper the script forgot to source.
 source(file.path("dummy_study", "tools", "load_bundle.R"))
 loaded <- tryCatch(load_dummy_workspace("."), error = function(error) {
-  cat(sprintf("
-%s
-", conditionMessage(error)))
+  cat(sprintf("\n%s\n", conditionMessage(error)))
   quit(status = 1L)
 })
 dummy_bundle <- loaded$value
@@ -500,9 +498,7 @@ page_capacity_for <- function(table) {
 unresolved <- Filter(function(table) is.null(table_header_by_id(table)),
                      unique(expected$table))
 if (length(unresolved) > 0L) {
-  cat(sprintf("
-no header resolved for table(s): %s
-",
+  cat(sprintf("\nno header resolved for table(s): %s\n",
               paste(unresolved, collapse = ", ")))
   quit(status = 1L)
 }
@@ -537,8 +533,7 @@ if (nrow(pagination_broken) > 0L) {
 }
 disabled_tables <- pagination$table[pagination$disabled]
 if (length(disabled_tables) > 0L) {
-  cat(sprintf("pagination disabled for: %s
-",
+  cat(sprintf("pagination disabled for: %s\n",
               paste(disabled_tables, collapse = ", ")))
 }
 cat(sprintf("%d pages across %d tables; every page within capacity and padded\n",

@@ -56,10 +56,8 @@ if (!identical(archive$bytes, round_trip$bytes)) {
 
 # The generator returns either a line vector or one newline-delimited string.
 as_lines <- function(source) {
-  if (length(source) == 1L && grepl("
-", source, fixed = TRUE)) {
-    strsplit(source, "
-", fixed = TRUE)[[1L]]
+  if (length(source) == 1L && grepl("\n", source, fixed = TRUE)) {
+    strsplit(source, "\n", fixed = TRUE)[[1L]]
   } else {
     source
   }

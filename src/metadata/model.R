@@ -1,11 +1,19 @@
 # Metadata value model and strict structural decoding helpers.
 
-# Printed lines that fit on one page, body lines plus the mandatory blank line at
-# the top and bottom of every page. Measured with Word on the dummy study layout
-# (letter landscape, 1in margins, 10pt body cells): 14.0 to 20.8 data rows per
-# page depending on the table, so 22 printed lines leaves at least one line of
-# slack on every table. It is a layout property, not a data property, and changes
-# with orientation, column widths, font size and cell padding.
+# Printed lines that fit on one page: body lines plus the mandatory blank line at
+# the top and bottom of every page.
+#
+# 22 printed lines means 20 body lines. Measured with Word on the dummy study
+# layout (letter landscape, 1in margins, 10pt body cells), the fullest page of each
+# multi-page table holds 22, 21 and 22 printed body lines respectively for
+# 14.3.1.2, 14.3.1.4 and 14.1.2. So the headroom at 22 is roughly one to two lines,
+# not the comfortable margin an earlier comment claimed -- a table whose labels wrap
+# to a second line could overflow. Whether 22 is the right default is still open
+# (D2 in docs/design-decisions.md); this constant is not a validated measurement of
+# the largest safe page.
+#
+# It is a layout property, not a data property, so it changes with orientation,
+# column widths, font size and cell padding.
 default_page_rows <- 22L
 
 is_mapping_value <- function(value) {

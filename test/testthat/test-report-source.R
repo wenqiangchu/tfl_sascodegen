@@ -467,8 +467,10 @@ testthat::test_that("pagination counts printed lines, pads edges, and can be dis
   testthat::expect_match(source, "_tfl_rows_on_page + 1 > 20", fixed = TRUE)
   # The top blank is not doubled when the page already opens with a separator.
   testthat::expect_match(source, "_tfl_needs_top = row_role ne 'spacer'", fixed = TRUE)
-  # Every page gets a bottom pad regardless.
-  testthat::expect_match(source, "_tfl_edge = 2", fixed = TRUE)
+  # Every page gets a bottom pad regardless. The edge tag is assigned by the merge
+  # below, not by the pad step itself.
+  testthat::expect_match(source, "_tfl_edge = ifn(_tfl_in_top, 0, ifn(_tfl_in_body, 1, 2))",
+                         fixed = TRUE)
 
   # 0 means "do not paginate": one page group, pass-through, no block machinery.
   header$page_rows <- 0L
@@ -679,9 +681,11 @@ testthat::test_that("no _tfl_ bookkeeping survives into the paginated dataset", 
   source <- paste(page_break_source(list(page_rows = 22L)), collapse = "\n")
   used <- unique(regmatches(source, gregexpr("_tfl_[a-z_]+", source))[[1L]])
   internal <- unlist(page_internal_names(), use.names = FALSE)
-  # Every derived name is either dropped or is the report's own order key; a name
+  # in= flags are step-local: SAS never writes them to the dataset, so they need no
+  # drop. Everything else is either dropped or is the report's own order key; a name
   # that is neither would leak into the dataset the caller and PROC REPORT see.
-  leaked <- setdiff(used, c(internal, "_tfl_print_order"))
+  step_local <- c("_tfl_in_body", "_tfl_in_top")
+  leaked <- setdiff(used, c(internal, step_local, "_tfl_print_order"))
   testthat::expect_identical(leaked, character(0L))
 
   # Each internal name must appear in a drop, and the drops are staged so SAS is

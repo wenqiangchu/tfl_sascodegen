@@ -290,7 +290,7 @@ page_break_source <- function(header) {
     # Only page_group survives from this step; the block bookkeeping is internal.
     paste0("  drop ", paste(page_internal_names()$paged, collapse = " "), ";"),
     "run;",
-    page_padding_source(usable)
+    page_padding_source()
   )
 }
 
@@ -298,7 +298,7 @@ page_break_source <- function(header) {
 # starts with a block separator has its top blank, so no second one is added;
 # the bottom blank is always new because a block separator belongs to the block
 # that follows it and therefore never ends a page.
-page_padding_source <- function(usable) {
+page_padding_source <- function() {
   c(
     "/* Record the first row role of each page group. */",
     "proc sort data=_TFL_PAGED_001 out=_TFL_PAGED_S_001;",
@@ -323,20 +323,19 @@ page_padding_source <- function(usable) {
     "  set _TFL_PAGEEDGE_001;",
     "  if _tfl_needs_top;",
     "  row_role = 'spacer'; indent_level = 0; label = '';",
-    "  _tfl_edge = 0;",
     "run;",
     "data _TFL_PADBOT_001;",
     "  if 0 then set _TFL_PAGED_S_001;",
     "  set _TFL_PAGEEDGE_001;",
     "  row_role = 'spacer'; indent_level = 0; label = '';",
-    "  _tfl_edge = 2;",
     "run;",
-    "data _TFL_BODY_001;",
-    "  set _TFL_PAGED_S_001;",
-    "  _tfl_edge = 1;",
-    "run;",
+    "/* Tag each row by its edge in one pass. The in= flags are step-local, so",
+    "   they neither reach the dataset nor need a separate copy of the body. */",
     "data _TFL_PADDED_001;",
-    "  set _TFL_PADTOP_001 _TFL_BODY_001 _TFL_PADBOT_001;",
+    "  set _TFL_PAGED_S_001(in=_tfl_in_body)",
+    "      _TFL_PADTOP_001(in=_tfl_in_top)",
+    "      _TFL_PADBOT_001;",
+    "  _tfl_edge = ifn(_tfl_in_top, 0, ifn(_tfl_in_body, 1, 2));",
     "run;",
     "proc sort data=_TFL_PADDED_001 out=_TFL_PADDED_S_001",
     "    (drop=_tfl_edge _tfl_needs_top);",
@@ -353,8 +352,7 @@ page_padding_source <- function(usable) {
     "  set _TFL_PADDED_S_001;",
     "  _tfl_print_order = _n_;",
     paste0("  drop ", paste(page_internal_names()$final, collapse = " "), ";"),
-    "run;",
-    paste0("/* Capacity actually available per page: ", usable, " block rows. */")
+    "run;"
   )
 }
 
