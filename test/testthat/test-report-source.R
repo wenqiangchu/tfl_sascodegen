@@ -504,7 +504,9 @@ testthat::test_that("the footer is right aligned, roman and body sized", {
 
 # Page assignment is a pure function of the printed row roles and the capacity, so
 # it is checked against a reference implementation rather than by eyeballing SAS
-# output. The reference mirrors the SAS step in page_break_source() exactly.
+# output. The reference mirrors the SAS step in page_break_source() exactly,
+# including the oversized-block threshold, which is read from the same constant the
+# generator uses rather than restated here.
 paginate_pages <- function(roles, usable) {
   n <- length(roles)
   block_id <- integer(n)
@@ -528,7 +530,7 @@ paginate_pages <- function(roles, usable) {
       } else if (fits && rows_on_page + size > usable) {
         current <- current + 1L
         rows_on_page <- 0L
-      } else if (!fits && usable - rows_on_page < 2L) {
+      } else if (!fits && usable - rows_on_page < oversized_block_min_rows) {
         # An oversized block continues on this page, so leave room for its
         # separator plus at least one content row.
         current <- current + 1L
@@ -558,6 +560,10 @@ testthat::test_that("page assignment fits every page and never ends one on a sep
     c(19, 25),   # a separator must not be stranded as the last row of a page
     c(20, 20),   # exactly full, so the next block starts a new page
     c(21),       # a single oversized block spills onto a second page
+    # 17 rows used, 3 free. The second block is oversized, and its separator plus
+    # one content row need exactly 2 of those 3 rows, so it belongs on page 1.
+    # Requiring 4 free rows (the double-subtraction bug) wrongly moves it.
+    c(17, 25),
     # 30 minimal blocks. A block is a separator plus at least one content row, so
     # the smallest real block after the first is 2 printed rows.
     rep(2, 30)
@@ -576,19 +582,29 @@ testthat::test_that("page assignment fits every page and never ends one on a sep
     }, character(1L))
     testthat::expect_false(any(last_role == "spacer"), label = label)
   }
+
+  # The [17, 25] case pins the threshold: with 3 rows free, the second block must
+  # stay on page 1. This is the assertion the double-subtraction bug failed.
+  pages <- paginate_pages(page_roles_for_blocks(c(17, 25)), usable)
+  testthat::expect_identical(pages[[18L]], 1L)
 })
 
 # The reference implementation above is only useful if the generated SAS agrees
 # with it, so the two structural rules are also asserted on the emitted source.
 testthat::test_that("the page assignment step guards oversized blocks and separators", {
   source <- paste(page_break_source(list(page_rows = 22L)), collapse = "\n")
-  # Every row, including a block's first, must run the capacity check.
+  # Every non-first row runs the capacity check. A block's first row does not:
+  # it is handled by the two guards below, which test the whole block height.
   testthat::expect_match(source, "if _tfl_rows_on_page + 1 > 20 then do;", fixed = TRUE)
-  # An oversized block must not be allowed to start on a page with no room left
-  # for its separator plus a content row.
-  # usable - 2 rows still have to be free, so the separator and one content row
-  # both fit. For page_rows = 22 that is 18.
-  testthat::expect_match(source, "not _tfl_fits and 18 - _tfl_rows_on_page < 2", fixed = TRUE)
+  # An oversized block may only continue on the current page if the separator and
+  # at least one content row still fit. usable already excludes the two page-edge
+  # blanks, so the requirement is exactly oversized_block_min_rows rows free --
+  # subtracting them a second time would demand four rows and strand pages short.
+  testthat::expect_match(
+    source,
+    paste0("not _tfl_fits and 20 - _tfl_rows_on_page < ",
+           oversized_block_min_rows),
+    fixed = TRUE)
   # The comment must state the exception rather than claim blocks never split.
   testthat::expect_false(grepl("never split across pages", source, fixed = TRUE))
   testthat::expect_match(source, "taller than a whole page", fixed = TRUE)

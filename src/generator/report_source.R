@@ -166,6 +166,14 @@ table_assembly_source <- function(outputs, resolved) {
   )
 }
 
+# A block taller than a whole page cannot fit anywhere, so it is the one case
+# allowed to split. It may only continue on the current page when the separator
+# and at least one content row still fit there: `usable` already excludes the two
+# mandatory page-edge blanks, so this is exactly the number of free rows needed,
+# with no second subtraction. Sharing the constant with the reference model in the
+# tests is what keeps the two implementations from drifting apart.
+oversized_block_min_rows <- 2L
+
 # Every name the page step derives for its own bookkeeping, grouped by the point
 # that drops it. Listing them in one place is what stops a new helper variable
 # from silently reaching the dataset the caller and PROC REPORT see; staging the
@@ -246,11 +254,14 @@ page_break_source <- function(header) {
     paste0("    else if _tfl_fits and _tfl_rows_on_page + _tfl_block_rows > ", usable, " then do;"),
     "      page_group + 1; _tfl_rows_on_page = 0;",
     "    end;",
-    paste0("    else if not _tfl_fits and ", usable - 2L, " - _tfl_rows_on_page < 2 then do;"),
+    paste0("    else if not _tfl_fits and ", usable, " - _tfl_rows_on_page < ",
+           oversized_block_min_rows, " then do;"),
     "      /* The block continues on this page, and its first row is a separator.",
-    "         Opening it with one row or less left would either overflow the page",
-    "         or strand the separator as the last printed row, printing two blanks",
-    "         at the page edge. Keep room for the separator plus one content row. */",
+    paste0("         Opening it with fewer than ", oversized_block_min_rows,
+           " rows left would either"),
+    "         overflow the page or strand the separator as the last printed row,",
+    "         printing two blanks at the page edge. Keep room for the separator",
+    "         plus one content row. */",
     "      page_group + 1; _tfl_rows_on_page = 0;",
     "    end;",
     "  end;",

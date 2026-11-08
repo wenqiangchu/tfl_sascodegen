@@ -169,6 +169,6 @@ Rscript dummy_study/verify/compare_with_sas.R   # 与 SAS 产物逐格比对
 SAS），长表写出 `generated/expected/expected.csv`。第二条把 SAS 报表明细解析成
 `(路径, 列, 统计量)` 后 join。
 
-当前结果：**11232 个断言单元格全部一致**，7 张表共 97 页全部在容量内且首尾有空白行。分位数（`median`/`q1`/`q3`）只记录不判定，
+当前结果：**11232 个断言单元格全部一致**，7 张表共 96 页全部在容量内且首尾有空白行。分位数（`median`/`q1`/`q3`）只记录不判定，
 因为 `PROC MEANS` 默认 `PCTLDEF=5` 与 R 的分位数算法不同；它们在
 `generated/comparison.csv` 的 `reported_only` 列里可见。
