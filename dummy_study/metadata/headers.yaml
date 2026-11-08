@@ -2,6 +2,7 @@ headers:
   - id: 'trt01p_header'
     source_data: 'study.adsl'
     orientation: 'portrait'
+    page_rows: 22
     columns:
       - id: 'placebo'
         label: 'Placebo'
@@ -30,6 +31,7 @@ headers:
   - id: 'trt01a_header'
     source_data: 'study.adsl'
     orientation: 'landscape'
+    page_rows: 22
     columns:
       - id: 'placebo'
         label: 'Placebo'
@@ -58,6 +60,7 @@ headers:
   - id: 'shift_header'
     source_data: 'WORK.SHIFT_HGB'
     orientation: 'portrait'
+    page_rows: 22
     columns:
       - id: 'bl_normal'
         label: 'Normal'

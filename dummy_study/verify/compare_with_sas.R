@@ -191,6 +191,23 @@ check_pagination <- function(table, page_rows) {
   data <- data[order(data$page_group, print_order), ]
   role <- as.character(data$row_role)
   groups <- data$page_group
+  # A capacity of 0 means pagination is switched off on purpose: there is one page
+  # group, no edge pads and nothing to check. Treating it as a normal capacity
+  # would flag every "page" for missing both blanks.
+  if (identical(as.integer(page_rows), 0L)) {
+    return(list(
+      table = table,
+      pages = length(unique(groups)),
+      rows = nrow(data),
+      largest_page = nrow(data),
+      capacity = 0L,
+      oversized = 0L,
+      missing_first_blank = 0L,
+      missing_last_blank = 0L,
+      stranded_separator = 0L,
+      disabled = TRUE
+    ))
+  }
   sizes <- tapply(rep(1L, nrow(data)), groups, sum)
   first_blank <- tapply(role, groups, function(x) x[[1L]] == "spacer")
   last_blank <- tapply(role, groups, function(x) x[[length(x)]] == "spacer")
@@ -209,7 +226,8 @@ check_pagination <- function(table, page_rows) {
     oversized = sum(sizes > page_rows),
     missing_first_blank = sum(!first_blank),
     missing_last_blank = sum(!last_blank),
-    stranded_separator = sum(double_trailing_blank)
+    stranded_separator = sum(double_trailing_blank),
+    disabled = FALSE
   )
 }
 
@@ -458,10 +476,6 @@ dummy_bundle <- local({
   )
 })
 
-source_page_rows_default <- function() {
-  if (exists("default_page_rows", inherits = TRUE)) default_page_rows else 22L
-}
-
 table_header_by_id <- function(table_id) {
   table <- Filter(function(entry) identical(as.character(entry$id), as.character(table_id)),
                   dummy_bundle$tables)
@@ -472,14 +486,23 @@ table_header_by_id <- function(table_id) {
   if (length(headers) == 0L) NULL else headers[[1L]]
 }
 
-# Pagination is checked after the numbers, because a layout regression must not
-# be able to mask a statistical one. The capacity lives on each table's header,
-# not here: a hard-coded number would silently stop checking anything on the day
-# a header sets its own page_rows.
-default_page_rows <- source_page_rows_default()
+# Pagination is checked after the numbers, because a layout regression must not be
+# able to mask a statistical one. The capacity lives on each table's header, not
+# here, and there is deliberately no fallback: substituting default_page_rows would
+# mean the check silently follows whatever constant the code happens to use, which
+# is exactly the coupling option (b) removed. A header without page_rows is a
+# defect in the fixture, so it stops.
 page_capacity_for <- function(table) {
   header <- table_header_by_id(table)
-  if (is.null(header) || is.null(header$page_rows)) default_page_rows else header$page_rows
+  if (is.null(header)) {
+    stop("no header resolved for table: ", table, call. = FALSE)
+  }
+  if (is.null(header$page_rows)) {
+    stop("no page_rows on header '", header$id, "' for table ", table,
+         ". Every header must state its capacity explicitly so the bundle does not",
+         " depend on default_page_rows.", call. = FALSE)
+  }
+  as.integer(header$page_rows)
 }
 # A header that cannot be resolved would fall back to the default and silently
 # stop checking the real setting, so prove resolution first.
@@ -501,21 +524,34 @@ cat(sprintf("\n%-30s %5s %5s %8s %9s\n", "pagination", "pages", "rows",
             "largest", "capacity"))
 for (i in seq_len(nrow(pagination))) {
   row <- pagination[i, ]
+  # A table with page_rows = 0 has nothing to check: one group, no edge pads.
+  if (isTRUE(row$disabled)) {
+    cat(sprintf("%-30s %5d %5d %8s %9d\n", row$table, row$pages, row$rows,
+                "pagination disabled", row$capacity))
+    next
+  }
   cat(sprintf("%-30s %5d %5d %8d %9d\n", row$table, row$pages, row$rows,
               row$largest_page, row$capacity))
 }
-pagination_broken <- pagination[pagination$oversized > 0L |
-                                pagination$missing_first_blank > 0L |
-                                pagination$missing_last_blank > 0L |
-                                pagination$stranded_separator > 0L, , drop = FALSE]
+checked <- pagination[!pagination$disabled, , drop = FALSE]
+pagination_broken <- checked[checked$oversized > 0L |
+                               checked$missing_first_blank > 0L |
+                               checked$missing_last_blank > 0L |
+                               checked$stranded_separator > 0L, , drop = FALSE]
 if (nrow(pagination_broken) > 0L) {
   cat("\npagination contract violated: a page overflowed, lost an edge blank, ",
       "or stranded a block separator at the page edge\n", sep = "")
   print(pagination_broken)
   quit(status = 1L)
 }
+disabled_tables <- pagination$table[pagination$disabled]
+if (length(disabled_tables) > 0L) {
+  cat(sprintf("pagination disabled for: %s
+",
+              paste(disabled_tables, collapse = ", ")))
+}
 cat(sprintf("%d pages across %d tables; every page within capacity and padded\n",
-            sum(pagination$pages), nrow(pagination)))
+            sum(checked$pages), nrow(checked)))
 
 # Zero-count format nodes must be printed, which no cell comparison can observe.
 # A table with a format-driven level is only covered once compute_expected.R has

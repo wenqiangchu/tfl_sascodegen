@@ -349,3 +349,29 @@ testthat::test_that("the zero-count predicate cannot pass on a path that matches
   # children, not two copies that can drift.
   testthat::expect_match(expected_script, "is_zero_node", fixed = TRUE)
 })
+
+testthat::test_that("the fixture states its own page capacity", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  # D1 option (b) exists so a bundle never depends on default_page_rows being 22
+  # at read time. Leaving page_rows out of the repo's own headers would defeat
+  # that: raising the constant would silently repaginate the fixture, and
+  # page_capacity_for() would fall back to the same new constant and hide it.
+  text <- paste(readLines(file.path(metadata_dir, "headers.yaml"), warn = FALSE),
+                collapse = "\n")
+  testthat::expect_identical(
+    length(regmatches(text, gregexpr("page_rows: 22", text, fixed = TRUE))[[1L]]), 3L)
+  testthat::expect_false(grepl("page_rows: 0", text, fixed = TRUE))
+})
+
+testthat::test_that("verification reads the capacity from the bundle and refuses to guess", {
+  verify_dir <- file.path(project_root, "dummy_study", "verify")
+  script <- paste(readLines(file.path(verify_dir, "compare_with_sas.R"),
+                            warn = FALSE), collapse = "\n")
+  # A fallback to the default would silently check the wrong capacity, so a header
+  # without page_rows must be an error rather than a substitution.
+  testthat::expect_false(grepl("source_page_rows_default", script, fixed = TRUE))
+  testthat::expect_match(script, "no page_rows on header", fixed = TRUE)
+  # pagination disabled means there is nothing to check, not that every page broke.
+  testthat::expect_match(script, "pagination disabled", fixed = TRUE)
+  testthat::expect_match(script, "disabled = TRUE", fixed = TRUE)
+})

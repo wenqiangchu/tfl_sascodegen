@@ -19,8 +19,11 @@
 
 分页是 **header 级**版式属性，不是表格或行的属性：一页能放多少行取决于纸张方向、
 列宽、字号与单元格内边距，因此由 header 的 `page_rows` 配置。本仓库的
-`metadata/headers.yaml` **未显式写出该字段**，三个 header 都沿用默认值 22
-（canonical YAML 只在取值不等于默认值时才输出它）。
+`metadata/headers.yaml` **显式写出** `page_rows: 22`（三个 header 都是）：canonical
+YAML 始终输出该字段，这样 bundle 自己声明自己的版式，不再取决于读取时的
+`default_page_rows` 常量。
+验证脚本同样不允许回退：`compare_with_sas.R` 在 header 缺少 `page_rows` 时直接报错，
+而不是代之以默认值——否则把常量改成 26 会同时改变生成与校验两侧，问题被掩盖。
 
 | 值 | 含义 |
 | --- | --- |
