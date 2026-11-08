@@ -349,14 +349,33 @@ testthat::test_that("the fixture states its own page capacity", {
   testthat::expect_false(grepl("page_rows: 0", text, fixed = TRUE))
 })
 
+testthat::test_that("every authored header states its page capacity", {
+  skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
+  # The check has to look at what the author wrote, not at the parsed bundle: the
+  # model backfills a missing page_rows with default_page_rows, so the parsed header
+  # is never NULL and a guard written against it can never fire. This is the
+  # behavioural form of that guard -- if someone drops the field from headers.yaml,
+  # the fixture stops being self-describing and this fails.
+  raw <- load_dummy_workspace(project_root)$raw_bundle
+  testthat::expect_gt(length(raw$headers), 0L)
+  for (header in raw$headers) {
+    testthat::expect_true(
+      !is.null(header[["page_rows"]]),
+      label = paste("page_rows written for header", header$id))
+  }
+})
+
 testthat::test_that("verification reads the capacity from the bundle and refuses to guess", {
   verify_dir <- file.path(project_root, "dummy_study", "verify")
   script <- paste(readLines(file.path(verify_dir, "compare_with_sas.R"),
-                            warn = FALSE), collapse = "\n")
+                            warn = FALSE), collapse = "
+")
   # A fallback to the default would silently check the wrong capacity, so a header
-  # without page_rows must be an error rather than a substitution.
+  # without page_rows must be an error rather than a substitution. Presence is read
+  # from raw_bundle because the parsed bundle always has a value.
   testthat::expect_false(grepl("source_page_rows_default", script, fixed = TRUE))
   testthat::expect_match(script, "no page_rows on header", fixed = TRUE)
+  testthat::expect_match(script, "raw_bundle", fixed = TRUE)
   # pagination disabled means there is nothing to check, not that every page broke.
   testthat::expect_match(script, "pagination disabled", fixed = TRUE)
   testthat::expect_match(script, "disabled = TRUE", fixed = TRUE)

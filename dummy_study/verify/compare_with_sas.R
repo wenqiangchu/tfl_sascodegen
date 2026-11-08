@@ -475,18 +475,39 @@ table_header_by_id <- function(table_id) {
   if (length(headers) == 0L) NULL else headers[[1L]]
 }
 
+# Whether the author wrote page_rows at all can only be answered from the raw
+# bundle. The model backfills a missing value with default_page_rows, so the parsed
+# header always has one and a guard that asks the parsed bundle can never fire --
+# which is exactly the coupling the whole point of option (b) was to remove.
+raw_header_by_id <- function(header_id) {
+  headers <- loaded$raw_bundle$headers
+  if (is.null(headers)) return(NULL)
+  hit <- Filter(function(header) {
+    identical(as.character(header$id), as.character(header_id))
+  }, headers)
+  if (length(hit) == 0L) NULL else hit[[1L]]
+}
+
 # Pagination is checked after the numbers, because a layout regression must not be
 # able to mask a statistical one. The capacity lives on each table's header, not
 # here, and there is deliberately no fallback: substituting default_page_rows would
 # mean the check silently follows whatever constant the code happens to use, which
 # is exactly the coupling option (b) removed. A header without page_rows is a
 # defect in the fixture, so it stops.
+#
+# The guard has to consult the RAW bundle: the model backfills page_rows, so asking
+# the parsed header always yields a value and the check would be dead code.
 page_capacity_for <- function(table) {
   header <- table_header_by_id(table)
   if (is.null(header)) {
     stop("no header resolved for table: ", table, call. = FALSE)
   }
-  if (is.null(header$page_rows)) {
+  # Presence from the raw bundle, value from the parsed one: the raw structure is
+  # what the author wrote, while the parsed value carries the type coercion and is
+  # what the generator used. They agree when the field is present, which is the
+  # only case that gets this far.
+  raw <- raw_header_by_id(header$id)
+  if (is.null(raw) || is.null(raw[["page_rows"]])) {
     stop("no page_rows on header '", header$id, "' for table ", table,
          ". Every header must state its capacity explicitly so the bundle does not",
          " depend on default_page_rows.", call. = FALSE)
