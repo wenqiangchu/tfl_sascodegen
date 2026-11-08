@@ -453,28 +453,19 @@ if (length(problems) > 0L) {
 # have a format-driven level (see the registration check below) and it supplies
 # each header's page capacity. Sourcing the codec is cheap and keeps the numbers
 # from drifting out of sync with the metadata.
-dummy_bundle <- local({
-  source(file.path("src", "metadata", "model.R"))
-  source(file.path("src", "metadata", "yaml_codec.R"))
-  bundle_dir <- file.path("dummy_study", "metadata")
-  read_entry <- function(path) {
-    text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-    parse_yaml_document_text(text)$value
-  }
-  entry_files <- function(directory, pattern = "[.]yaml$") {
-    sort(list.files(file.path(bundle_dir, directory), pattern = pattern, full.names = TRUE))
-  }
-  list(
-    headers = local({
-      manifest <- entry_files(".")
-      parsed <- lapply(manifest, read_entry)
-      hit <- Filter(function(entry) !is.null(entry$headers), parsed)
-      if (length(hit) == 0L) list() else hit[[1L]]$headers
-    }),
-    templates = lapply(entry_files("templates"), read_entry),
-    tables = lapply(entry_files("tables"), read_entry)
-  )
+# The bundle is read once and reused for two things: it decides which tables have a
+# format-driven level (see the registration check below) and it supplies each
+# header's page capacity. dummy_study/tools/load_bundle.R owns the reading, so this
+# script cannot drift from check_metadata.R, and a malformed bundle reports the
+# model's error instead of crashing on a helper the script forgot to source.
+source(file.path("dummy_study", "tools", "load_bundle.R"))
+loaded <- tryCatch(load_dummy_workspace("."), error = function(error) {
+  cat(sprintf("
+%s
+", conditionMessage(error)))
+  quit(status = 1L)
 })
+dummy_bundle <- loaded$value
 
 table_header_by_id <- function(table_id) {
   table <- Filter(function(entry) identical(as.character(entry$id), as.character(table_id)),

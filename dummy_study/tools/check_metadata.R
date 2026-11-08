@@ -14,13 +14,12 @@
 args <- commandArgs(trailingOnly = TRUE)
 write_output <- "--write" %in% args
 
-runtime_source_files <- c(
-  "core/errors.R", "chunks/registry.R", "metadata/model.R", "metadata/yaml_codec.R",
-  "metadata/workspace.R", "generator/source_generator.R", "generator/report_source.R",
-  "emitters/source_input.R", "emitters/continuous.R", "emitters/categorical.R",
-  "emitters/hierarchical.R", "emitters/precision.R", "emitters/result_render.R"
-)
-invisible(lapply(file.path("src", runtime_source_files), source, local = FALSE))
+# The bundle loader owns the reading and parsing; this tool adds the generator so
+# it can also produce the SAS source. See dummy_study/tools/load_bundle.R.
+source(file.path("dummy_study", "tools", "load_bundle.R"))
+source_bundle_runtime(".")
+invisible(lapply(file.path("src", c("generator/source_generator.R",
+                                    "generator/report_source.R")), source, local = FALSE))
 
 metadata_dir <- file.path("dummy_study", "metadata")
 output_dir <- file.path("dummy_study", "generated")
@@ -43,43 +42,10 @@ runtime_require <- function(result) {
   result
 }
 
-read_entry <- function(path) {
-  text <- paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-  parsed <- parse_yaml_document_text(text)
-  if (length(parsed$errors) > 0L) {
-    fail(sprintf("YAML parse failed for %s:\n%s", path,
-                 paste(vapply(parsed$errors, format_error, ""), collapse = "\n")))
-  }
-  parsed$value
-}
-
-entry_files <- function(directory) {
-  paths <- list.files(file.path(metadata_dir, directory), pattern = "\\.yaml$",
-                      full.names = TRUE)
-  if (length(paths) == 0L) fail(sprintf("No YAML files found under %s", directory))
-  sort(paths)
-}
-
-manifest <- read_entry(file.path(metadata_dir, "manifest.yaml"))
-populations <- read_entry(file.path(metadata_dir, "populations.yaml"))
-headers <- read_entry(file.path(metadata_dir, "headers.yaml"))
-table_values <- lapply(entry_files("tables"), read_entry)
-template_values <- lapply(entry_files("templates"), read_entry)
-
-bundle <- new_metadata_bundle(
-  populations = populations$populations,
-  headers = headers$headers,
-  tables = unname(table_values),
-  templates = unname(template_values)
-)
-stopifnot(identical(as.integer(manifest$schema_version), 2L))
-
-parsed <- parse_bundle_value(bundle)
-if (length(parsed$errors) > 0L) {
-  fail(sprintf("%d bundle error(s):\n%s", length(parsed$errors),
-               paste(vapply(parsed$errors, format_error, ""), collapse = "\n")))
-}
-bundle <- parsed$value
+loaded <- tryCatch(load_dummy_workspace("."),
+                  error = function(error) fail(conditionMessage(error)))
+manifest <- loaded$manifest
+bundle <- loaded$value
 
 archive <- canonical_archive_bytes(bundle)
 restored <- runtime_require(parse_bundle_archive(archive))$workspace

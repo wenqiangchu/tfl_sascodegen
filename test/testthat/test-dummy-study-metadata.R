@@ -9,6 +9,10 @@
 
 metadata_dir <- file.path(project_root, "dummy_study", "metadata")
 
+# The bundle is loaded through the same helper the verification scripts use, so a
+# divergence in reading or validation cannot hide here either.
+source(file.path(project_root, "dummy_study", "tools", "load_bundle.R"))
+
 read_bundle_entry <- function(relative_path) {
   text <- paste(readLines(file.path(metadata_dir, relative_path), warn = FALSE,
                           encoding = "UTF-8"), collapse = "\n")
@@ -17,26 +21,8 @@ read_bundle_entry <- function(relative_path) {
   parsed$value
 }
 
-load_dummy_bundle <- function() {
-  tables <- sort(list.files(file.path(metadata_dir, "tables"), pattern = "\\.yaml$",
-                            full.names = TRUE))
-  templates <- sort(list.files(file.path(metadata_dir, "templates"), pattern = "\\.yaml$",
-                               full.names = TRUE))
-  read_all <- function(paths) {
-    lapply(paths, function(path) {
-      parsed <- parse_yaml_document_text(
-        paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n"))
-      testthat::expect_length(parsed$errors, 0L)
-      parsed$value
-    })
-  }
-  new_metadata_bundle(
-    populations = read_bundle_entry("populations.yaml")$populations,
-    headers = read_bundle_entry("headers.yaml")$headers,
-    tables = unname(read_all(tables)),
-    templates = unname(read_all(templates))
-  )
-}
+load_dummy_bundle <- function() load_dummy_workspace(project_root)$raw_bundle
+
 
 testthat::test_that("the dummy study bundle parses without model errors", {
   skip_if_not(file.exists(file.path(metadata_dir, "manifest.yaml")))
@@ -374,4 +360,64 @@ testthat::test_that("verification reads the capacity from the bundle and refuses
   # pagination disabled means there is nothing to check, not that every page broke.
   testthat::expect_match(script, "pagination disabled", fixed = TRUE)
   testthat::expect_match(script, "disabled = TRUE", fixed = TRUE)
+})
+
+testthat::test_that("all three consumers load the bundle through one helper", {
+  # The codec's failure path calls new_error_item() from core/errors.R. A consumer
+  # that sources only model.R and yaml_codec.R therefore crashes with "could not
+  # find function" on a malformed bundle instead of reporting the problem, and one
+  # that reads raw YAML discards schema defaults and normalisation. Restating the
+  # loader was what let those two diverge, so there is one implementation now.
+  loader <- file.path(project_root, "dummy_study", "tools", "load_bundle.R")
+  testthat::expect_true(file.exists(loader))
+
+  consumers <- list(
+    file.path(project_root, "dummy_study", "tools", "check_metadata.R"),
+    file.path(project_root, "dummy_study", "verify", "compare_with_sas.R")
+  )
+  for (path in consumers) {
+    script <- paste(readLines(path, warn = FALSE), collapse = "\n")
+    testthat::expect_match(script, "load_bundle.R", fixed = TRUE,
+                           label = basename(path))
+    testthat::expect_match(script, "load_dummy_workspace", fixed = TRUE,
+                           label = basename(path))
+    # No consumer may keep its own copy of the reading logic.
+    testthat::expect_false(grepl("parse_yaml_document_text(text)$value", script),
+                           label = basename(path))
+  }
+
+  # The loader itself must source the error constructor and parse through the
+  # model, not read raw values.
+  loader_text <- paste(readLines(loader, warn = FALSE), collapse = "\n")
+  testthat::expect_match(loader_text, "core/errors.R", fixed = TRUE)
+  testthat::expect_match(loader_text, "parse_bundle_value", fixed = TRUE)
+})
+
+testthat::test_that("a malformed bundle is reported, not a crash", {
+  # Feeding an invalid field must produce the model's error text. The previous
+  # duplication surfaced "could not find function \"new_error_item\"" instead.
+  loader <- file.path(project_root, "dummy_study", "tools", "load_bundle.R")
+  root <- tempfile("badbundle")
+  dir.create(file.path(root, "src"), recursive = TRUE)
+  # Reuse the real production sources, but a throwaway metadata copy. The loader
+  # expects <root>/src and <root>/dummy_study/metadata.
+  file.copy(file.path(project_root, "src"), root, recursive = TRUE)
+  dir.create(file.path(root, "dummy_study"), showWarnings = FALSE)
+  file.copy(file.path(project_root, "dummy_study", "metadata"),
+            file.path(root, "dummy_study"), recursive = TRUE)
+  template <- list.files(file.path(root, "dummy_study", "metadata", "templates"),
+                         pattern = "[.]yaml$", full.names = TRUE)[[1L]]
+  text <- paste(readLines(template, warn = FALSE), collapse = "\n")
+  writeLines(paste0(text, "\nnot_a_real_field: 1\n"), template)
+
+  result <- tryCatch({
+    source(loader, local = TRUE)
+    load_dummy_workspace(root)
+    NULL
+  }, error = function(error) conditionMessage(error))
+  testthat::expect_false(is.null(result))
+  # A model error, not a missing function.
+  testthat::expect_false(grepl("could not find function", result, fixed = TRUE))
+  testthat::expect_match(result, "bundle error", fixed = TRUE)
+  unlink(root, recursive = TRUE)
 })
