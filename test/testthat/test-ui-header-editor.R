@@ -126,7 +126,7 @@ testthat::test_that("the page capacity control is rendered and wired", {
   # The minimum has to agree with the parser, which refuses 1 and 2 because two
   # of every page's printed lines are the mandatory edge blanks.
   testthat::expect_match(ui, "min = 0", fixed = TRUE)
-  testthat::expect_match(ui, "minimum is 3", fixed = TRUE)
+  testthat::expect_match(ui, "minimum is 4", fixed = TRUE)
 
   runtime <- paste(readLines(file.path(project_root, "src", "ui", "metadata_editor_runtime.R"),
                              warn = FALSE), collapse = "\n")
@@ -135,4 +135,42 @@ testthat::test_that("the page capacity control is rendered and wired", {
   testthat::expect_match(runtime, "page_rows = input$header_page_rows", fixed = TRUE)
   testthat::expect_match(runtime, "updateNumericInput(session,\"header_page_rows\"",
                          fixed = TRUE)
+})
+
+testthat::test_that("a fractional page capacity is rejected instead of rounded", {
+  original <- header_span_editor_fixture()
+  data <- header_editor_data(original)
+
+  # numericInput posts whatever was typed. Rounding it silently would save a
+  # different number than the user entered, so a non-integral value must reach the
+  # model intact and be rejected there by name.
+  for (value in list(22.9, 2.9, 3.5)) {
+    collected <- header_from_editor_data(original$id, original$source_data, data,
+                                         original$orientation, page_rows = value,
+                                         original = original)
+    header <- collected
+    errors <- parse_bundle_value(
+      new_metadata_bundle(headers = list(header)))$errors
+    testthat::expect_true(length(errors) > 0L, label = as.character(value))
+    testthat::expect_true(
+      any(grepl("page_rows", vapply(errors, `[[`, "", "path"))),
+      label = as.character(value))
+  }
+
+  # An exact integer still saves, so the guard above is not blanket rejection.
+  ok <- header_from_editor_data(original$id, original$source_data, data,
+                                original$orientation, page_rows = 18,
+                                original = original)
+  testthat::expect_identical(ok$page_rows, 18L)
+  testthat::expect_identical(parse_bundle_value(
+    new_metadata_bundle(headers = list(ok)))$errors, list())
+
+  # A value beyond the integer range is still a valid finite integer, so it is
+  # carried as a double rather than coerced into NA. Wrapping it to NA would make
+  # the model report a missing value instead of the number that was entered.
+  huge <- header_from_editor_data(original$id, original$source_data, data,
+                                  original$orientation, page_rows = 1e10,
+                                  original = original)
+  testthat::expect_false(is.na(huge$page_rows))
+  testthat::expect_identical(as.numeric(huge$page_rows), 1e10)
 })

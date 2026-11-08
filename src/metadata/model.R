@@ -353,21 +353,25 @@ parse_header_value <- function(value, path, collector) {
   # padding. It cannot be derived here, so it is configured and defaulted to a
   # measured value. Zero disables page breaking entirely.
   #
-  # Every page also spends two of those lines on its mandatory edge blanks, so a
-  # capacity below 3 cannot be honoured -- it would print three lines whatever the
-  # caller asked for. 1 and 2 are refused instead of silently inflated; 0 stays
+  # Every page also spends two of those lines on its mandatory edge blanks, so the
+  # body gets page_rows - 2 rows. A block is a separator plus at least one content
+  # row, so the body needs at least 2 rows for pagination to make sense: below
+  # that every block after the first is oversized, its separator ends up alone on
+  # a page and a blank page is printed. The smallest honourable capacity is
+  # therefore 4. 1, 2 and 3 are refused instead of silently inflated; 0 stays
   # valid because it means "do not paginate at all".
   page_rows <- NULL
   if (has_field(value, "page_rows")) {
     page_rows <- parse_integer_value(get_field(value, "page_rows"),
                                      error_path_field(path, "page_rows"), collector,
                                      "page_rows", min_value = 0L)
-    if (!is.null(page_rows) && page_rows > 0L && page_rows < 3L) {
+    if (!is.null(page_rows) && page_rows > 0L && page_rows < 4L) {
       add_value_error(collector, error_path_field(path, "page_rows"),
                       paste0("Field 'page_rows' must be 0 (no pagination) or at ",
-                             "least 3. Two of every page's lines are the mandatory ",
-                             "top and bottom blanks, so a smaller capacity cannot ",
-                             "be honoured."))
+                             "least 4. Two of every page's lines are the mandatory ",
+                             "top and bottom blanks, and a page needs a second row ",
+                             "for a block separator plus its first content row, so ",
+                             "a smaller capacity cannot be honoured."))
       page_rows <- NULL
     }
   }

@@ -445,16 +445,21 @@ testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
   # emit it at all, so assert that refusal rather than a round trip.
   testthat::expect_error(canonical_yaml_text(build(-1L)), "invalid metadata bundle")
 
-  # Two of the requested lines are the page-edge blanks, so a capacity below 3
-  # cannot be honoured: it would print three lines whatever the caller asked for.
-  # Smallest useful page is therefore 3, and 1 and 2 are refused rather than
-  # silently inflated.
-  smallest <- parse_bundle_yaml(canonical_yaml_text(build(3L)))
+  # Four lines is the smallest page that can be honoured. Two of them are the
+  # page-edge blanks, leaving two for the body: a block separator plus one content
+  # row. At 3 the body holds a single row, so every block after the first is
+  # oversized, the separator ends up alone on a page, and a blank page is
+  # printed. 1, 2 and 3 are refused rather than silently inflated.
+  smallest <- parse_bundle_yaml(canonical_yaml_text(build(4L)))
   testthat::expect_true(smallest$passed)
-  testthat::expect_identical(smallest$workspace$headers[[1L]]$page_rows, 3L)
+  testthat::expect_identical(smallest$workspace$headers[[1L]]$page_rows, 4L)
+  # A capacity of 4 leaves exactly two body rows, the minimum for a separator and
+  # one content row.
+  four <- parse_bundle_yaml(canonical_yaml_text(build(4L)))
+  testthat::expect_identical(four$workspace$headers[[1L]]$page_rows - 2L, 2L)
   # Encoding refuses an invalid bundle outright, so the rejection is observed on
   # the parsed value rather than through a canonical round trip.
-  for (too_small in c(1L, 2L)) {
+  for (too_small in c(1L, 2L, 3L)) {
     header <- list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
                    page_rows = too_small, columns = list(column))
     errors <- parse_bundle_value(new_metadata_bundle(headers = list(header)))$errors

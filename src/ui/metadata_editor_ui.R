@@ -61,7 +61,7 @@ metadata_editor_ui <- function() {
               helpText(paste0("Printed lines per page, counting the two mandatory ",
                               "blank lines at the top and bottom of every page, ",
                               "so the body holds capacity minus two rows. ",
-                              "0 disables page breaking; otherwise the minimum is 3. ",
+                              "0 disables page breaking; otherwise the minimum is 4. ",
                               "The shipped templates are measured at 22 lines; a ",
                               "larger value may overflow once a long label wraps ",
                               "to a second line.")),

@@ -221,10 +221,11 @@ page_break_source <- function(header) {
              "run;"))
   }
   page_rows <- as.integer(page_rows)
-  # Two lines of every page are reserved for the mandatory blank line at the
-  # top and bottom, so only the remainder can hold block rows. Keep at least one
-  # row of capacity so a small page_rows still makes progress.
-  usable <- max(page_rows - 2L, 1L)
+  # Two lines of every page are reserved for the mandatory blank line at the top
+  # and bottom, so only the remainder can hold block rows. The model guarantees a
+  # non-zero capacity is at least 4, so the remainder is at least 2 and no floor
+  # is needed here.
+  usable <- page_rows - 2L
   c(
     prepare,
     paste0("/* Group rows into pages of at most ", page_rows, " printed rows. */"),
