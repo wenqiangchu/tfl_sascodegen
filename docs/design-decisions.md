@@ -1675,7 +1675,10 @@ format 名称、定义和原始变量类型仍由调用方保证；应用不新�
 **块不跨页**，唯一例外是单块本身就高于一整页（否则无处可放）。每页首尾各一行空白行；
 续页若已由块分隔行开篇则不再叠加第二行。
 
-分页位于 `custom_code.after` **之后**（见第 4 组第 6 条），报告读 `WORK._TFL_PAGED_001`；
+分页位于 `custom_code.after` **之后**（见第 4 组第 6 条），报告读 `WORK._TFL_PAGED_001`。
+页内打印顺序由 `_tfl_print_order`（最终排序后 `_n_`）给出，`PROC REPORT` 按它排序。
+**不能用 `report_order`**：页边垫行没有 `report_order`，而 `PROC REPORT ... missing`
+把缺失值排在最小，会让两条垫行都跑到页首（2026-11-08 修正）。
 `compare` 模式不分页，直接比对 `WORK._TFL_ASM_001`。
 
 **已决定（D1，2026-11-07，方案 b）**：此前只在 `page_rows` 不等于默认值时才写入 YAML，

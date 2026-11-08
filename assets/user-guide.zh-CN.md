@@ -168,7 +168,9 @@ after 代码需原地修改 `WORK._TFL_ASM_001`，并保留以下字段：
 
 分页在 custom code **after** 之后执行，因此 after 的修改会进入页面。分页读取
 `WORK._TFL_ASM_001` 并写出 `WORK._TFL_PAGED_001`，由 `PROC REPORT` 渲染；
-`_TFL_PAGED_001` 只额外增加 `page_group`。也就是说报告**不再**直接读 `_TFL_ASM_001`。
+`_TFL_PAGED_001` 额外增加 `page_group`（页码）与 `_tfl_print_order`（该行在页内的
+打印顺序，报告按它排序）。也就是说报告**不再**直接读 `_TFL_ASM_001`。分页的其余
+内部变量都已从该数据集丢弃。
 QC compare 模式不分页，直接比对 `WORK._TFL_ASM_001`，因此版式不影响 QC 路径。
 
 Label 行不加粗。一行空白标记一个**块边界**：新 chunk、顶层节点、或刚结束自身 below

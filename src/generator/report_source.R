@@ -166,6 +166,23 @@ table_assembly_source <- function(outputs, resolved) {
   )
 }
 
+# Every name the page step derives for its own bookkeeping, grouped by the point
+# that drops it. Listing them in one place is what stops a new helper variable
+# from silently reaching the dataset the caller and PROC REPORT see; staging the
+# drops is what stops SAS warning that a DROP lists a variable that is already
+# gone. _tfl_print_order is deliberately absent: it is the report's order key and
+# has to survive.
+page_internal_names <- function() {
+  list(
+    # Consumed once the page assignment is done.
+    paged = c("_tfl_block_start", "_tfl_block_id", "_tfl_block_rows"),
+    # Consumed by the merge that builds the padded, ordered sequence.
+    padded = c("_tfl_edge", "_tfl_needs_top"),
+    # RETAINed page state; alive until the print key is stamped.
+    final = c("_tfl_rows_on_page", "_tfl_fits")
+  )
+}
+
 # Rows per page cannot be derived from the metadata: it depends on orientation,
 # column widths, font size and cell padding, so the header carries a measured
 # number. The count is the total printed body lines, including the mandatory
@@ -243,8 +260,8 @@ page_break_source <- function(header) {
     "    end;",
     "  end;",
     "  _tfl_rows_on_page + 1;",
-    # Only page_group survives; the block bookkeeping is internal.
-    "  drop _tfl_block_start _tfl_block_id _tfl_block_rows;",
+    # Only page_group survives from this step; the block bookkeeping is internal.
+    paste0("  drop ", paste(page_internal_names()$paged, collapse = " "), ";"),
     "run;",
     page_padding_source(usable)
   )
@@ -294,9 +311,21 @@ page_padding_source <- function(usable) {
     "data _TFL_PADDED_001;",
     "  set _TFL_PADTOP_001 _TFL_BODY_001 _TFL_PADBOT_001;",
     "run;",
-    "proc sort data=_TFL_PADDED_001 out=WORK._TFL_PAGED_001",
+    "proc sort data=_TFL_PADDED_001 out=_TFL_PADDED_S_001",
     "    (drop=_tfl_edge _tfl_needs_top);",
     "  by page_group _tfl_edge report_order;",
+    "run;",
+    "/* PROC REPORT re-sorts by every ORDER variable rather than printing in",
+    "   physical order, and the page-edge pads have no report_order at all. Under",
+    "   `missing` those missings sort first, which would put both pads above the",
+    "   body of every page. Stamp the already-sorted sequence as a complete,",
+    "   unique print key and order the report by that instead.",
+    "   The step also drops the page bookkeeping, which is internal to this chain:",
+    "   only page_group and the print key leave it. */",
+    "data WORK._TFL_PAGED_001;",
+    "  set _TFL_PADDED_S_001;",
+    "  _tfl_print_order = _n_;",
+    paste0("  drop ", paste(page_internal_names()$final, collapse = " "), ";"),
     "run;",
     paste0("/* Capacity actually available per page: ", usable, " block rows. */")
   )
@@ -356,10 +385,13 @@ rtf_report_source <- function(resolved, layout) {
     paste0("    style(report)=[outputwidth=100% borderwidth=", sas_report_number(layout$border_width_pt), "pt]"),
     "    style(header)=[protectspecialchars=off]",
     "    style(column)=[protectspecialchars=off asis=on];",
-    paste0("  columns page_group report_order indent_level label ",
+    paste0("  columns page_group _tfl_print_order indent_level label ",
            report_header_columns(header), ";"),
     "  define page_group / order noprint;",
-    "  define report_order / order order=internal noprint;",
+    "  /* The pads have no report_order, so the report cannot order by it: it",
+    "     would sort both page-edge blanks above the body. _tfl_print_order is the",
+    "     sequence produced by the final sort, so it reproduces it exactly. */",
+    "  define _tfl_print_order / order order=internal noprint;",
     "  define indent_level / display noprint;",
     paste0("  define label / display ", sas_character_literal(resolved$template$body$stub_header %||% ""),
            " width=40 style(column)=[cellwidth=", sas_report_number(layout$stub_width),

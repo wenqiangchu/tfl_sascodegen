@@ -180,10 +180,15 @@ check_pagination <- function(table, page_rows) {
     stop("Missing paginated SAS output: ", path, call. = FALSE)
   }
   data <- haven::read_sas(path)
-  # The dataset is already sorted by the page key (page_group, edge, report_order)
-  # and the page-edge pads carry no report_order at all, so re-sorting here by
-  # report_order would push them to the end and report a phantom violation.
-  # Physical row order is the contract.
+  # PROC REPORT does not print in physical order: it re-sorts by every ORDER
+  # variable. _tfl_print_order is the key the report actually uses, so checking
+  # the physical sequence would verify an order nothing renders. The pads carry no
+  # report_order, which is why report_order cannot serve as the key.
+  if (!"_tfl_print_order" %in% names(data)) {
+    stop("Paginated output has no _tfl_print_order column: ", path, call. = FALSE)
+  }
+  print_order <- data[["_tfl_print_order"]]
+  data <- data[order(data$page_group, print_order), ]
   role <- as.character(data$row_role)
   groups <- data$page_group
   sizes <- tapply(rep(1L, nrow(data)), groups, sum)

@@ -593,3 +593,72 @@ testthat::test_that("the page assignment step guards oversized blocks and separa
   testthat::expect_false(grepl("never split across pages", source, fixed = TRUE))
   testthat::expect_match(source, "taller than a whole page", fixed = TRUE)
 })
+
+# PROC REPORT does not print in physical order: it re-sorts by every ORDER
+# variable. The page-edge pads carry no report_order at all, and PROC REPORT runs
+# with `missing`, so ordering by report_order puts both pads at the TOP of each
+# page -- two blank lines above the body and none below. The report therefore
+# needs a key that is complete and unique: a monotonic print order stamped after
+# the final sort.
+testthat::test_that("the report orders by a complete print key, not by report_order", {
+  header <- report_fixture()$headers[[1L]]
+  source <- paste(page_break_source(header), collapse = "\n")
+
+  # The print key is stamped after the final sort, so it reflects the sorted
+  # sequence including the pads, whose report_order is missing.
+  testthat::expect_match(source, "_tfl_print_order = _n_;", fixed = TRUE)
+  sort_at <- regexpr("proc sort data=_TFL_PADDED_001 out=", source, fixed = TRUE)[[1L]]
+  stamp_at <- regexpr("_tfl_print_order = _n_;", source, fixed = TRUE)[[1L]]
+  testthat::expect_gt(sort_at, 0L)
+  testthat::expect_gt(stamp_at, sort_at)
+
+  report <- paste(rtf_report_source(
+    list(header = header, table = list(id = "t"),
+         template = list(body = list(stub_header = "Stub"))),
+    report_page_layout(header)
+  ), collapse = "\n")
+  # report_order is missing on the pads, so it cannot be the report's order key.
+  testthat::expect_false(grepl("define report_order", report, fixed = TRUE))
+  testthat::expect_match(report, "define _tfl_print_order / order order=internal noprint",
+                         fixed = TRUE)
+  # The order key has to be listed in COLUMNS to take effect.
+  columns_line <- grep("columns page_group", strsplit(report, "
+")[[1L]], value = TRUE)
+  testthat::expect_length(columns_line, 1L)
+  testthat::expect_match(columns_line, "_tfl_print_order", fixed = TRUE)
+  testthat::expect_false(grepl("report_order", columns_line, fixed = TRUE))
+})
+
+# The internal bookkeeping of the page step must not reach the final dataset: a
+# caller column cannot collide with it, and the QC `proc compare` of the assembled
+# data must not see it.
+testthat::test_that("no _tfl_ bookkeeping survives into the paginated dataset", {
+  source <- paste(page_break_source(list(page_rows = 22L)), collapse = "\n")
+  used <- unique(regmatches(source, gregexpr("_tfl_[a-z_]+", source))[[1L]])
+  internal <- unlist(page_internal_names(), use.names = FALSE)
+  # Every derived name is either dropped or is the report's own order key; a name
+  # that is neither would leak into the dataset the caller and PROC REPORT see.
+  leaked <- setdiff(used, c(internal, "_tfl_print_order"))
+  testthat::expect_identical(leaked, character(0L))
+
+  # Each internal name must appear in a drop, and the drops are staged so SAS is
+  # never asked to drop a variable an earlier step already removed -- that is a
+  # warning, and an unclassified warning fails the dummy study run. A drop is
+  # either a DROP statement or a data set (drop=...) option.
+  drop_lines <- grep("drop", strsplit(source, "\n")[[1L]], value = TRUE)
+  for (group in names(page_internal_names())) {
+    names_in_group <- page_internal_names()[[group]]
+    testthat::expect_true(
+      any(vapply(drop_lines, function(line) {
+        all(vapply(names_in_group, function(n) grepl(n, line, fixed = TRUE), logical(1L)))
+      }, logical(1L))),
+      label = paste("staged drop for", group)
+    )
+  }
+  # The final step keeps the print key and drops only the RETAINed page state.
+  final <- grep("^  drop ", strsplit(source, "\n")[[1L]], value = TRUE)
+  testthat::expect_true(any(vapply(final, function(line) {
+    grepl("_tfl_rows_on_page", line, fixed = TRUE) &&
+      !grepl("_tfl_block_start", line, fixed = TRUE)
+  }, logical(1L))))
+})
