@@ -187,6 +187,15 @@ check_pagination <- function(table, page_rows) {
   if (!"_tfl_print_order" %in% names(data)) {
     stop("Paginated output has no _tfl_print_order column: ", path, call. = FALSE)
   }
+  # _tfl_print_order is the only derived column the report needs; every other one is
+  # internal to the page step and must have been dropped. The generator unit test
+  # scans the emitted source, which cannot see a dataset that was written wrong, so
+  # this is the end-to-end form of the same rule.
+  leaked <- setdiff(grep("^_tfl_", names(data), value = TRUE), "_tfl_print_order")
+  if (length(leaked) > 0L) {
+    stop("Paginated output carries internal column(s) that should have been dropped: ",
+         paste(leaked, collapse = ", "), " in ", path, call. = FALSE)
+  }
   print_order <- data[["_tfl_print_order"]]
   data <- data[order(data$page_group, print_order), ]
   role <- as.character(data$row_role)

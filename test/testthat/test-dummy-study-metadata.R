@@ -379,6 +379,9 @@ testthat::test_that("verification reads the capacity from the bundle and refuses
   # pagination disabled means there is nothing to check, not that every page broke.
   testthat::expect_match(script, "pagination disabled", fixed = TRUE)
   testthat::expect_match(script, "disabled = TRUE", fixed = TRUE)
+  # The dataset-level form of the leak rule: a column added to the page step without
+  # a matching drop cannot be caught by the generated-source scan alone.
+  testthat::expect_match(script, "should have been dropped", fixed = TRUE)
 })
 
 testthat::test_that("all three consumers load the bundle through one helper", {
