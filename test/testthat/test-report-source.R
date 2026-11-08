@@ -566,6 +566,10 @@ testthat::test_that("page assignment fits every page and never ends one on a sep
     # one content row need exactly 2 of those 3 rows, so it belongs on page 1.
     # Requiring 4 free rows (the double-subtraction bug) wrongly moves it.
     c(17, 25),
+    # 18 rows used, exactly 2 free. The threshold is a lower bound, so a block whose
+    # separator plus first content row need exactly the 2 remaining rows still fits.
+    # This separates a threshold of 2 from a threshold of 3, which [17, 25] cannot.
+    c(18, 25),
     # 30 minimal blocks. A block is a separator plus at least one content row, so
     # the smallest real block after the first is 2 printed rows.
     rep(2, 30)
@@ -589,6 +593,17 @@ testthat::test_that("page assignment fits every page and never ends one on a sep
   # stay on page 1. This is the assertion the double-subtraction bug failed.
   pages <- paginate_pages(page_roles_for_blocks(c(17, 25)), usable)
   testthat::expect_identical(pages[[18L]], 1L)
+
+  # [18, 25] pins the other edge: with exactly 2 rows free the block still fits, so
+  # the threshold is 2 and not 3. Both thresholds pass [17, 25], which is why this
+  # case is needed.
+  pages <- paginate_pages(page_roles_for_blocks(c(18, 25)), usable)
+  testthat::expect_identical(pages[[19L]], 1L)
+
+  # [19, 25] leaves 1 free row, below the threshold, so the block must move. Without
+  # it a threshold of 1 would pass every case above.
+  pages <- paginate_pages(page_roles_for_blocks(c(19, 25)), usable)
+  testthat::expect_identical(pages[[20L]], 2L)
 })
 
 # The reference implementation above is only useful if the generated SAS agrees

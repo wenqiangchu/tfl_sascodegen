@@ -217,7 +217,7 @@ page_break_source <- function(header) {
              "data _TFL_PAGED_001;",
              "  set _TFL_PAGEIN_001;",
              "  page_group = 1;",
-             "_tfl_print_order = _n_;",
+             "  _tfl_print_order = _n_;",
              "run;"))
   }
   # The model bounds page_rows to the integer range, so this conversion cannot
