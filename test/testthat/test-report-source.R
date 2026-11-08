@@ -638,11 +638,38 @@ testthat::test_that("the report orders by a complete print key, not by report_or
   testthat::expect_match(report, "define _tfl_print_order / order order=internal noprint",
                          fixed = TRUE)
   # The order key has to be listed in COLUMNS to take effect.
-  columns_line <- grep("columns page_group", strsplit(report, "
-")[[1L]], value = TRUE)
+  columns_line <- grep("columns page_group", strsplit(report, "\n")[[1L]], value = TRUE)
   testthat::expect_length(columns_line, 1L)
   testthat::expect_match(columns_line, "_tfl_print_order", fixed = TRUE)
   testthat::expect_false(grepl("report_order", columns_line, fixed = TRUE))
+})
+
+# The internal bookkeeping of the page step must not reach the final dataset: a
+# caller column cannot collide with it, and the QC `proc compare` of the assembled
+# data must not see it.
+testthat::test_that("pagination sorts its input before assigning blocks", {
+  # The pagination step reads WORK._TFL_ASM_001, which `custom_code.after` may
+  # have edited. Nothing in the contract requires `after` to keep physical order
+  # consistent with report_order -- proc append or an early OUTPUT can insert a
+  # row behind rows with a smaller report_order. _tfl_block_id is then assigned
+  # on a non-monotonic sequence and the BY processing either errors or puts rows
+  # in the wrong block, so the input has to be sorted on report_order first.
+  source <- paste(page_break_source(list(page_rows = 22L)), collapse = "\n")
+  sort_at <- regexpr("proc sort data=WORK._TFL_ASM_001 out=_TFL_PAGEIN_001",
+                     source, fixed = TRUE)[[1L]]
+  blocks_at <- regexpr("data _TFL_BLOCKS_001", source, fixed = TRUE)[[1L]]
+  testthat::expect_gt(sort_at, 0L)
+  testthat::expect_gt(blocks_at, sort_at)
+  testthat::expect_match(source, "by report_order;", fixed = TRUE)
+  # Every reader of the assembled rows must use the sorted copy.
+  testthat::expect_false(grepl("set _TFL_ASM_001;", source, fixed = TRUE))
+
+  # The disabled branch reads the same sorted copy, so a caller that appends rows
+  # out of order still gets them in report_order when pagination is off.
+  off <- paste(page_break_source(list(page_rows = 0L)), collapse = "\n")
+  testthat::expect_match(off, "out=_TFL_PAGEIN_001", fixed = TRUE)
+  testthat::expect_false(grepl("set _TFL_ASM_001;", off, fixed = TRUE))
+  testthat::expect_match(off, "set _TFL_PAGEIN_001;", fixed = TRUE)
 })
 
 # The internal bookkeeping of the page step must not reach the final dataset: a

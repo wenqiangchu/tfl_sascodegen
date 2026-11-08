@@ -64,7 +64,9 @@ rows in custom code. Runtime identities and all report datasets remain in
 SAS WORK and are not metadata fields.
 
 Pagination runs **after** your **after** code, so its edits are carried into the
-pages. It reads `WORK._TFL_ASM_001` and writes `WORK._TFL_PAGED_001`, which is
+pages. It re-sorts `WORK._TFL_ASM_001` by `report_order` before assigning rows to
+blocks, so **after** code may append or insert rows without keeping physical order
+consistent with `report_order` -- use `proc append ... force` if needed. It reads `WORK._TFL_ASM_001` and writes `WORK._TFL_PAGED_001`, which is
 what `PROC REPORT` renders; `_TFL_PAGED_001` adds `page_group` (the page number)
 and `_tfl_print_order` (the row's position within the page, which is what the
 report orders by). That means the report does not read `_TFL_ASM_001` directly.

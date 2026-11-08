@@ -166,7 +166,9 @@ after 代码需原地修改 `WORK._TFL_ASM_001`，并保留以下字段：
 `runtime_row_id`、`row_role`、`hierarchy_level` 和 `node_key`，供自定义代码定位行。
 这些 SAS 运行期字段不写入 metadata。
 
-分页在 custom code **after** 之后执行，因此 after 的修改会进入页面。分页读取
+分页在 custom code **after** 之后执行，因此 after 的修改会进入页面。分页会先按
+`report_order` 对 `WORK._TFL_ASM_001` 重新排序再划分块，因此 after 代码可以追加或插入
+行，不必保证物理顺序与 `report_order` 一致（必要时用 `proc append ... force`）。分页读取
 `WORK._TFL_ASM_001` 并写出 `WORK._TFL_PAGED_001`，由 `PROC REPORT` 渲染；
 `_TFL_PAGED_001` 额外增加 `page_group`（页码）与 `_tfl_print_order`（该行在页内的
 打印顺序，报告按它排序）。也就是说报告**不再**直接读 `_TFL_ASM_001`。分页的其余

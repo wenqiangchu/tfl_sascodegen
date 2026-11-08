@@ -199,11 +199,25 @@ page_internal_names <- function() {
 # about page layout.
 page_break_source <- function(header) {
   page_rows <- header$page_rows %||% default_page_rows
+  # Pagination reads the assembled rows after `custom_code.after` has run, and
+  # nothing requires that hook to keep physical order consistent with
+  # report_order: proc append or an early OUTPUT can insert a row behind rows with
+  # a smaller report_order. Blocks are assigned on row sequence, so an unsorted
+  # input would give a non-monotonic _tfl_block_id and either a BY failure or rows
+  # in the wrong block. Sort once, up front, and let every branch read the copy.
+  prepare <- c(
+    "/* The after hook may not preserve physical order; blocks are assigned on it. */",
+    "proc sort data=WORK._TFL_ASM_001 out=_TFL_PAGEIN_001;",
+    "  by report_order;",
+    "run;"
+  )
   if (is.null(page_rows) || !is.finite(page_rows) || page_rows <= 0L) {
-    return(c("/* Page breaking is disabled for this header. */",
+    return(c(prepare,
+             "/* Page breaking is disabled for this header. */",
              "data _TFL_PAGED_001;",
-             "  set _TFL_ASM_001;",
+             "  set _TFL_PAGEIN_001;",
              "  page_group = 1;",
+             "_tfl_print_order = _n_;",
              "run;"))
   }
   page_rows <- as.integer(page_rows)
@@ -212,6 +226,7 @@ page_break_source <- function(header) {
   # row of capacity so a small page_rows still makes progress.
   usable <- max(page_rows - 2L, 1L)
   c(
+    prepare,
     paste0("/* Group rows into pages of at most ", page_rows, " printed rows. */"),
     paste0("/* ", usable, " of them hold block rows; 2 are the page-edge blanks. */"),
     "/* A block is a chunk or hierarchy-node run. A block that fits is never split;",
@@ -223,7 +238,7 @@ page_break_source <- function(header) {
     # Every derived name carries the _tfl_ prefix and is dropped before the final
     # dataset, so a caller cannot collide with it through a custom column.
     "data _TFL_BLOCKS_001;",
-    "  set _TFL_ASM_001;",
+    "  set _TFL_PAGEIN_001;",
     "  _tfl_block_start = row_role = 'spacer' or _n_ = 1;",
     "  retain _tfl_block_id 0;",
     "  if _tfl_block_start then _tfl_block_id + 1;",
