@@ -466,4 +466,21 @@ testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
     testthat::expect_true(length(errors) > 0L, label = as.character(too_small))
     testthat::expect_true(any(grepl("page_rows", vapply(errors, `[[`, "", "path"))))
   }
+
+  # There is an upper bound too. page_break_source() converts the parsed value with
+  # as.integer(), so a capacity outside the integer range would silently become NA
+  # and every pagination guard would read `> NA`. parse_integer_value() returns a
+  # double above that range on purpose, for fields that genuinely need big
+  # integers; a page capacity is not one of them.
+  largest <- parse_bundle_yaml(canonical_yaml_text(build(.Machine$integer.max)))
+  testthat::expect_true(largest$passed)
+  testthat::expect_identical(as.numeric(largest$workspace$headers[[1L]]$page_rows),
+                             as.numeric(.Machine$integer.max))
+  for (too_large in c(2147483648, 1e10)) {
+    header <- list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
+                   page_rows = too_large, columns = list(column))
+    errors <- parse_bundle_value(new_metadata_bundle(headers = list(header)))$errors
+    testthat::expect_true(length(errors) > 0L, label = as.character(too_large))
+    testthat::expect_true(any(grepl("page_rows", vapply(errors, `[[`, "", "path"))))
+  }
 })

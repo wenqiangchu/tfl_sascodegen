@@ -368,11 +368,19 @@ parse_header_value <- function(value, path, collector) {
   # a page and a blank page is printed. The smallest honourable capacity is
   # therefore 4. 1, 2 and 3 are refused instead of silently inflated; 0 stays
   # valid because it means "do not paginate at all".
+  #
+  # There is an upper bound as well. parse_integer_value() returns a double above
+  # the integer range on purpose, for identifiers that genuinely need big
+  # integers, but page_break_source() converts the capacity with as.integer(): an
+  # unrepresentable value would become NA and every pagination guard would read
+  # `> NA`, so the report would silently stop respecting pages. A page capacity is
+  # a printed-line count, so the integer range is more than enough.
   page_rows <- NULL
   if (has_field(value, "page_rows")) {
     page_rows <- parse_integer_value(get_field(value, "page_rows"),
                                      error_path_field(path, "page_rows"), collector,
-                                     "page_rows", min_value = 0L)
+                                     "page_rows", min_value = 0L,
+                                     max_value = .Machine$integer.max)
     if (!is.null(page_rows) && page_rows > 0L && page_rows < 4L) {
       add_value_error(collector, error_path_field(path, "page_rows"),
                       paste0("Field 'page_rows' must be 0 (no pagination) or at ",

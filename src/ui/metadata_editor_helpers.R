@@ -185,7 +185,9 @@ header_from_editor_data <- function(id, source_data, data, orientation,
     # untouched and let parse_integer_value() reject it by name.
     # 1e10 is integral but outside the integer range, so integrality alone is not
     # enough: as.integer() would produce NA and the model would report a missing
-    # value instead of the number the user typed.
+    # value instead of the number the user typed. It is passed through unchanged so
+    # the model rejects it by name -- a capacity above the integer range would turn
+    # into NA in the generator and disable pagination silently.
     representable <- is.finite(capacity) && capacity == trunc(capacity) &&
       abs(capacity) <= .Machine$integer.max
     result$page_rows <- if (representable) as.integer(capacity) else capacity

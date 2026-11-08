@@ -220,6 +220,8 @@ page_break_source <- function(header) {
              "_tfl_print_order = _n_;",
              "run;"))
   }
+  # The model bounds page_rows to the integer range, so this conversion cannot
+  # produce NA. An unbounded value here would emit `> NA` in every page guard.
   page_rows <- as.integer(page_rows)
   # Two lines of every page are reserved for the mandatory blank line at the top
   # and bottom, so only the remainder can hold block rows. The model guarantees a

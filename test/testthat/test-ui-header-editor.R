@@ -165,12 +165,18 @@ testthat::test_that("a fractional page capacity is rejected instead of rounded",
   testthat::expect_identical(parse_bundle_value(
     new_metadata_bundle(headers = list(ok)))$errors, list())
 
-  # A value beyond the integer range is still a valid finite integer, so it is
-  # carried as a double rather than coerced into NA. Wrapping it to NA would make
-  # the model report a missing value instead of the number that was entered.
+  # A value beyond the integer range is carried through unchanged rather than
+  # coerced into NA, so the model can reject it by name. It has to be rejected:
+  # page_break_source() calls as.integer() on the parsed value, so an unrepresentable
+  # capacity would become NA and emit `> NA` in every pagination guard.
   huge <- header_from_editor_data(original$id, original$source_data, data,
                                   original$orientation, page_rows = 1e10,
                                   original = original)
   testthat::expect_false(is.na(huge$page_rows))
   testthat::expect_identical(as.numeric(huge$page_rows), 1e10)
+  huge_errors <- parse_bundle_value(
+    new_metadata_bundle(headers = list(huge)))$errors
+  testthat::expect_true(length(huge_errors) > 0L)
+  testthat::expect_true(
+    any(grepl("page_rows", vapply(huge_errors, `[[`, "", "path"))))
 })
