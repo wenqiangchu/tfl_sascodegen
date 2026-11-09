@@ -368,8 +368,7 @@ testthat::test_that("every authored header states its page capacity", {
 testthat::test_that("verification reads the capacity from the bundle and refuses to guess", {
   verify_dir <- file.path(project_root, "dummy_study", "verify")
   script <- paste(readLines(file.path(verify_dir, "compare_with_sas.R"),
-                            warn = FALSE), collapse = "
-")
+                            warn = FALSE), collapse = "\n")
   # A fallback to the default would silently check the wrong capacity, so a header
   # without page_rows must be an error rather than a substitution. Presence is read
   # from raw_bundle because the parsed bundle always has a value.

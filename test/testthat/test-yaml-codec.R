@@ -484,3 +484,32 @@ testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
     testthat::expect_true(any(grepl("page_rows", vapply(errors, `[[`, "", "path"))))
   }
 })
+
+testthat::test_that("an out-of-range integer is rejected, not coerced to NA", {
+  # Same defect class as page_rows: parse_integer_value() returns a double above
+  # the integer range on purpose, so a later as.integer() turns it into NA and the
+  # error reports a consequence instead of the value that was typed. Each of these
+  # used to emit "NAs introduced by coercion to integer range" and then complain
+  # about something else entirely.
+  make <- function(ord) {
+    list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
+         page_rows = 22L,
+         columns = list(list(id = "c1", label = "O", condition = "1",
+                             display_order = ord, width = 1, alignment = "center")))
+  }
+  for (too_large in c(2147483648, 1e10)) {
+    warnings <- character()
+    value <- withCallingHandlers(
+      parse_bundle_value(new_metadata_bundle(headers = list(make(too_large)))),
+      warning = function(w) {
+        warnings <<- c(warnings, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      })
+    # No coercion warning: the value is refused where it is parsed.
+    testthat::expect_identical(warnings, character(), label = as.character(too_large))
+    testthat::expect_true(length(value$errors) > 0L, label = as.character(too_large))
+    testthat::expect_true(
+      any(grepl("display_order", vapply(value$errors, `[[`, "", "path"))),
+      label = as.character(too_large))
+  }
+})

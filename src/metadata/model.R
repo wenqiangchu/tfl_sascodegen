@@ -264,7 +264,11 @@ parse_header_column_value <- function(value, path, collector) {
                                   "condition", non_empty = TRUE)
   display_order <- parse_integer_value(
     get_field(value, "display_order"), error_path_field(path, "display_order"),
-    collector, "display_order", min_value = 1
+    collector, "display_order", min_value = 1,
+    # Bounded like page_rows: the sequence check below converts with as.integer(),
+    # so an out-of-range value would become NA and the error would point at the
+    # ordering rule instead of at the number the caller wrote.
+    max_value = .Machine$integer.max
   )
   width <- parse_number_value(get_field(value, "width"), error_path_field(path, "width"),
                               collector, "width", positive = TRUE)
@@ -1263,7 +1267,7 @@ parse_bundle_value <- function(value, registry = default_chunk_registry()) {
   }
   schema_version <- parse_integer_value(
     get_field(value, "schema_version"), error_path_field(root_path, "schema_version"),
-    collector, "schema_version", min_value = 1
+    collector, "schema_version", min_value = 1, max_value = .Machine$integer.max
   )
   if (!is.null(schema_version) && !identical(as.integer(schema_version), 2L)) {
     add_error(collector, "import", "bundle_schema_unsupported",

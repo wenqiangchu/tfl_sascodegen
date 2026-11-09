@@ -736,7 +736,9 @@ P1-7 方案 A 处理：改名为 `_tfl_gap` 并**移出 `keep` 列表**，只在
 1. `model.R` 的互斥字段列表原本写了两遍（报错一次、`invalid_level` 一次）。改为先算
    `format_conflicts`，两处复用，避免漂移让非法 level 漏过。
 2. `page_rows` 取 1 或 2 时，`usable = max(page_rows - 2, 1) = 1`，加两行垫行后每页 3 行，
-   **超出所设容量**。现在 1 和 2 直接报结构错误，0 仍然表示「不分页」。
+   **超出所设容量**。当时把 1 和 2 报为结构错误，0 仍然表示「不分页」。
+   **2026-11-08（R2-5）后续收紧**：下限改为 4（`1`–`3` 全部拒绝），并且 `usable` 里的
+   `max(..., 1L)` 已删除——`page_rows >= 4` 保证 `usable >= 2`，那个下限是死代码。
 3. `header_from_editor_data()` 同时保留显式 `page_rows` 参数与从 `original` 回退两条路径。
    删除该参数，只从 `original` 取；同步 `metadata_editor_runtime.R` 与两个测试的调用。
    递归风险用「baseline 不把 `original` 传回去」的方式规避，并显式把 `page_rows` 补进
