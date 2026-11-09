@@ -560,9 +560,12 @@ parse_row_value <- function(value, path, collector, definition) {
                               collector, "label")
   indent_level <- NULL
   if (has_field(value, "indent_level")) {
+    # Bounded like page_rows: the generator emits this with as.integer(), so an
+    # out-of-range value would be written as a literal `indent_level = NA`.
     indent_level <- parse_integer_value(get_field(value, "indent_level"),
                                         error_path_field(path, "indent_level"), collector,
-                                        "indent_level", min_value = 0)
+                                        "indent_level", min_value = 0,
+                                        max_value = .Machine$integer.max)
   }
   if (is.null(id) || is.null(row_type) || is.null(label)) return(NULL)
   result <- list(id = id, type = row_type, label = label)
@@ -699,7 +702,8 @@ parse_result_sort_value <- function(value, path, collector) {
     column_order <- vapply(seq_along(column_raw$items), function(i) {
       parse_integer_value(column_raw$items[[i]],
                           error_path_index(error_path_field(path, "column_order"), i - 1L),
-                          collector, "column_order", min_value = 0)
+                          collector, "column_order", min_value = 0,
+                          max_value = .Machine$integer.max)
     }, numeric(1L))
     # Column positions are an integer sequence in the value model.  The
     # numeric vapply above keeps large-value diagnostics simple; normalise the

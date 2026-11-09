@@ -514,6 +514,34 @@ testthat::test_that("an out-of-range integer is rejected, not coerced to NA", {
   }
 })
 
+testthat::test_that("indent_level refuses values the emitter cannot emit", {
+  # indent_level is emitted with as.integer(), so an out-of-range value becomes NA
+  # and the generated SAS literally contains `indent_level = NA`, which is not a
+  # valid row attribute. The model has to refuse it where it is written.
+  # A "label" row is the simplest valid type for continuous_summary (no statistics,
+  # no cell_format) and indent_level is a common field, which is all this needs.
+  row <- function(level) {
+    list(id = "r1", type = "label", label = "L", indent_level = level)
+  }
+  # Use the registered continuous contract so the row type is valid; only
+  # indent_level is under test here.
+  definition <- default_chunk_registry()$definitions[["continuous_summary"]]
+  parse_row <- function(level) {
+    captured <- new_error_collector()
+    parse_row_value(row(level), "$.row", captured, definition)
+    error_items(captured)
+  }
+  for (too_large in c(2147483648, 1e10)) {
+    errors <- parse_row(too_large)
+    testthat::expect_true(length(errors) > 0L, label = as.character(too_large))
+    testthat::expect_true(
+      any(grepl("indent_level", vapply(errors, `[[`, "", "path"))),
+      label = as.character(too_large))
+  }
+  # A representable level still parses, so the bound is not blanket rejection.
+  testthat::expect_identical(parse_row(2L), list())
+})
+
 testthat::test_that("an unresolvable digits value fails clearly, not inside the emitter", {
   # Third instance of the same class as page_rows. digits is parsed with
   # parse_integer_value(), which returns a double above the integer range, and the
