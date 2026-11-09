@@ -514,6 +514,27 @@ testthat::test_that("an out-of-range integer is rejected, not coerced to NA", {
   }
 })
 
+testthat::test_that("a huge relative digits offset fails with a message, not an R error", {
+  # The relative form is parsed out of text, so its magnitude is unbounded even
+  # though a digits count is not. Converting it directly with as.integer() warned
+  # and produced NA, and the following comparison then died with
+  # "missing value where TRUE/FALSE needed".
+  for (offset in c("+99999999999", "-99999999999")) {
+    message <- tryCatch({
+      suppressWarnings(resolve_relative_digits(22L, offset))
+      NA_character_
+    }, error = function(e) conditionMessage(e))
+    testthat::expect_false(is.na(message), label = offset)
+    testthat::expect_false(
+      grepl("missing value where TRUE/FALSE needed", message, fixed = TRUE),
+      label = offset)
+    testthat::expect_true(grepl("digits", message, ignore.case = TRUE), label = offset)
+  }
+  # Ordinary offsets still resolve, so the bound is not blanket rejection.
+  testthat::expect_identical(resolve_relative_digits(22L, "+2"), 24L)
+  testthat::expect_identical(resolve_relative_digits(22L, "-1"), 21L)
+})
+
 testthat::test_that("indent_level refuses values the emitter cannot emit", {
   # indent_level is emitted with as.integer(), so an out-of-range value becomes NA
   # and the generated SAS literally contains `indent_level = NA`, which is not a
