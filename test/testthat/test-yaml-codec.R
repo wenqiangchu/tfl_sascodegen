@@ -513,3 +513,24 @@ testthat::test_that("an out-of-range integer is rejected, not coerced to NA", {
       label = as.character(too_large))
   }
 })
+
+testthat::test_that("an unresolvable digits value fails clearly, not inside the emitter", {
+  # Third instance of the same class as page_rows. digits is parsed with
+  # parse_integer_value(), which returns a double above the integer range, and the
+  # precision resolver then compares with as.integer(digits). For 1e10 that is NA,
+  # the comparison yields NA, and the emitter dies with the R-level message
+  # "missing value where TRUE/FALSE needed" -- naming no field and no value.
+  for (bad in c(1e10, 2147483648)) {
+    message <- tryCatch({
+      suppressWarnings(resolve_relative_digits(22L, bad))
+      NA_character_
+    }, error = function(e) conditionMessage(e))
+    testthat::expect_false(is.na(message), label = format(bad))
+    testthat::expect_false(
+      grepl("missing value where TRUE/FALSE needed", message, fixed = TRUE),
+      label = paste("opaque failure for", format(bad)))
+    testthat::expect_true(
+      grepl("digits", message, ignore.case = TRUE),
+      label = paste("message should name the field for", format(bad)))
+  }
+})

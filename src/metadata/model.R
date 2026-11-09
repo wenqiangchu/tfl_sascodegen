@@ -513,8 +513,11 @@ parse_statistic_value <- function(value, path, collector, allowed_ids, mode) {
         digits <- raw_digits
       }
     } else {
+      # Bounded like page_rows: the precision resolver converts with as.integer(),
+      # so anything above the integer range becomes NA and dies inside the emitter.
       digits <- parse_integer_value(raw_digits, error_path_field(path, "digits"),
-                                    collector, "digits", min_value = 0)
+                                    collector, "digits", min_value = 0,
+                                    max_value = .Machine$integer.max)
     }
   }
   if (!is.null(id) && identical(id, "n") && has_digits) {
