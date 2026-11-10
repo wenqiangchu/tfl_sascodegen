@@ -613,3 +613,62 @@ testthat::test_that("parse_integer_value is bounded by default", {
   testthat::expect_error(
     parse_integer_value(1L, "$.x", new_error_collector(), "x", min_value = -Inf))
 })
+testthat::test_that("a multi-line string keeps its leading indentation", {
+  # A literal block's indentation is inferred from its first non-empty line, so
+  # when that line starts with spaces YAML treats them as block indentation and
+  # strips them from every line. The emitter wrote every line at a fixed
+  # parent + 2, so:
+  #   "  a\n  b" round-tripped as "a\nb"   (two leading spaces eaten)
+  #   "  a\nb"   would not re-import at all (bundle_yaml_invalid, because "b" is
+  #              less indented than the inferred block indent)
+  # An explicit indentation indicator states the block indent outright.
+  round_trip_custom_code <- function(text) {
+    column <- list(id = "c1", label = "O", condition = "1", display_order = 1L,
+                   width = 1, alignment = "center")
+    bundle <- new_metadata_bundle(
+      populations = list(list(id = "p1", label = "P", expression = "1")),
+      headers = list(list(id = "h", source_data = "adam.adsl",
+                          orientation = "portrait", page_rows = 22L,
+                          columns = list(column))),
+      tables = list(list(id = "t1", population_id = "p1", header_id = "h",
+                         template_id = "tpl",
+                         custom_code = list(before = text))),
+      templates = list(list(id = "tpl", body = list(stub_header = "S",
+        chunks = list(list(id = "k1", type = "continuous_summary",
+          source_data = "adam.adsl", counting_unit = "distinct_subject",
+          analysis_variable = "AGE",
+          rows = list(list(id = "r1", type = "analysis", label = "L",
+                           cell_format = "{mean}",
+                           statistics = list(list(id = "mean", digits = 1L))))))))))
+    parsed <- parse_bundle_value(bundle)
+    testthat::expect_identical(parsed$errors, list())
+    yaml <- canonical_yaml_bytes(parsed$value)
+    again <- parse_bundle_yaml(yaml)
+    testthat::expect_true(again$passed)
+    list(text = as.character(yaml),
+         value = again$workspace$tables[[1L]]$custom_code$before)
+  }
+
+  uniform <- round_trip_custom_code("  a\n  b")
+  testthat::expect_identical(uniform$value, "  a\n  b")
+
+  dedent <- round_trip_custom_code("  a\nb")
+  testthat::expect_identical(dedent$value, "  a\nb")
+
+  # An unindented first line keeps the plain "|" form: no indicator is needed
+  # because nothing can be mistaken for block indentation.
+  plain <- round_trip_custom_code("a\nb")
+  testthat::expect_identical(plain$value, "a\nb")
+  testthat::expect_match(plain$text, "before: |-\n", fixed = TRUE)
+  testthat::expect_false(grepl("before: |[0-9]", plain$text, fixed = TRUE))
+
+  # The scanner has to recognise the indicator too. It skips a block scalar's
+  # following lines so that macro references and comments inside written SAS code
+  # are not mistaken for YAML anchors, aliases or tags. If it does not recognise
+  # "|2-", it scans the body and rejects "&lib":
+  #   YAML anchors are not supported.
+  code <- "  %let ds = &lib..adsl;\n  %put &ds;"
+  sas <- round_trip_custom_code(code)
+  testthat::expect_identical(sas$value, code)
+  testthat::expect_match(sas$text, "before: |2-\n", fixed = TRUE)
+})

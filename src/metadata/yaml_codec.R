@@ -106,7 +106,7 @@ scan_yaml_features <- function(text) {
     first_content_seen <- TRUE
     # A block scalar protects all following indented source text from feature
     # scanning; this is important for custom SAS code containing '&' or '!'.
-    if (grepl("(^|:)\\s*[|>]([+-])?\\s*$", trimmed_visible, perl = TRUE)) {
+    if (grepl("(^|:)\\s*[|>]([1-9])?([+-])?\\s*$", trimmed_visible, perl = TRUE)) {
       block_parent_indent <- yaml_line_indent(line)
       next
     }
@@ -253,10 +253,22 @@ yaml_scalar_lines <- function(indent, key, value, type = c("string", "integer", 
     if (!grepl("\n", value, fixed = TRUE)) return(paste0(prefix, yaml_single_quote(value)))
     newline_count <- nchar(value) - nchar(sub("\\n+$", "", value))
     ends_newline <- endsWith(value, "\n")
-    indicator <- if (!ends_newline) "|-" else if (newline_count > 1L) "|+" else "|"
     content_value <- sub("\\n+$", "", value)
     pieces <- if (identical(content_value, "")) character() else
       strsplit(content_value, "\n", fixed = TRUE)[[1L]]
+    # A literal block's indentation is inferred from its first non-empty line, so a
+    # line that starts with spaces would have them read as block indentation and
+    # stripped from every line. It is worse when a later line is less indented: the
+    # block ends early and the document stops parsing. Stating the indentation
+    # explicitly removes the guess; the value is always 2 because content is emitted
+    # at indent + 2.
+    first_content <- pieces[nzchar(pieces)][1L]
+    needs_indent_indicator <- !is.na(first_content) && grepl("^ ", first_content)
+    indicator <- paste0(
+      "|",
+      if (needs_indent_indicator) "2" else "",
+      if (!ends_newline) "-" else if (newline_count > 1L) "+" else ""
+    )
     if (ends_newline && newline_count > 1L) {
       pieces <- c(pieces, rep("", newline_count - 1L))
     }
