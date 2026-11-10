@@ -50,6 +50,21 @@ new_chunk_seed <- function(type) {
 # here rather than inside the server closure so the transformation can be tested
 # directly: the row table is the only place a label row can be produced, and the
 # model rejects analysis-only fields on a label row.
+# Ids for objects the user adds in the editor. They only have to be distinct from
+# each other and from what is already there: reindex_template() renames everything
+# to position-based ids on save, but it maps old id -> new id with setNames(), which
+# silently keeps only the first entry for a duplicated name. A fixed seed id such as
+# "level" therefore made every reference to a duplicate resolve to the first object.
+new_item_seed_id <- function(prefix, existing) {
+  existing <- as.character(existing)
+  index <- 1L
+  repeat {
+    candidate <- sprintf("%s_%03d", prefix, index)
+    if (!candidate %in% existing) return(candidate)
+    index <- index + 1L
+  }
+}
+
 trim_optional <- function(x) {
   x <- as.character(x %||% "")
   if (nzchar(x)) x else NULL
