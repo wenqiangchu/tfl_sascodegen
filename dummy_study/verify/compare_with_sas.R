@@ -484,10 +484,6 @@ table_header_by_id <- function(table_id) {
   if (length(headers) == 0L) NULL else headers[[1L]]
 }
 
-# Whether the author wrote page_rows at all can only be answered from the raw
-# bundle. The model backfills a missing value with default_page_rows, so the parsed
-# header always has one and a guard that asks the parsed bundle can never fire --
-# which is exactly the coupling the whole point of option (b) was to remove.
 raw_header_by_id <- function(header_id) {
   headers <- loaded$raw_bundle$headers
   if (is.null(headers)) return(NULL)
@@ -511,10 +507,8 @@ page_capacity_for <- function(table) {
   if (is.null(header)) {
     stop("no header resolved for table: ", table, call. = FALSE)
   }
-  # Presence from the raw bundle, value from the parsed one: the raw structure is
-  # what the author wrote, while the parsed value carries the type coercion and is
-  # what the generator used. They agree when the field is present, which is the
-  # only case that gets this far.
+  # The value comes from the parsed header: it carries the type coercion and is what
+  # the generator used.
   raw <- raw_header_by_id(header$id)
   if (is.null(raw) || is.null(raw[["page_rows"]])) {
     stop("no page_rows on header '", header$id, "' for table ", table,
