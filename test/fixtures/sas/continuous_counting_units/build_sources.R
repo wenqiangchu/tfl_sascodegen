@@ -20,7 +20,6 @@ source_files <- c(
   "src/emitters/continuous.R",
   "src/emitters/categorical.R",
   "src/emitters/hierarchical.R",
-  "src/emitters/precision.R",
   "src/emitters/result_render.R"
 )
 invisible(lapply(file.path(root, source_files), source, local = FALSE))

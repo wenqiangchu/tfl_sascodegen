@@ -7,7 +7,7 @@ source_files <- c(
   "core/errors.R", "chunks/registry.R", "metadata/model.R", "metadata/yaml_codec.R",
   "metadata/workspace.R", "generator/source_generator.R", "generator/report_source.R",
   "emitters/source_input.R", "emitters/continuous.R", "emitters/categorical.R",
-  "emitters/hierarchical.R", "emitters/precision.R", "emitters/result_render.R"
+  "emitters/hierarchical.R", "emitters/result_render.R"
 )
 invisible(lapply(file.path(root, "src", source_files), source, local = FALSE))
 

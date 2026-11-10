@@ -26,7 +26,7 @@ bundle_source_files <- function() {
   c("core/errors.R", "chunks/registry.R", "metadata/model.R",
     "metadata/yaml_codec.R", "metadata/workspace.R",
     "emitters/source_input.R", "emitters/continuous.R", "emitters/categorical.R",
-    "emitters/hierarchical.R", "emitters/precision.R", "emitters/result_render.R")
+    "emitters/hierarchical.R", "emitters/result_render.R")
 }
 
 source_bundle_runtime <- function(root = ".") {

@@ -37,7 +37,7 @@ source_order <- c(
   "src/generator/source_generator.R", "src/generator/report_source.R",
   "src/emitters/source_input.R", "src/emitters/continuous.R",
   "src/emitters/categorical.R", "src/emitters/hierarchical.R",
-  "src/emitters/precision.R", "src/emitters/result_render.R",
+  "src/emitters/result_render.R",
   "src/application/orchestration.R", "src/ui/metadata_editor_helpers.R",
   "src/ui/metadata_editor_state.R", "src/ui/metadata_editor_ui.R", "src/ui/metadata_editor_template.R",
   "src/ui/metadata_editor_collections.R", "src/ui/metadata_editor_header.R",
