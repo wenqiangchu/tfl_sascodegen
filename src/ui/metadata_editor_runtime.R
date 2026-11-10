@@ -31,7 +31,6 @@ metadata_editor_server_impl <- function(input, output, session) {
     if (is.null(draft)) return(NULL)
     if (identical(draft$operation, "create")) clone_metadata_value(pending_seed()) else clone_metadata_value(draft$original)
   }
-  trim_optional <- function(x) { x <- as.character(x %||% ""); if (nzchar(x)) x else NULL }
   split_keys <- function(x) {
     x <- trimws(unlist(strsplit(as.character(x %||% ""), ",", fixed=TRUE)))
     x[nzchar(x)]
@@ -42,37 +41,10 @@ metadata_editor_server_impl <- function(input, output, session) {
     if (length(keys)) chunk$distinct_key <- keys else chunk$distinct_key <- NULL
     chunk
   }
-  normalize_stat_digits <- function(x) {
-    x <- trimws(as.character(x %||% "")); if (!nzchar(x)) return(NULL)
-    if (grepl("^[+-][0-9]+$", x)) x else suppressWarnings(as.integer(x))
-  }
   collect_rows <- function(rows, prefix) {
     cache_key <- paste0(prefix, "rows")
     cached <- row_table_cache()[[cache_key]]
-    if (!is.null(cached)) {
-      rows <- lapply(seq_len(nrow(cached)), function(i) {
-        z <- as.list(cached[i, , drop = FALSE])
-        z$id <- as.character(z$.row_id %||% z$id %||% sprintf("row_%03d", i)); z$.row_id <- NULL
-        z$type <- as.character(z$type)
-        z$label <- as.character(z$label)
-        z$indent_level <- suppressWarnings(as.integer(z$indent_level))
-        if (is.na(z$indent_level)) z$indent_level <- 0L
-        z$condition <- trim_optional(z$condition)
-        z$cell_format <- as.character(z$cell_format %||% "")
-        stat_ids <- strsplit(trimws(as.character(z$statistics %||% "")), "\\s+")[[1L]]
-        if (!length(stat_ids) || !nzchar(stat_ids[[1L]])) stat_ids <- character()
-        digit_tokens <- strsplit(trimws(as.character(z$digits %||% "")), "\\s+")[[1L]]
-        if (!length(digit_tokens) || !nzchar(digit_tokens[[1L]])) digit_tokens <- character()
-        z$statistics <- lapply(seq_along(stat_ids), function(j) {
-          s <- list(id=stat_ids[[j]]); d <- digit_tokens[[j]] %||% "-"
-          if (!identical(d, "-") && nzchar(d)) s$digits <- normalize_stat_digits(d)
-          s
-        })
-        z$statistics <- if (z$type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) z$statistics else z$statistics
-        z$digits <- NULL; z$statistics_text <- NULL
-        z
-      })
-    }
+    if (!is.null(cached)) rows <- rows_from_editor_data(cached)
     rows %||% list()
   }
   collect_template_from_ui <- function(strip_ids = FALSE) {

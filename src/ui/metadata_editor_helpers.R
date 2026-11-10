@@ -46,6 +46,58 @@ new_chunk_seed <- function(type) {
   )
 }
 
+# Row-table collection turns the editable row table back into bundle rows. It lives
+# here rather than inside the server closure so the transformation can be tested
+# directly: the row table is the only place a label row can be produced, and the
+# model rejects analysis-only fields on a label row.
+trim_optional <- function(x) {
+  x <- as.character(x %||% "")
+  if (nzchar(x)) x else NULL
+}
+
+normalize_stat_digits <- function(x) {
+  x <- trimws(as.character(x %||% ""))
+  if (!nzchar(x)) return(NULL)
+  if (grepl("^[+-][0-9]+$", x)) x else suppressWarnings(as.integer(x))
+}
+
+rows_from_editor_data <- function(cached) {
+  lapply(seq_len(nrow(cached)), function(i) {
+    z <- as.list(cached[i, , drop = FALSE])
+    z$id <- as.character(z$.row_id %||% z$id %||% sprintf("row_%03d", i))
+    z$.row_id <- NULL
+    z$type <- as.character(z$type)
+    z$label <- as.character(z$label)
+    z$indent_level <- suppressWarnings(as.integer(z$indent_level))
+    if (is.na(z$indent_level)) z$indent_level <- 0L
+    z$condition <- trim_optional(z$condition)
+    z$cell_format <- as.character(z$cell_format %||% "")
+    stat_ids <- strsplit(trimws(as.character(z$statistics %||% "")), "\\s+")[[1L]]
+    if (!length(stat_ids) || !nzchar(stat_ids[[1L]])) stat_ids <- character()
+    digit_tokens <- strsplit(trimws(as.character(z$digits %||% "")), "\\s+")[[1L]]
+    if (!length(digit_tokens) || !nzchar(digit_tokens[[1L]])) digit_tokens <- character()
+    z$statistics <- lapply(seq_along(stat_ids), function(j) {
+      s <- list(id = stat_ids[[j]])
+      d <- digit_tokens[[j]] %||% "-"
+      if (!identical(d, "-") && nzchar(d)) s$digits <- normalize_stat_digits(d)
+      s
+    })
+    z$digits <- NULL
+    z$statistics_text <- NULL
+    # A label row carries only id, type, label and indent_level; the model rejects
+    # everything else on one (model.R common_fields). The row table renders the
+    # analysis columns for every row, so the values read from those cells have to be
+    # dropped here rather than written through -- otherwise a chunk containing a
+    # label row cannot be saved once the row table has been touched.
+    if (identical(z$type, "label")) {
+      z$statistics <- NULL
+      z$cell_format <- NULL
+      z$condition <- NULL
+    }
+    z
+  })
+}
+
 decorate_template_ui_ids <- function(value) {
   if (is.null(value) || is.null(value$body)) return(value)
   next_id <- 0L
