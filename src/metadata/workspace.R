@@ -659,6 +659,15 @@ workspace_reindex_bundle_positions <- function(bundle) {
           }
           for (i in seq_along(levels)) {
             level <- levels[[i]]
+            # A nested level names its parent by level id, so the reference has to
+            # move with the ids. Missing it leaves parent_level pointing at an id
+            # that no longer exists, and the validation pass that follows this
+            # reindex rejects the whole bundle with "Parent level must reference
+            # another declared level." Every edit reindexes every template, so one
+            # edit made all hierarchical templates unsaveable.
+            if (!is.null(level$parent_level) && level$parent_level %in% names(level_map)) {
+              level$parent_level <- unname(level_map[[level$parent_level]])
+            }
             if (!is.null(level$node_analysis_id) && level$node_analysis_id %in% names(block_map)) {
               level$node_analysis_id <- unname(block_map[[level$node_analysis_id]])
             }

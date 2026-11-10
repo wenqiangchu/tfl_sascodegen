@@ -388,6 +388,57 @@ testthat::test_that("nested deletion reindexes remaining positions and reference
                              "demo_001_level_001")
 })
 
+# A nested level names its parent by level id, so the parent reference has to be
+# rebuilt whenever position ids are rebuilt. Leaving it behind leaves the reference
+# pointing at an id that no longer exists, and the second validation pass rejects it
+# with "Parent level must reference another declared level." Editing ANY object
+# reindexes every template, so a single edit used to make every hierarchical
+# template unsaveable.
+testthat::test_that("reindexing rebuilds parent_level together with the level ids", {
+  build <- function() {
+    bundle <- workspace_fixture_bundle()
+    hierarchy <- bundle$templates[[1L]]$body$chunks[[2L]]
+    hierarchy$levels[[2L]]$parent_level <- "old_level_1"
+    hierarchy$levels[[2L]]$missing_policy <- "exclude"
+    hierarchy$levels[[2L]]$missing_label <- NULL
+    bundle$templates[[1L]]$body$chunks[[2L]] <- hierarchy
+    bundle
+  }
+
+  reindexed <- workspace_reindex_bundle_positions(build())
+  levels <- reindexed$templates[[1L]]$body$chunks[[2L]]$levels
+  testthat::expect_identical(vapply(levels, `[[`, "", "id"),
+                             c("demo_002_level_001", "demo_002_level_002"))
+  # The parent id must have moved with the level it points at.
+  testthat::expect_identical(levels[[2L]]$parent_level, "demo_002_level_001")
+
+  # And the reindexed bundle must still be valid, which is what the save path checks.
+  testthat::expect_identical(parse_bundle_value(reindexed)$errors, list())
+})
+
+testthat::test_that("editing an unrelated template keeps hierarchical templates saveable", {
+  # The same defect through the real save path: editing a template with no
+  # hierarchical chunk reindexes every template, so the parent references in the
+  # others are rewritten too.
+  bundle <- workspace_fixture_bundle()
+  hierarchy <- bundle$templates[[1L]]$body$chunks[[2L]]
+  hierarchy$levels[[2L]]$parent_level <- "old_level_1"
+  hierarchy$levels[[2L]]$missing_policy <- "exclude"
+  hierarchy$levels[[2L]]$missing_label <- NULL
+  bundle$templates[[1L]]$body$chunks[[2L]] <- hierarchy
+
+  workspace <- new_metadata_workspace(bundle)
+  target <- bundle$templates[[1L]]$id
+  edited <- bundle$templates[[1L]]
+  edited$body$stub_header <- paste0(edited$body$stub_header, " (edited)")
+
+  drafted <- workspace_begin_draft(workspace, "template", target, value = edited)
+  testthat::expect_identical(drafted$errors, list())
+  saved <- workspace_save_draft(drafted$workspace)
+  testthat::expect_true(saved$passed)
+  testthat::expect_identical(saved$errors, list())
+})
+
 testthat::test_that("object IDs remain immutable during update", {
   workspace <- new_metadata_workspace(workspace_fixture_bundle())
   result <- workspace_update(
