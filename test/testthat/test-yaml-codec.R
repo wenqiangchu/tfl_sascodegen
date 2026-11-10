@@ -541,4 +541,3 @@ testthat::test_that("indent_level refuses values the emitter cannot emit", {
   # A representable level still parses, so the bound is not blanket rejection.
   testthat::expect_identical(parse_row(2L), list())
 })
-
