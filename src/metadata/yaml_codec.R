@@ -764,13 +764,23 @@ parse_bundle_archive <- function(input, registry = default_chunk_registry()) {
     return(archive_error("bundle_entry_missing", "Metadata archive is missing a required entry.",
                          paste0("$.", missing[[1L]])))
   }
-  manifest <- parse_manifest_yaml(rawToChar(entries[["manifest.yaml"]]))
+  # Decode every entry first, so an encoding problem is reported against the entry
+  # that carries it rather than surfacing part-way through parsing.
+  texts <- lapply(entries, function(bytes) normalize_yaml_text(bytes))
+  undecodable <- names(texts)[vapply(texts, is.null, logical(1))]
+  if (length(undecodable) > 0L) {
+    return(new_bundle_import_result(FALSE, errors = lapply(sort(undecodable), function(name) {
+      new_error_item("import", "bundle_encoding_invalid",
+                     "Metadata archive entry is not valid UTF-8.", paste0("$.", name))
+    })))
+  }
+  manifest <- parse_manifest_yaml(texts[["manifest.yaml"]])
   if (length(manifest$errors) > 0L) return(new_bundle_import_result(FALSE, errors = manifest$errors))
   populations <- parse_catalog_yaml(
-    rawToChar(entries[["populations.yaml"]]), "populations", parse_population_value
+    texts[["populations.yaml"]], "populations", parse_population_value
   )
   headers <- parse_catalog_yaml(
-    rawToChar(entries[["headers.yaml"]]), "headers", parse_header_value
+    texts[["headers.yaml"]], "headers", parse_header_value
   )
   errors <- c(populations$errors, headers$errors)
   tables <- list()
@@ -778,7 +788,7 @@ parse_bundle_archive <- function(input, registry = default_chunk_registry()) {
   table_names <- sort(names(entries)[grepl("^tables/[^/]+\\.yaml$", names(entries), perl = TRUE)])
   template_names <- sort(names(entries)[grepl("^templates/[^/]+\\.yaml$", names(entries), perl = TRUE)])
   for (name in table_names) {
-    parsed <- parse_yaml_document_text(rawToChar(entries[[name]]), paste0("$.", name))
+    parsed <- parse_yaml_document_text(texts[[name]], paste0("$.", name))
     if (length(parsed$errors) > 0L) {
       errors <- c(errors, parsed$errors)
       next
@@ -796,7 +806,7 @@ parse_bundle_archive <- function(input, registry = default_chunk_registry()) {
     }
   }
   for (name in template_names) {
-    parsed <- parse_yaml_document_text(rawToChar(entries[[name]]), paste0("$.", name))
+    parsed <- parse_yaml_document_text(texts[[name]], paste0("$.", name))
     if (length(parsed$errors) > 0L) {
       errors <- c(errors, parsed$errors)
       next

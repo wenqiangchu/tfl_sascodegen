@@ -95,6 +95,48 @@ testthat::test_that("archive boundary rejects missing and unknown entries", {
   testthat::expect_false(unknown$passed)
 })
 
+testthat::test_that("a NUL byte inside an archive entry is a reported error, not an R error", {
+  # The single-file transport wraps rawToChar() in a tryCatch and reports
+  # bundle_encoding_invalid. The archive transport called rawToChar() directly on
+  # every entry, so rawToChar()'s "embedded nul in string" escaped as an R condition
+  # through parse_bundle_archive() and application_import_bundle(), neither of which
+  # catches it -- the same unguarded boundary that R4-1 closed for column_order.
+  #
+  # The byte has to be spliced as raw: R strings cannot hold a NUL (intToUtf8(0) is
+  # the empty string), and a trailing NUL is harmless because rawToChar() treats it
+  # as a terminator. Only an embedded NUL reproduces the failure.
+  for (entry in c("manifest.yaml", "populations.yaml", "headers.yaml")) {
+    bundle <- parse_bundle_yaml(valid_bundle_yaml())$workspace
+    texts <- encode_archive_texts(bundle)
+
+    staging <- tempfile("tfl_nul_archive_"); dir.create(staging)
+    on.exit(unlink(staging, recursive = TRUE, force = TRUE), add = TRUE)
+    for (name in names(texts)) {
+      path <- file.path(staging, name)
+      dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+      bytes <- charToRaw(texts[[name]])
+      if (identical(name, entry)) {
+        at <- max(1L, floor(length(bytes) / 2L))
+        bytes <- c(bytes[seq_len(at)], as.raw(0x00), bytes[-seq_len(at)])
+      }
+      writeBin(bytes, path)
+    }
+    zip_path <- tempfile(fileext = ".zip")
+    on.exit(unlink(zip_path, force = TRUE), add = TRUE)
+    zip::zipr(zip_path, files = c("manifest.yaml", "populations.yaml", "headers.yaml",
+                                  "tables", "templates"),
+              root = staging, include_directories = FALSE)
+
+    bytes <- readBin(zip_path, "raw", n = file.info(zip_path)$size)
+    result <- NULL
+    testthat::expect_no_error(result <- parse_bundle_archive(bytes))
+    testthat::expect_false(result$passed, label = entry)
+    testthat::expect_true(
+      any(vapply(result$errors, function(x) identical(x$code, "bundle_encoding_invalid"),
+                 logical(1))), label = entry)
+  }
+})
+
 testthat::test_that("strict structure reports unknown fields and type discriminators", {
   input <- gsub(
     "schema_version: 2",
