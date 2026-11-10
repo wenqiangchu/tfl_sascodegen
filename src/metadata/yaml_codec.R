@@ -621,8 +621,7 @@ parse_manifest_yaml <- function(text) {
   }
   schema_version <- parse_integer_value(
     get_field(parsed$value, "schema_version"),
-    "$.manifest.yaml.schema_version", collector, "schema_version", min_value = 1,
-    max_value = .Machine$integer.max
+    "$.manifest.yaml.schema_version", collector, "schema_version", min_value = 1
   )
   if (!is.null(schema_version) && !identical(as.integer(schema_version), 2L)) {
     add_error(collector, "import", "bundle_schema_unsupported",

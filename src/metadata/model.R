@@ -120,8 +120,27 @@ parse_id_value <- function(value, path, collector, field = "id") {
   parsed
 }
 
+# Integer metadata values are bounded to the R integer range by default.
+#
+# Every consumer of these values treats them as R integers: they are written into
+# SAS statements, compared against integer sequences, or converted with as.integer()
+# in the generator. as.integer() is range-gated, so an out-of-range value silently
+# becomes NA there and the failure surfaces far from the field that caused it -- as
+# a literal `> NA` in a page guard, or `missing value where TRUE/FALSE needed`
+# inside an emitter. Requiring each caller to pass the bound was tried and the same
+# defect reappeared three times, so the bound is the default and a caller that wants
+# a narrower range passes its own min_value/max_value.
+#
+# Anything outside the range is a value error, reported against the field.
 parse_integer_value <- function(value, path, collector, field,
-                                min_value = -Inf, max_value = Inf) {
+                                min_value = -.Machine$integer.max,
+                                max_value = .Machine$integer.max) {
+  # A bound beyond the integer range is a programming error: the result could not be
+  # represented, so accepting the argument would only move the failure downstream.
+  if (min_value < -.Machine$integer.max || max_value > .Machine$integer.max) {
+    stop("parse_integer_value() bounds must lie within the R integer range.",
+         call. = FALSE)
+  }
   if (is.logical(value) || !is.numeric(value) || length(value) != 1L ||
       is.na(value) || !is.finite(value) || value != floor(value) ||
       value < min_value || value > max_value) {
@@ -132,11 +151,7 @@ parse_integer_value <- function(value, path, collector, field,
     )
     return(NULL)
   }
-  if (value <= .Machine$integer.max && value >= -.Machine$integer.max) {
-    as.integer(value)
-  } else {
-    as.numeric(value)
-  }
+  as.integer(value)
 }
 
 parse_number_value <- function(value, path, collector, field, positive = FALSE) {
@@ -264,11 +279,7 @@ parse_header_column_value <- function(value, path, collector) {
                                   "condition", non_empty = TRUE)
   display_order <- parse_integer_value(
     get_field(value, "display_order"), error_path_field(path, "display_order"),
-    collector, "display_order", min_value = 1,
-    # Bounded like page_rows: the sequence check below converts with as.integer(),
-    # so an out-of-range value would become NA and the error would point at the
-    # ordering rule instead of at the number the caller wrote.
-    max_value = .Machine$integer.max
+    collector, "display_order", min_value = 1
   )
   width <- parse_number_value(get_field(value, "width"), error_path_field(path, "width"),
                               collector, "width", positive = TRUE)
@@ -380,18 +391,15 @@ parse_header_value <- function(value, path, collector) {
   # therefore 4. 1, 2 and 3 are refused instead of silently inflated; 0 stays
   # valid because it means "do not paginate at all".
   #
-  # There is an upper bound as well. parse_integer_value() returns a double above
-  # the integer range on purpose, for identifiers that genuinely need big
-  # integers, but page_break_source() converts the capacity with as.integer(): an
-  # unrepresentable value would become NA and every pagination guard would read
-  # `> NA`, so the report would silently stop respecting pages. A page capacity is
-  # a printed-line count, so the integer range is more than enough.
+  # The upper bound comes from parse_integer_value()'s default: page_break_source()
+  # converts the capacity with as.integer(), so an unrepresentable value would
+  # become NA and every pagination guard would read `> NA`, silently stopping the
+  # report from respecting pages.
   page_rows <- NULL
   if (has_field(value, "page_rows")) {
     page_rows <- parse_integer_value(get_field(value, "page_rows"),
                                      error_path_field(path, "page_rows"), collector,
-                                     "page_rows", min_value = 0L,
-                                     max_value = .Machine$integer.max)
+                                     "page_rows", min_value = 0L)
     if (!is.null(page_rows) && page_rows > 0L && page_rows < 4L) {
       add_value_error(collector, error_path_field(path, "page_rows"),
                       paste0("Field 'page_rows' must be 0 (no pagination) or at ",
@@ -513,11 +521,11 @@ parse_statistic_value <- function(value, path, collector, allowed_ids, mode) {
         digits <- raw_digits
       }
     } else {
-      # Bounded like page_rows: the precision resolver converts with as.integer(),
-      # so anything above the integer range becomes NA and dies inside the emitter.
+      # The integer range bound comes from parse_integer_value()'s default; an
+      # absolute digits value is written into the key map and used as an F32.<d>
+      # format width, so it has to be representable.
       digits <- parse_integer_value(raw_digits, error_path_field(path, "digits"),
-                                    collector, "digits", min_value = 0,
-                                    max_value = .Machine$integer.max)
+                                    collector, "digits", min_value = 0)
     }
   }
   if (!is.null(id) && identical(id, "n") && has_digits) {
@@ -560,12 +568,9 @@ parse_row_value <- function(value, path, collector, definition) {
                               collector, "label")
   indent_level <- NULL
   if (has_field(value, "indent_level")) {
-    # Bounded like page_rows: the generator emits this with as.integer(), so an
-    # out-of-range value would be written as a literal `indent_level = NA`.
     indent_level <- parse_integer_value(get_field(value, "indent_level"),
                                         error_path_field(path, "indent_level"), collector,
-                                        "indent_level", min_value = 0,
-                                        max_value = .Machine$integer.max)
+                                        "indent_level", min_value = 0)
   }
   if (is.null(id) || is.null(row_type) || is.null(label)) return(NULL)
   result <- list(id = id, type = row_type, label = label)
@@ -710,8 +715,7 @@ parse_result_sort_value <- function(value, path, collector) {
       parsed <- parse_integer_value(column_raw$items[[i]],
                                     error_path_index(error_path_field(path, "column_order"),
                                                      i - 1L),
-                                    collector, "column_order", min_value = 0,
-                                    max_value = .Machine$integer.max)
+                                    collector, "column_order", min_value = 0)
       if (is.null(parsed)) {
         valid <- FALSE
         next
@@ -1286,7 +1290,7 @@ parse_bundle_value <- function(value, registry = default_chunk_registry()) {
   }
   schema_version <- parse_integer_value(
     get_field(value, "schema_version"), error_path_field(root_path, "schema_version"),
-    collector, "schema_version", min_value = 1, max_value = .Machine$integer.max
+    collector, "schema_version", min_value = 1
   )
   if (!is.null(schema_version) && !identical(as.integer(schema_version), 2L)) {
     add_error(collector, "import", "bundle_schema_unsupported",

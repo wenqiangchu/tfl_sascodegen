@@ -480,6 +480,10 @@ SAS source text 的边界。
 2. `schema_version`、`display_order`、`level`、`indent_level` 和 `column_order`
    是整数语义字段。它们必须是有限的整数值；canonical YAML 使用普通十进制整数，
    不使用小数点、指数或多余的前导形式。
+   整数语义字段（含 `digits` 的绝对值）的取值限于 R integer 范围
+   （−2147483647 到 2147483647），越界按现有的值错误拒绝：所有消费方都按 R
+   integer 使用这些值，越界会在下游 `as.integer()` 处变成 `NA`，而失败会远离
+   真正的字段。
 3. `width` 等有限实数使用确定性的普通十进制表示，最多保留 15 位有效数字；
    不使用科学计数法，去除小数尾零和末尾小数点，并将负零规范化为 `0`。超过
    15 位有效数字的有限输入按该规则规范化，不保留 binary floating-point tail。

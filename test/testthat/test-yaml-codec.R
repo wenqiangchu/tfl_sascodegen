@@ -467,11 +467,10 @@ testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
     testthat::expect_true(any(grepl("page_rows", vapply(errors, `[[`, "", "path"))))
   }
 
-  # There is an upper bound too. page_break_source() converts the parsed value with
-  # as.integer(), so a capacity outside the integer range would silently become NA
-  # and every pagination guard would read `> NA`. parse_integer_value() returns a
-  # double above that range on purpose, for fields that genuinely need big
-  # integers; a page capacity is not one of them.
+  # There is an upper bound too, from parse_integer_value()'s default.
+  # page_break_source() converts the parsed value with as.integer(), so a capacity
+  # outside the integer range would silently become NA and every pagination guard
+  # would read `> NA`.
   largest <- parse_bundle_yaml(canonical_yaml_text(build(.Machine$integer.max)))
   testthat::expect_true(largest$passed)
   testthat::expect_identical(as.numeric(largest$workspace$headers[[1L]]$page_rows),
@@ -486,11 +485,11 @@ testthat::test_that("page_rows parses, defaults, and round-trips canonically", {
 })
 
 testthat::test_that("an out-of-range integer is rejected, not coerced to NA", {
-  # Same defect class as page_rows: parse_integer_value() returns a double above
-  # the integer range on purpose, so a later as.integer() turns it into NA and the
-  # error reports a consequence instead of the value that was typed. Each of these
-  # used to emit "NAs introduced by coercion to integer range" and then complain
-  # about something else entirely.
+  # Same defect class as page_rows, before the bound became the default: an
+  # out-of-range value reached a later as.integer(), turned into NA, and the error
+  # reported a consequence instead of the value that was typed. Each of these used
+  # to emit "NAs introduced by coercion to integer range" and then complain about
+  # something else entirely.
   make <- function(ord) {
     list(id = "h", source_data = "ADAM.ADSL", orientation = "portrait",
          page_rows = 22L,
@@ -540,4 +539,35 @@ testthat::test_that("indent_level refuses values the emitter cannot emit", {
   }
   # A representable level still parses, so the bound is not blanket rejection.
   testthat::expect_identical(parse_row(2L), list())
+})
+
+testthat::test_that("parse_integer_value is bounded by default", {
+  # Every consumer uses the result as an R integer: it is written into SAS
+  # statements, compared against integer sequences, or converted with as.integer()
+  # downstream, where an out-of-range double becomes NA. Bounding the default means
+  # a new integer field cannot reintroduce that by forgetting an argument -- which is
+  # how the same defect appeared three times (page_rows, display_order/indent_level,
+  # column_order).
+  captured <- new_error_collector()
+  too_big <- parse_integer_value(2147483648, "$.x", captured, "x")
+  testthat::expect_null(too_big)
+  testthat::expect_identical(length(error_items(captured)), 1L)
+
+  captured <- new_error_collector()
+  too_small <- parse_integer_value(-2147483649, "$.x", captured, "x")
+  testthat::expect_null(too_small)
+  testthat::expect_identical(length(error_items(captured)), 1L)
+
+  # The boundary itself is still accepted, and comes back as an integer.
+  captured <- new_error_collector()
+  largest <- parse_integer_value(2147483647, "$.x", captured, "x")
+  testthat::expect_identical(largest, 2147483647L)
+  testthat::expect_identical(length(error_items(captured)), 0L)
+
+  # An unbounded caller is a programming error, not user input: fail loudly rather
+  # than silently accepting values the downstream conversion cannot represent.
+  testthat::expect_error(
+    parse_integer_value(1L, "$.x", new_error_collector(), "x", max_value = Inf))
+  testthat::expect_error(
+    parse_integer_value(1L, "$.x", new_error_collector(), "x", min_value = -Inf))
 })
