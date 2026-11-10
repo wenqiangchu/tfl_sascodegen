@@ -78,7 +78,11 @@ rows_from_editor_data <- function(cached) {
     if (!length(digit_tokens) || !nzchar(digit_tokens[[1L]])) digit_tokens <- character()
     z$statistics <- lapply(seq_along(stat_ids), function(j) {
       s <- list(id = stat_ids[[j]])
-      d <- digit_tokens[[j]] %||% "-"
+      # Statistics and Digits are positional, and the Digits cell may list fewer
+      # tokens than there are statistics. Index before testing rather than relying
+      # on %||%, which is `if (is.null(x)) y else x` and therefore evaluates the
+      # out-of-range [[ ]] first.
+      d <- if (j <= length(digit_tokens)) digit_tokens[[j]] else "-"
       if (!identical(d, "-") && nzchar(d)) s$digits <- normalize_stat_digits(d)
       s
     })

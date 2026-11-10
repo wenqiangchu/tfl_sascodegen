@@ -74,3 +74,35 @@ testthat::test_that("a collected label row is accepted by the model", {
   )
   testthat::expect_identical(parse_bundle_value(bundle)$errors, list())
 })
+
+testthat::test_that("missing digit tokens fall back to no declared digits", {
+  # Statistics and Digits are positional. The guard was written as
+  # `digit_tokens[[j]] %||% "-"`, but %||% is `if (is.null(x)) y else x` and
+  # evaluates its left side first, so an out-of-range [[ ]] raised
+  #   Error: subscript out of bounds
+  # before %||% was ever consulted. Clearing the Digits cell, or adding a
+  # statistic without adding a digit, therefore broke the collector -- which
+  # draft_status() calls on every observer tick.
+  cached <- row_table_fixture()
+  cached$digits[1L] <- ""            # Digits cleared entirely
+  cached$statistics[1L] <- "mean sd" # two statistics, no digits
+  rows <- rows_from_editor_data(cached)
+
+  testthat::expect_identical(vapply(rows[[1L]]$statistics, `[[`, "", "id"),
+                             c("mean", "sd"))
+  testthat::expect_null(rows[[1L]]$statistics[[1L]]$digits)
+  testthat::expect_null(rows[[1L]]$statistics[[2L]]$digits)
+
+  # Fewer tokens than statistics: the extra statistics simply carry no digits.
+  cached$digits[1L] <- "1"
+  rows <- rows_from_editor_data(cached)
+  testthat::expect_identical(rows[[1L]]$statistics[[1L]]$digits, 1L)
+  testthat::expect_null(rows[[1L]]$statistics[[2L]]$digits)
+
+  # An explicit "-" placeholder still means "declare no digits", and a relative
+  # offset still reaches the model as a string.
+  cached$digits[1L] <- "- +1"
+  rows <- rows_from_editor_data(cached)
+  testthat::expect_null(rows[[1L]]$statistics[[1L]]$digits)
+  testthat::expect_identical(rows[[1L]]$statistics[[2L]]$digits, "+1")
+})
