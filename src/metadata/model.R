@@ -699,27 +699,39 @@ parse_result_sort_value <- function(value, path, collector) {
                                    "column_order", required = TRUE, allow_empty = FALSE)
   column_order <- NULL
   if (!is.null(column_raw)) {
-    column_order <- vapply(seq_along(column_raw$items), function(i) {
-      parse_integer_value(column_raw$items[[i]],
-                          error_path_index(error_path_field(path, "column_order"), i - 1L),
-                          collector, "column_order", min_value = 0,
-                          max_value = .Machine$integer.max)
-    }, numeric(1L))
-    # Column positions are an integer sequence in the value model.  The
-    # numeric vapply above keeps large-value diagnostics simple; normalise the
-    # representable range back to integer for stable round trips.
-    if (all(column_order <= .Machine$integer.max)) {
-      column_order <- as.integer(column_order)
+    # Parse element by element. parse_integer_value() records the error and returns
+    # NULL, so wrapping it in vapply() aborted the whole call with
+    # "values must be length 1, but FUN(X[[1]]) result is length 0" -- an R error
+    # that escaped the import boundary instead of becoming an error envelope.
+    # distinct_key above parses the same way for the same reason.
+    positions <- integer()
+    valid <- TRUE
+    for (i in seq_along(column_raw$items)) {
+      parsed <- parse_integer_value(column_raw$items[[i]],
+                                    error_path_index(error_path_field(path, "column_order"),
+                                                     i - 1L),
+                                    collector, "column_order", min_value = 0,
+                                    max_value = .Machine$integer.max)
+      if (is.null(parsed)) {
+        valid <- FALSE
+        next
+      }
+      positions <- c(positions, parsed)
     }
-    if (anyDuplicated(column_order)) {
-      add_value_error(collector, error_path_field(path, "column_order"),
-                      "Column order values must be unique.")
-    }
-    zero_positions <- which(column_order == 0)
-    if (length(zero_positions) > 1L ||
-        (length(zero_positions) == 1L && zero_positions != length(column_order))) {
-      add_value_error(collector, error_path_field(path, "column_order"),
-                      "Column order zero may occur at most once and only at the end.")
+    # The per-element errors are already recorded, so report nothing further; the
+    # NULL result makes the caller drop the whole result_sort.
+    if (valid) {
+      column_order <- positions
+      if (anyDuplicated(column_order)) {
+        add_value_error(collector, error_path_field(path, "column_order"),
+                        "Column order values must be unique.")
+      }
+      zero_positions <- which(column_order == 0)
+      if (length(zero_positions) > 1L ||
+          (length(zero_positions) == 1L && zero_positions != length(column_order))) {
+        add_value_error(collector, error_path_field(path, "column_order"),
+                        "Column order zero may occur at most once and only at the end.")
+      }
     }
   }
   direction <- parse_string_value(get_field(value, "direction"),
