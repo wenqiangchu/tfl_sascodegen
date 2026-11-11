@@ -226,16 +226,76 @@ header_from_editor_data <- function(id, source_data, data, orientation,
          condition=text(data$condition[[i]]), display_order=suppressWarnings(as.integer(data$display_order[[i]])),
          width=suppressWarnings(as.numeric(data$width[[i]])), alignment=trimws(text(data$alignment[[i]])))
   })
+  # Rebuild spanning headers from the labels shown in the table, but preserve the original
+  # span objects by reference. Column spanning_header_1 / spanning_header_2 hold span ids,
+  # so renumbering an id is a real data change, not formatting. Q8 requires: keep the
+  # original spans (id and label) according to the reference structure, and do not trim,
+  # drop, merge or renumber.
+  #
+  # The editor only carries labels, not ids, so identity is recovered from the original
+  # header: a column that keeps the label its original column had still refers to the
+  # same span. That is what makes an untouched header -- including one edited only in
+  # width or order -- come back with exactly its original spans. A label that no longer
+  # matches its original column is a new span and gets a generated id; a span that no
+  # column references any more is dropped, because nothing points at it.
+  original_spans <- if (is.null(original)) list() else (original$spanning_headers %||% list())
+  span_by_id <- list()
+  for (span in original_spans) {
+    # Not named `id`: that is this function's own parameter, and shadowing it made the
+    # collected header carry a span id as its id.
+    span_id <- as.character(span$id %||% "")
+    if (nzchar(span_id)) span_by_id[[span_id]] <- span
+  }
+  original_columns <- if (is.null(original)) list() else (original$columns %||% list())
+  original_column_by_id <- list()
+  for (index in seq_along(original_columns)) {
+    column <- original_columns[[index]]
+    original_column_by_id[[as.character(column$id %||% "")]] <- column
+  }
+  original_label <- function(column_id, field) {
+    column <- original_column_by_id[[column_id]]
+    if (is.null(column)) return(NULL)
+    ref <- as.character(column[[field]] %||% "")
+    span <- span_by_id[[ref]]
+    if (is.null(span)) NULL else as.character(span$label %||% "")
+  }
+
+  used_ids <- names(span_by_id)
+  next_index <- 1L
   spans <- list()
+  claimed <- character()
   for (level in 1:2) {
     field <- paste0("spanning_header_", level)
     values <- if (field %in% names(data)) trimws(vapply(data[[field]], text, character(1))) else rep("", nrow(data))
-    runs <- rle(values); ends <- cumsum(runs$lengths); starts <- ends-runs$lengths+1L; count <- 0L
+    runs <- rle(values); ends <- cumsum(runs$lengths); starts <- ends-runs$lengths+1L
     for (run in seq_along(runs$values)) {
       label <- runs$values[[run]]; if (!nzchar(label)) next
-      count <- count + 1L; span_id <- sprintf("spanning_header_level%d_%d", level, count)
-      spans[[length(spans)+1L]] <- list(id=span_id, level=as.integer(level), label=label)
-      for (position in seq.int(starts[[run]], ends[[run]])) columns[[position]][[field]] <- span_id
+      positions <- seq.int(starts[[run]], ends[[run]])
+      # Recover the original span when the run covers columns that already carried this
+      # exact label at this level; otherwise it is genuinely new.
+      span <- NULL
+      for (position in positions) {
+        column_id <- as.character(columns[[position]]$id %||% "")
+        if (identical(original_label(column_id, field), label)) {
+          ref <- as.character(original_column_by_id[[column_id]][[field]] %||% "")
+          if (nzchar(ref) && !is.null(span_by_id[[ref]]) && !ref %in% claimed) {
+            span <- span_by_id[[ref]]
+            claimed <- c(claimed, ref)
+            break
+          }
+        }
+      }
+      if (is.null(span)) {
+        repeat {
+          span_id <- sprintf("spanning_header_level%d_%d", level, next_index)
+          next_index <- next_index + 1L
+          if (!span_id %in% used_ids) break
+        }
+        used_ids <- c(used_ids, span_id)
+        span <- list(id=span_id, level=as.integer(level), label=label)
+      }
+      spans[[length(spans)+1L]] <- span
+      for (position in positions) columns[[position]][[field]] <- span$id
     }
   }
   result <- list(id=id, source_data=as.character(source_data %||% ""),
