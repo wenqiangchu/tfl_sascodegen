@@ -1296,6 +1296,51 @@ render output，再由 table assembly 消费。上述对象仅存在于生成 SA
    （`cats(display_order_path, 'A')`，不含 `row_order`），宽表按
    `(row_sequence, column_order)` 定位单元格，多行会逐行覆盖、只保留最后一行。
    多行必须用 `below` placement，模型在导入时拒绝多行 same_row 块。
+
+## 元数据取值范围：字段约束的批准结论
+
+这些约束来自生成源的真实边界（SAS 格式、SAS 字符变量、SAS member name、文件名），
+而非风格偏好。共同原则：**模型在导入时拒绝不可表示的输入**，生成器只对可能绕过模型
+的值做兜底截断；两侧限制必须与真正的下游边界一致，不能更严。
+
+### `statistic.digits`：两侧收敛到 SAS 格式上限（Q1 / D3）
+
+`digits` 最终进入 `PUTN(rounded_value, cats('F', 32, '.', resolved_digits))`。
+SAS 要求 `d` 在 `0–31` 且 `d < w`，而 `w` 固定为 32，因此 `d` 的有效上限就是 31。
+
+- **绝对 `digits`**：解析时限制为 `0–31`，越界即报错。
+- **相对 `digits`**（`+n`/`-n`）：解析时限制偏移量在 `-31…+31`。真实值在 SAS 侧由
+  `coalesce(base_digits, 0) + digits_value` 解析，`base_digits` 来自运行期数据，宿主
+  无法预知，因此只能在解析时约束偏移。
+- **解析后的值**：生成器在 SAS 中兜底。守卫必须放在否定分支**之后**，因为该分支已把
+  `resolved_digits` 置为 missing，所以条件里要重新判断 `not missing(resolved_digits)`，
+  否则越界值会被误当成合法值继续参与格式拼装。守卫触发时 `putlog 'ERROR: [USER] ...'`
+  并把 `estimable` 置 0，使该单元格显示为 NE，而不是让整个程序中断。
+
+### 文本长度与 `indent_level`（Q3）
+
+- **文本**上限 32767 字节，这是 SAS 字符变量的硬上限。模型在 `parse_string_value()` 中
+  统一拒绝超长文本（所有文本字段共用该入口），生成器在 `report_text_lengths_source()`
+  中把三个 `LENGTH` 声明夹到 32767 作为兜底。两侧都要有：模型是主防线，夹取只保护
+  绕过模型的值，避免生成 SAS 无法编译的 `LENGTH`。
+- **`indent_level`** 限制为 `0–9`。缩进按 `indent_level * 200` twips 换算，值过大会把
+  stub 推出页面。`width` 与 stub 宽度不受此约束影响，保持原样。
+
+### ID 的字符集与长度：只约束会成为文件名的两个字段（Q2）
+
+`table.id` 与 `template.id` 会成为物理名称，其余 id 不会：
+
+- `table.id` → 归档条目 `tables/<id>.yaml`、输出文件 `<id>.rtf`，以及 compare 引用的
+  SAS member `tables.<id>`；
+- `template.id` → 归档条目 `templates/<id>.yaml`。
+
+因此只对这两个字段要求 `[A-Za-z0-9_.-]` 且不超过 32 字节（SAS member name 上限）。
+不满足时 bundle 虽能导出，但导出名无法再读回（如 `/` 会被导入端判为不支持的条目），
+或无法被 SAS 引用。
+
+**其余 id（chunk、level、block、row、column、span）只要求非空**：它们要么由工作区
+重新编号，要么只作为内存键使用，收紧会拒绝当前可用的 bundle。
+
 3. 源码回归覆盖相同 row ID 的多个 blocks、多层级、标签行、categorical 子节点、
    多 container 与普通 chunk 混排、空输入，以及 report/compare 两条输出路径。
 4. 独立预期 fixture 固定最终行数、顺序、runtime identity、label、indent、所有列值

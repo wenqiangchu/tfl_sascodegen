@@ -129,6 +129,32 @@ parse_id_value <- function(value, path, collector, field = "id") {
   parsed
 }
 
+# A table id becomes "tables/<id>.yaml" in the archive, "<id>.rtf" for the report
+# output, and the SAS member "tables.<id>" that compare mode references. A template
+# id becomes "templates/<id>.yaml". Anything outside this set of characters exports
+# to a name that cannot be read back, and a name longer than 32 bytes exceeds the
+# SAS member limit. Only these two fields are constrained: every other id is either
+# renumbered by the workspace or used as an in-memory key, so tightening them would
+# reject bundles that work today.
+parse_file_safe_id_value <- function(value, path, collector, field = "id") {
+  parsed <- parse_id_value(value, path, collector, field)
+  if (is.null(parsed)) return(NULL)
+  if (!grepl("^[A-Za-z0-9_.-]+$", parsed, perl = TRUE)) {
+    add_value_error(collector, path,
+                    sprintf(paste0("Field '%s' must use only letters, digits, '_', ",
+                                   "'.' and '-', because it becomes a file and a SAS ",
+                                   "member name."), field))
+    return(NULL)
+  }
+  if (nchar(parsed, type = "bytes") > 32L) {
+    add_value_error(collector, path,
+                    sprintf("Field '%s' must not exceed 32 bytes, the SAS member name limit.",
+                            field))
+    return(NULL)
+  }
+  parsed
+}
+
 # Integer metadata values are bounded to the R integer range by default.
 #
 # Every consumer of these values treats them as R integers: they are written into
@@ -493,9 +519,10 @@ parse_table_value <- function(value, path, collector) {
   allowed <- c("id", "population_id", "header_id", "template_id", "custom_code")
   required <- c("id", "population_id", "header_id", "template_id")
   if (!check_mapping(value, path, collector, allowed, required)) return(NULL)
-  fields <- lapply(required, function(field) parse_id_value(
-    get_field(value, field), error_path_field(path, field), collector, field
-  ))
+  fields <- lapply(required, function(field) {
+    parser <- if (identical(field, "id")) parse_file_safe_id_value else parse_id_value
+    parser(get_field(value, field), error_path_field(path, field), collector, field)
+  })
   names(fields) <- required
   custom_code <- NULL
   if (has_field(value, "custom_code")) {
@@ -1277,7 +1304,8 @@ parse_chunk_value <- function(value, path, collector, registry) {
 parse_template_value <- function(value, path, collector, registry) {
   allowed <- c("id", "body")
   if (!check_mapping(value, path, collector, allowed, allowed)) return(NULL)
-  id <- parse_id_value(get_field(value, "id"), error_path_field(path, "id"), collector)
+  id <- parse_file_safe_id_value(get_field(value, "id"), error_path_field(path, "id"),
+                                collector, "id")
   body <- get_field(value, "body")
   body_path <- error_path_field(path, "body")
   if (!check_mapping(body, body_path, collector, c("stub_header", "chunks"), "chunks")) {
