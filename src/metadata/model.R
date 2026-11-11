@@ -1133,6 +1133,16 @@ validate_hierarchical_references <- function(chunk, path, collector) {
                         sprintf("Sort analysis '%s' is not declared.", metric$analysis_id))
       } else {
         block <- chunk$analysis_blocks[[match(metric$analysis_id, block_ids)]]
+        # The sort is applied to this level's nodes. If the block is anchored at a
+        # different level, its node_key can never match, so the ordering silently falls
+        # back to declaration order -- a wrong report rather than an error.
+        if (!identical(block$anchor_level, level$id)) {
+          add_value_error(collector,
+                          error_path_field(error_path_field(level_path, "result_sort"), "metric"),
+                          sprintf(paste0("Sort analysis '%s' is anchored at level '%s', ",
+                                         "not at the level being sorted ('%s')."),
+                                  block$id, block$anchor_level, level$id))
+        }
         row_ids <- vapply(block$rows, `[[`, character(1L), "id")
         if (!metric$row_id %in% row_ids) {
           add_value_error(collector,

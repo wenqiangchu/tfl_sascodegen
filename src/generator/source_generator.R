@@ -380,12 +380,52 @@ assemble_source_sections <- function(sections) {
   paste(vapply(ordered, `[[`, "", "text"), collapse = "\n\n")
 }
 
+validate_sort_column_positions <- function(template, header) {
+  # result_sort.column_order holds 1-based header column positions, and hierarchical.R
+  # writes them straight into the emitted SAS. A positive value above the header's column
+  # count addresses a column that does not exist, so the sort compares against a missing
+  # value. Header membership can change after import -- a template may be attached to a
+  # different header, or a header may lose a column -- so this cannot be an import-time
+  # check; it runs against the header actually resolved for this generation. Positive
+  # values only: zero is the documented "after the numbered columns" marker, not a
+  # position.
+  column_count <- length(header$columns)
+  errors <- list()
+  chunks <- if (is.null(template$body$chunks)) list() else template$body$chunks
+  for (chunk_index in seq_along(chunks)) {
+    chunk <- chunks[[chunk_index]]
+    if (!identical(chunk$type, "hierarchical_summary")) next
+    levels <- if (is.null(chunk$levels)) list() else chunk$levels
+    for (level_index in seq_along(levels)) {
+      positions <- levels[[level_index]]$result_sort$column_order
+      if (is.null(positions)) next
+      too_far <- positions[positions > column_count]
+      if (length(too_far) == 0L) next
+      errors[[length(errors) + 1L]] <- generation_error(
+        "generation_sort_column_invalid",
+        sprintf(paste0("result_sort.column_order refers to column %d, but the header ",
+                       "provides %d column(s)."),
+                too_far[[1L]], column_count),
+        sprintf("$.template.body.chunks[%d].levels[%d].result_sort.column_order",
+                chunk_index - 1L, level_index - 1L)
+      )
+    }
+  }
+  errors
+}
+
 generate_sas_source <- function(request) {
   resolved_result <- resolve_generation_request(request)
   if (length(resolved_result$errors) > 0L) {
     return(new_generation_result(FALSE, errors = resolved_result$errors))
   }
   resolved <- resolved_result$value
+  # Checked here rather than at import, because the header a template ends up with is
+  # only known once the table's references are resolved.
+  position_errors <- validate_sort_column_positions(resolved$template, resolved$header)
+  if (length(position_errors) > 0L) {
+    return(new_generation_result(FALSE, errors = position_errors))
+  }
   layout <- NULL
   if (identical(request$output_mode, "report")) {
     layout <- tryCatch(report_page_layout(resolved$header), error = identity)
