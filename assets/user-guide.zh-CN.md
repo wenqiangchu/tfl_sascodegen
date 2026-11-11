@@ -190,6 +190,53 @@ Label 行不加粗。一行空白标记一个**块边界**：新 chunk、顶层�
 `Download metadata` 下载最近一次保存的 metadata，不会隐式保存当前未保存修改。
 `Download demo package` 与当前 workspace 无关。
 
+## 字段参考
+
+本节列出应用**实际强制**的限制。这些限制来自真实的下游边界——SAS 格式宽度、SAS
+字符变量长度、SAS member name 长度，以及 bundle 归档中的文件名——而不是对数值外观
+的偏好。值越界时会在导入阶段报错并指明字段与规则，而不是被静默调整。
+
+### 标识符
+
+| 字段 | 允许值 | 原因 |
+| --- | --- | --- |
+| `tables[].id`、`templates[].id` | 字母、数字、`_`、`.`、`-`；最多 32 字节；非空 | 它们会成为物理名称：归档条目 `tables/<id>.yaml` 与 `templates/<id>.yaml`、报告文件 `<id>.rtf`、以及 SAS member `tables.<id>`。id 中含 `/` 的 bundle 虽能导出，却无法再导入；超过 32 字节则超出 SAS member name 上限。 |
+| 其余所有 id（population、header、column、spanning header、chunk、level、block、row、statistic） | 非空 | 它们是引用或内存键。chunk id 在保存时由工作区重新编号，并作为 SAS 字符字面量写出；column id 会变成 `col_NNN`，从不进入 SAS。收紧它们会拒绝当前可用的 bundle。 |
+
+### 数值与文本
+
+| 字段 | 允许值 | 原因 |
+| --- | --- | --- |
+| `statistics[].digits`，绝对 | `0` 到 `31` | 生成代码为 `PUTN(value, cats('F', 32, '.', digits))`。SAS 要求 `0 <= d <= 31` 且 `d < w`，而 `w` 固定为 32。 |
+| `statistics[].digits`，相对（`+n` / `-n`） | 偏移 `-31` 到 `+31` | 实际值为 `base_digits + offset`，其中 `base_digits` 来自运行期数据，因此宿主只能约束偏移。 |
+| `indent_level` | `0` 到 `9` | 缩进按 `indent_level * 200` twips 换算，值更大会把 stub 推出页面。 |
+| 任何 metadata 文本 | 最多 32767 字节 | 32767 是 SAS 字符变量的最大值，更长的文本无法在生成的程序中表示。 |
+| `page_rows` | `0`，或 `4` 到 `2147483647` | `0` 表示不分页。`1` 到 `3` 放不下表头行加上每页首尾强制空白行。 |
+
+如果某 chunk 在运行期解析出的小数位超过 31，生成的程序会在日志写入
+`ERROR: [USER] ...`，把该 statistic 标为不可估计，并在单元格显示 `NE`，但不会中止
+整个运行。
+
+### 可选 SAS 表达式
+
+`filter`、`denominator.expression` 与 `rows[].condition` 都是 SAS 表达式。应用**原样
+保留**其文本（包括首尾空格），从不求值。三者中只有空白的内容一律视为「未提供」，
+因此在编辑表单里留下的占位空白不会报错。
+
+### 导入时检查的交叉引用
+
+| 规则 | 原因 |
+| --- | --- |
+| `tables[].population_id`、`header_id`、`template_id` 必须存在 | 引用缺失会让 table 不完整。 |
+| `levels[].node_analysis_id` 必须指向一个锚定在该 level 的 `same_row` block | 该 block 渲染在这个 level 自己的节点行上。 |
+| 每个 `same_row` block 必须被某个 level 的 `node_analysis_id` 引用 | 未被引用的 block 仍会被分析与生成，但永远不会显示。 |
+| 一个 `same_row` block 只能有一行 | 块内所有行共用一个输出行，多行只会渲染最后一行。需要多行请用 `below`。 |
+| `result_sort.metric.analysis_id` 必须指向锚定在被排序 level 上的 block | 否则排序键永远对不上节点，排序会静默退化为声明顺序。 |
+| `column_order` 的位置不得超过 header 的列数 | 越过最后一列的位置指向不存在的列。`0` 不是位置，表示「排在编号列之后」。 |
+
+`column_order` 上限在**生成源码时**按 table 实际解析到的 header 检查，因为模板可能在
+导入后被挂到列数更少的 header 上。其余规则在导入 bundle 时检查。
+
 ## 测试
 
 在项目根目录运行：

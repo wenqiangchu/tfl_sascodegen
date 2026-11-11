@@ -227,6 +227,59 @@ SAS datasets.
 implicitly saves active edits. `Download demo package` is independent of the
 current workspace.
 
+## Field reference
+
+This section lists the limits the application actually enforces. They come from
+real downstream boundaries -- the SAS format width, the SAS character variable
+length, the SAS member name length, and file names in the bundle archive -- not
+from a preference for tidy values. When a value falls outside its range the
+import is refused with an error that names the field and the rule, rather than
+being adjusted silently.
+
+### Identifiers
+
+| Field | Allowed | Why |
+| --- | --- | --- |
+| `tables[].id`, `templates[].id` | letters, digits, `_`, `.`, `-`; at most 32 bytes; non-empty | These become physical names: the archive entries `tables/<id>.yaml` and `templates/<id>.yaml`, the report file `<id>.rtf`, and the SAS member `tables.<id>`. A `/` in the id produces a bundle that exports but cannot be imported again, and more than 32 bytes exceeds the SAS member name limit. |
+| Every other id (population, header, column, spanning header, chunk, level, block, row, statistic) | non-empty | These are references or in-memory keys. Chunk ids are renumbered when the bundle is saved and written as SAS character literals; column ids become `col_NNN` and never reach SAS. Restricting them would reject bundles that work today. |
+
+### Numbers and text
+
+| Field | Allowed | Why |
+| --- | --- | --- |
+| `statistics[].digits`, absolute | `0` to `31` | The generator emits `PUTN(value, cats('F', 32, '.', digits))`. SAS requires `0 <= d <= 31` and `d < w`, and `w` is fixed at 32. |
+| `statistics[].digits`, relative (`+n` / `-n`) | offset `-31` to `+31` | The resolved value is `base_digits + offset`, where `base_digits` comes from the data at run time, so only the offset can be checked on the host. |
+| `indent_level` | `0` to `9` | Indentation is `indent_level * 200` twips. A larger value pushes the stub off the page. |
+| Any metadata text | at most 32767 bytes | 32767 is the largest SAS character value. Longer text cannot be represented in the generated program. |
+| `page_rows` | `0`, or `4` to `2147483647` | `0` disables pagination. `1` to `3` cannot hold a header row plus the forced blank lines at both page edges. |
+
+If the digits a chunk resolves to at run time exceed 31, the generated program
+writes `ERROR: [USER] ...` to the log, marks that statistic as not estimable, and
+shows `NE` in the cell. It does not abort the run.
+
+### Optional SAS expressions
+
+`filter`, `denominator.expression` and `rows[].condition` are SAS expressions. The
+application preserves them exactly as written, including surrounding spaces, and
+never evaluates them. A value that is only whitespace is treated as "not
+provided" in all three, so a placeholder left in an editing form is not an error.
+
+### Cross-references checked on import
+
+| Rule | Reason |
+| --- | --- |
+| `tables[].population_id`, `header_id`, `template_id` must exist | A missing reference leaves the table incomplete. |
+| `levels[].node_analysis_id` must name a `same_row` block anchored at that level | The block renders on the level's own node row. |
+| Every `same_row` block must be referenced by some level's `node_analysis_id` | An unreferenced block is still analysed and emitted, but never displayed. |
+| A `same_row` block may hold exactly one row | All rows of the block share one output row, so only the last would be rendered. Use `below` for several rows. |
+| `result_sort.metric.analysis_id` must name a block anchored at the level being sorted | Otherwise the sort key never matches the nodes and the ordering silently falls back to declaration order. |
+| `column_order` positions must not exceed the header's column count | A position past the last column addresses nothing. `0` is not a position: it means "after the numbered columns". |
+
+The `column_order` limit is checked when source is generated, against the header
+the table actually resolves to, because a template can be attached to a header
+with fewer columns after import. The others are checked when the bundle is
+imported.
+
 ## Tests
 
 Run `Rscript test/run_tests.R` from the project directory. The suite covers

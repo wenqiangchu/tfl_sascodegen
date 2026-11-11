@@ -347,22 +347,25 @@ columns:
 
 ### 5.1 Header 字段
 
-| 字段 | 类型 | 语义 |
-| --- | --- | --- |
-| id | string | 工作区内唯一的 header ID。 |
-| source_data | non-empty string | 外部 SAS 数据集引用；原样保留，不表示上传文件或物理路径。可使用 `adsl`、`adam.adsl`、`&ADSL` 或 `&lib..&member` 等调用方提供的 SAS 文本。 |
-| orientation | enum，必填 | portrait 或 landscape；Header 编辑器与 canonical YAML 保存该值，Report 源码据此计算 Letter 页面可用宽度。导入不推断默认值；该字段不属于 Table。 |
-| page_rows | integer，可选 | 每页最多容纳的**打印行**数，含每页首尾各一行强制空白行；实际正文容量为 `page_rows - 2`。默认 22；`0` 表示不分页，否则最小为 4（`1`–`3` 被拒绝）。canonical YAML **始终**写出该字段，包括等于默认值时。分页是版式属性（取决于纸张方向、列宽、字号、内边距），因此不从数据推导。该字段不属于 Table。 |
-| spanning_headers | sequence，可选 | 跨列表头；每项有 id、level、label。 |
-| columns | sequence | 有序展示列。 |
-| columns[].id | string | header column 的逻辑 ID。 |
-| columns[].label | string | 列展示标签。 |
-| columns[].condition | string | SAS logical expression，判断 subject 是否属于该列。 |
-| columns[].display_order | positive integer | 从 1 开始的连续列显示顺序；canonical sequence 按该顺序保存。 |
-| columns[].width | positive number | 目标输出使用的真实英寸宽度（例如 1.2 表示 1.2 inches）。 |
-| columns[].alignment | enum | left、center 或 right。 |
-| columns[].spanning_header_1 | string，可选 | level 1 spanning header 引用。 |
-| columns[].spanning_header_2 | string，可选 | level 2 spanning header 引用。 |
+| 字段 | 类型 | 有效值 / 范围 | 规则类别 | 语义 |
+| --- | --- | --- | --- | --- |
+| id | string | 非空；不限字符集 | 结构 | 工作区内唯一的 header ID。 |
+| source_data | non-empty string | 非空 | 结构 | 外部 SAS 数据集引用；原样保留，不表示上传文件或物理路径。可使用 `adsl`、`adam.adsl`、`&ADSL` 或 `&lib..&member` 等调用方提供的 SAS 文本。 |
+| orientation | enum | `portrait` 或 `landscape` | 结构 | 必填；Header 编辑器与 canonical YAML 保存该值，Report 源码据此计算 Letter 页面可用宽度。导入不推断默认值；该字段不属于 Table。 |
+| page_rows | integer | `0`，或 `4`…`2147483647`（`1`–`3` 被拒绝） | 结构 | 每页最多容纳的**打印行**数，含每页首尾各一行强制空白行；实际正文容量为 `page_rows - 2`。默认 22；`0` 表示不分页。canonical YAML **始终**写出该字段，包括等于默认值时。分页是版式属性（取决于纸张方向、列宽、字号、内边距），因此不从数据推导。该字段不属于 Table。 |
+| spanning_headers | sequence | 每项有 id、level、label；level 为 1 或 2 | 结构 | 跨列表头。 |
+| spanning_headers[].id | string | 非空；header 内唯一 | 结构 | span 身份，被 column 的 spanning_header_1/2 引用。 |
+| spanning_headers[].label | string | 非空；≤ 32767 字节 | 值域 | span 展示文本。 |
+| spanning_headers[].level | integer | `1` 或 `2` | 结构 | 层级；与引用它的列字段一一对应。 |
+| columns | sequence | 非空 | 结构 | 有序展示列。 |
+| columns[].id | string | 非空；header 内唯一 | 结构 | header column 的逻辑 ID。 |
+| columns[].label | string | 非空；≤ 32767 字节 | 值域 | 列展示标签。 |
+| columns[].condition | string | 非空 SAS 逻辑表达式 | 值域（SAS 表达式，不解析） | 判断 subject 是否属于该列。 |
+| columns[].display_order | positive integer | 从 1 开始的连续整数 | 结构 | 列显示顺序；canonical sequence 按该顺序保存。 |
+| columns[].width | positive number | 正有限数 | 值域 | 目标输出使用的真实英寸宽度（例如 1.2 表示 1.2 inches）。 |
+| columns[].alignment | enum | `left`、`center` 或 `right` | 结构 | 单元格对齐。 |
+| columns[].spanning_header_1 | string，可选 | 必须引用一个 level 1 span | 结构 | level 1 spanning header 引用。 |
+| columns[].spanning_header_2 | string，可选 | 必须引用一个 level 2 span | 结构 | level 2 spanning header 引用。 |
 
 每个 column condition 独立用于生成筛选代码，因此一个 subject 可以属于多个
 列。生成顺序按 `display_order`；该字段必须在当前 header 内唯一、从 1 开始连续，
@@ -422,15 +425,15 @@ custom_code:
 
 ### 6.1 Table 字段
 
-| 字段 | 类型 | 语义 |
-| --- | --- | --- |
-| id | string | table 的工作区身份。若采用以 ID 为键的 mapping，可不在值中重复保存。 |
-| population_id | string | 对 Population 的引用。 |
-| header_id | string | 对 Header 的引用。 |
-| template_id | string | 对 Template 的引用。 |
-| custom_code | mapping，可选 | table 级 SAS 扩展代码。 |
-| custom_code.before | string，可选 | 在 population/header/chunk 代码之前插入的 SAS code。 |
-| custom_code.after | string，可选 | 在所有 chunk 结果组装之后插入的 SAS code。 |
+| 字段 | 类型 | 有效值 / 范围 | 规则类别 | 语义 |
+| --- | --- | --- | --- | --- |
+| id | string | 非空；仅 `[A-Za-z0-9_.-]`；≤ 32 字节 | 结构、名称安全 | table 的工作区身份。若采用以 ID 为键的 mapping，可不在值中重复保存。该 ID 会成为归档条目 `tables/<id>.yaml`、输出文件 `<id>.rtf` 与 SAS member `tables.<id>`，因此受限。 |
+| population_id | string | 非空；必须引用已存在的 population | 引用 | 对 Population 的引用。 |
+| header_id | string | 非空；必须引用已存在的 header | 引用 | 对 Header 的引用。 |
+| template_id | string | 非空；必须引用已存在的 template | 引用 | 对 Template 的引用。 |
+| custom_code | mapping，可选 | 仅含 before / after | 结构 | table 级 SAS 扩展代码。 |
+| custom_code.before | string，可选 | ≤ 32767 字节 | 值域（opaque SAS 文本） | 在 population/header/chunk 代码之前插入的 SAS code。 |
+| custom_code.after | string，可选 | ≤ 32767 字节 | 值域（opaque SAS 文本） | 在所有 chunk 结果组装之后插入的 SAS code。 |
 
 以下字段明确不属于 TableSpec：
 
@@ -489,15 +492,21 @@ rows:
   - <RowMetadata>
 ~~~
 
-| 字段 | 类型 | 语义 |
-| --- | --- | --- |
-| id | string | chunk 的位置/逻辑 ID。 |
-| type | registered type ID | 四类 chunk 之一，或实现注册的扩展类型。 |
-| source_data | non-empty string | 外部 SAS 数据集或 custom code 创建的数据集引用；作为 opaque SAS source text 原样保留。 |
-| filter | string，可选 | SAS logical expression，作用于当前 chunk source。 |
-| counting_unit | enum，primitive 必填 | record、distinct_subject 或 distinct_key；hierarchical 在 analysis block 声明该字段。 |
-| distinct_key | 字段序列，可选 | primitive counting_unit 为 distinct_key 时必填，其他单位不得声明；不包含排序方向。 |
-| rows | sequence | primitive chunk 的静态行；hierarchical chunk 的行位于 analysis blocks。 |
+| 字段 | 类型 | 有效值 / 范围 | 规则类别 | 语义 |
+| --- | --- | --- | --- | --- |
+| id | string | 非空；不限字符集 | 结构 | chunk 的位置/逻辑 ID。保存时由工作区重新编号，不成为文件名。 |
+| type | registered type ID | 四类 chunk 之一，或实现注册的扩展类型 | 结构 | chunk 类型。 |
+| source_data | non-empty string | 非空 | 结构 | 外部 SAS 数据集或 custom code 创建的数据集引用；作为 opaque SAS source text 原样保留。 |
+| filter | string，可选 | SAS 逻辑表达式；**纯空白视为未提供** | 值域（SAS 表达式，不解析） | 作用于当前 chunk source。 |
+| counting_unit | enum | `record`、`distinct_subject` 或 `distinct_key`；primitive 必填 | 结构 | hierarchical 在 analysis block 声明该字段。 |
+| distinct_key | 字段序列 | 非空字符串序列；仅当 counting_unit 为 `distinct_key`；不包含排序方向 | 结构（条件必填） | counting_unit 为 `distinct_key` 时必填，其他单位不得声明。 |
+| rows | sequence | 非空；primitive chunk 使用 | 结构 | primitive chunk 的静态行；hierarchical chunk 的行位于 analysis blocks。 |
+| analysis_variable | non-empty string | 非空 | 结构（条件必填） | `continuous_summary` 块必填，缺失报 `bundle_required_field_missing`。 |
+| denominator | mapping | 含 scope / unit，scope 与 unit 必须匹配 | 结构（条件必填） | 分类 chunk 与分类 analysis block 必填；缺失报 `bundle_required_field_missing`。 |
+| denominator.scope | enum | `header_population` 或 `chunk_source`（按分析类型） | 结构 | 分母作用域。 |
+| denominator.unit | enum | 与 counting_unit 同一集合；`header_population` 仅允许 `distinct_subject` | 结构 | 分母计数单位。 |
+| denominator.expression | string，可选 | SAS 逻辑表达式；**纯空白视为未提供** | 值域（SAS 表达式，不解析） | 分母附加条件。 |
+| denominator.distinct_key | 字段序列 | 同 `distinct_key` 规则 | 结构（条件必填） | unit 为 `distinct_key` 时必填。 |
 
 chunk 不携带数据集路径、上传内容或运行结果。
 
@@ -516,15 +525,16 @@ chunk 不携带数据集路径、上传内容或运行结果。
   cell_format: '{mean} ({sd})'
 ~~~
 
-| 字段 | 类型 | 语义 |
-| --- | --- | --- |
-| id | string | row 的位置 ID。 |
-| type | enum | label 或 analysis。 |
-| label | string | 行标签。 |
-| indent_level | non-negative integer，可选 | 逻辑行缩进级别。 |
-| condition | string，可选 | 分类 analysis row 的 SAS 分子条件。 |
-| statistics | sequence | analysis row 请求的统计量。 |
-| cell_format | string | 逻辑 cell 的占位符模板。 |
+| 字段 | 类型 | 有效值 / 范围 | 规则类别 | 语义 |
+| --- | --- | --- | --- | --- |
+| id | string | 非空；chunk 内唯一 | 结构 | row 的位置 ID。 |
+| type | enum | `label` 或 `analysis` | 结构 | 行类型。label 行只携带 id/type/label/indent_level。 |
+| label | string | 非空；≤ 32767 字节 | 值域 | 行标签。 |
+| indent_level | integer，可选 | `0`–`9` | 值域 | 逻辑行缩进级别（缩进为 `indent_level * 200` twips，过大会把 stub 推出页面）。 |
+| condition | string，可选 | SAS 逻辑表达式；**纯空白视为未提供** | 值域（SAS 表达式，不解析） | 分类 analysis row 的 SAS 分子条件。 |
+| statistics | sequence | 非空 | 结构（条件必填） | analysis row 请求的统计量；缺失报 `bundle_required_field_missing`。 |
+| cell_format | string | 占位符与 statistic ID 集合一致 | 结构（条件必填） | 逻辑 cell 的占位符模板；缺失报 `bundle_required_field_missing`。 |
+| statistics[].digits | 整数或 `+n`/`-n` | 绝对值 `0`–`31`；相对偏移 `-31`…`+31`；`n` 不声明；分类 `pct` 仅非负绝对整数 | 值域（SAS 格式限制） | 小数位数。解析后越 31 时由生成代码报 ERROR 并显示 NE。 |
 
 label row 只输出标签，不请求统计量。analysis row 必须有 statistics 和
 cell_format；分类 row 还需要 condition。placeholder 集合应与 statistic ID
@@ -764,18 +774,18 @@ log 判断结果。subject 标识固定为 `USUBJID`，不由 chunk 声明。
 
 #### Grouping level
 
-| 字段 | 语义 |
-| --- | --- |
-| variable | 分组值变量。 |
-| format | 可选的 SAS format 名称，不带末尾句点；字符型 format 使用 `$` 前缀。指定后，格式化值同时作为节点身份、节点值和显示标签，节点顺序也由 format 决定。**不能与 label_variable、order_variable、order_direction 同时出现**（结构错误）。 |
-| label_variable | 展示标签变量；缺省可使用 variable。指定 `format` 时不允许出现。 |
-| order_variable | 未指定 `format` 时必填的默认排序变量。指定 `format` 时不允许出现。 |
-| order_direction | 未指定 `format` 时必填的默认排序方向，只能为 asc 或 desc。指定 `format` 时不允许出现。 |
-| result_sort | 可选的统计结果驱动排序 mapping，结构见下文；声明后覆盖展示顺序但不删除默认排序字段。 |
-| node_role | label 或 analysis。 |
-| node_analysis_id | node_role 为 analysis 时引用 same-row block。 |
-| missing_policy | exclude、label 或 error 的业务意图。 |
-| missing_label | missing_policy 为 label 时的展示标签。 |
+| 字段 | 有效值 / 范围 | 规则类别 | 语义 |
+| --- | --- | --- | --- |
+| variable | 非空的 SAS 变量名文本 | 结构 | 分组值变量。 |
+| format | 不以句点结尾的 SAS format 名称，字符型加 `$` | 结构、互斥 | 指定后，格式化值同时作为节点身份、节点值和显示标签，节点顺序也由 format 决定。**不能与 label_variable、order_variable、order_direction 同时出现**（结构错误）。 |
+| label_variable | 非空字符串 | 结构、互斥 | 展示标签变量；缺省可使用 variable。指定 `format` 时不允许出现。 |
+| order_variable | 非空字符串 | 结构（条件必填）、互斥 | 未指定 `format` 时必填的默认排序变量。指定 `format` 时不允许出现。 |
+| order_direction | `asc` 或 `desc` | 结构（条件必填）、互斥 | 未指定 `format` 时必填的默认排序方向。指定 `format` 时不允许出现。 |
+| result_sort | mapping：metric + column_order + direction | 结构、引用 | 统计结果驱动排序 mapping，结构见下文；声明后覆盖展示顺序但不删除默认排序字段。 |
+| node_role | `label` 或 `analysis` | 结构 | 节点角色。 |
+| node_analysis_id | 必须引用一个锚定在本 level 的 `same_row` block | 结构（条件必填）、引用 | `node_role` 为 `analysis` 时必填。 |
+| missing_policy | `exclude`、`label` 或 `error` | 结构 | 缺失值业务意图。 |
+| missing_label | 非空字符串 | 值域 | `missing_policy` 为 `label` 时的展示标签。 |
 
 一个 level 要么由 `format` 驱动，要么由 `order_variable`/`order_direction` 驱动，两者互斥。
 `format` 同时提供节点值域、显示标签和节点顺序，因此继续保留那三个字段只会表达同一个维度
@@ -864,21 +874,31 @@ result_sort:
 
 `column_order` 是按 header `display_order` 排序后的 1-based 位置序列；`0` 表示
 当前节点 label，最多出现一次且只能位于末尾。正数不能重复或越过当前列数。
+
+两条引用规则在导入时或生成前强制：
+
+- `metric.analysis_id` 指向的块必须**锚定在本 level**。否则其 `node_key` 永远对不上
+  被排序的节点，排序静默退化为声明顺序。
+- `column_order` 的正数不得超过所搭配 header 的列数。模板可能在导入后换到列数更少的
+  header，所以这条在**生成前**按实际 header 检查（`generation_sort_column_invalid`），
+  而不是只在导入时。`0` 不是位置，不受列数约束。
+
 排序比较 raw statistic value，NA/NE 排在有效值之后；label tie-break 使用稳定、
 不依赖 locale 的 Unicode 大小写不敏感升序。
 
 #### Analysis block
 
-| 字段 | 语义 |
-| --- | --- |
-| anchor_level | 分析挂接的 level。 |
-| placement | same_row 或 below。 |
-| type | 三个 primitive 之一。 |
-| counting_unit | record、distinct_subject 或 distinct_key。 |
-| distinct_key | counting_unit 为 distinct_key 时使用的字段序列。 |
-| analysis_variable | continuous block 的 numeric variable。 |
-| denominator | categorical block 的显式分母声明。 |
-| rows | block 内有序静态行。 |
+| 字段 | 有效值 / 范围 | 规则类别 | 语义 |
+| --- | --- | --- | --- |
+| id | 非空；chunk 内唯一 | 结构 | block 身份。 |
+| anchor_level | 必须引用本 chunk 的一个 level | 结构、引用 | 分析挂接的 level。 |
+| placement | `same_row` 或 `below` | 结构 | `same_row` 块渲染在锚定 level 的节点行上，因此**只能有一行**且**必须被该 level 的 `node_analysis_id` 引用**；`below` 块无此限制。 |
+| type | 三个 primitive 之一 | 结构 | 块的统计类型。 |
+| counting_unit | `record`、`distinct_subject` 或 `distinct_key` | 结构 | 计数单位。 |
+| distinct_key | 非空字符串序列；仅 `distinct_key` | 结构（条件必填） | 计数键。 |
+| analysis_variable | 非空 | 结构（条件必填） | continuous block 的 numeric variable；缺失报 `bundle_required_field_missing`。 |
+| denominator | mapping | 结构（条件必填） | categorical block 的显式分母声明；缺失报 `bundle_required_field_missing`。 |
+| rows | 非空；`same_row` 块只能有一行 | 结构 | block 内有序静态行。 |
 
 continuous block 的 `counting_unit` 固定按以下语义 materialize 分析输入：
 
