@@ -58,19 +58,43 @@ strip_yaml_quoted_and_comments <- function(line, quote_state = NULL) {
       i <- i + 1L
       next
     }
-    if (identical(ch, "'")) {
-      quote <- "'"
-      output[[i]] <- " "
-    } else if (identical(ch, '"')) {
-      quote <- '"'
-      output[[i]] <- " "
-    } else if (identical(ch, "#") && (i == 1L || grepl("[[:space:]]", chars[[i - 1L]]))) {
+    if (is_yaml_scalar_start(chars, i)) {
+      if (identical(ch, "'")) {
+        quote <- "'"
+        output[[i]] <- " "
+        i <- i + 1L
+        next
+      }
+      if (identical(ch, '"')) {
+        quote <- '"'
+        output[[i]] <- " "
+        i <- i + 1L
+        next
+      }
+    }
+    if (identical(ch, "#") && (i == 1L || grepl("[[:space:]]", chars[[i - 1L]]))) {
       output[i:length(chars)] <- " "
       break
     }
     i <- i + 1L
   }
   list(text = paste0(output, collapse = ""), quote_state = quote)
+}
+
+# A quote only opens a quoted scalar where a scalar can begin: at the start of the
+# content, or right after the character that introduces a value (`:`, `-`, `,`, `[`,
+# `{`, `?`). Anywhere else it is ordinary text. Scanning for quotes without this rule
+# made "label: Investigator's choice" look like an unterminated scalar, because the
+# apostrophe was taken as an opener with no closer -- a legal YAML value refused by the
+# transport layer. Whitespace between the introducer and the quote is skipped so that
+# "key: 'value'" and "key:'value'" behave alike.
+yaml_scalar_start_chars <- c(":", "-", ",", "[", "{", "?")
+
+is_yaml_scalar_start <- function(chars, index) {
+  position <- index - 1L
+  while (position >= 1L && grepl("[[:space:]]", chars[[position]])) position <- position - 1L
+  if (position < 1L) return(TRUE)
+  chars[[position]] %in% yaml_scalar_start_chars
 }
 
 scan_yaml_features <- function(text) {
@@ -113,13 +137,18 @@ scan_yaml_features <- function(text) {
     if (grepl("(^|[[:space:],\\[\\]{])<<[[:space:]]*:", visible, perl = TRUE)) {
       return(list(ok = FALSE, message = "YAML merge keys are not supported."))
     }
-    if (grepl("(^|[[:space:],\\[\\]{])&[A-Za-z0-9_-]+", visible, perl = TRUE)) {
+    # Anchors, aliases and tags are only features where a node begins. Scanning for the
+    # marker anywhere a scalar could begin refused ordinary text: "Safety & Tolerability"
+    # read as an anchor and "Adverse events!" as a tag, although both are plain YAML
+    # scalars. A node begins at the start of the content or after `:`, `-`, `,`, `[`,
+    # `{` or `?`; every other occurrence is text.
+    if (grepl("(^|[:,[{?])\\s*&[A-Za-z0-9_-]+", trimmed_visible, perl = TRUE)) {
       return(list(ok = FALSE, message = "YAML anchors are not supported."))
     }
-    if (grepl("(^|[[:space:],\\[\\]{])\\*[A-Za-z0-9_-]+", visible, perl = TRUE)) {
+    if (grepl("(^|[:,[{?])\\s*\\*[A-Za-z0-9_-]+", trimmed_visible, perl = TRUE)) {
       return(list(ok = FALSE, message = "YAML aliases are not supported."))
     }
-    if (grepl("(^|[[:space:],\\[\\]{])![^[:space:],\\[\\]{}]+", visible, perl = TRUE)) {
+    if (grepl("(^|[:,[{?])\\s*![^[:space:],[\\]{}]+", trimmed_visible, perl = TRUE)) {
       return(list(ok = FALSE, message = "YAML tags are not supported."))
     }
   }
