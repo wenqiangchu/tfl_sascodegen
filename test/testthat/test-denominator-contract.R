@@ -87,7 +87,6 @@ testthat::test_that("denominator structure enforces its own key and valid host s
     list(scope = "chunk_source", unit = "distinct_subject", distinct_key = "CYCLE"),
     list(scope = "header_population", unit = "record"),
     list(scope = "current_group", unit = "distinct_subject"),
-    list(scope = "chunk_source", unit = "record", expression = ""),
     list(scope = "chunk_source", unit = "distinct_key", distinct_key = c("CYCLE", "CYCLE")),
     list(type = "non_missing", variable = "AESEVN")
   )
@@ -100,6 +99,14 @@ testthat::test_that("denominator structure enforces its own key and valid host s
   valid <- parse_bundle_value(denominator_bundle(
     list(scope = "current_group", unit = "distinct_key", distinct_key = "CYCLE"), nested = TRUE))
   testthat::expect_length(valid$errors, 0L)
+
+  # An empty expression is an optional SAS expression that was not provided, not a
+  # malformed one; chunk$filter has always treated it that way, and Q9 aligned the rest.
+  blank <- parse_bundle_value(denominator_bundle(
+    list(scope = "chunk_source", unit = "record", expression = ""),
+    numerator_unit = "distinct_key", numerator_key = c("USUBJID", "AESEQ")))
+  testthat::expect_length(blank$errors, 0L)
+  testthat::expect_null(blank$value$templates[[1L]]$body$chunks[[1L]]$denominator$expression)
 })
 
 testthat::test_that("header qualification uses retained header variables before subject dedup", {

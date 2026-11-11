@@ -640,9 +640,12 @@ parse_row_value <- function(value, path, collector, definition) {
               error_path_field(path, field))
   }
   if (isTRUE(row_contract$allow_condition)) {
+    # Optional SAS expression, preserved verbatim. Only whitespace means "not provided",
+    # matching chunk$filter and denominator.expression.
     condition <- parse_string_value(get_field(value, "condition"),
                                     error_path_field(path, "condition"), collector,
-                                    "condition", non_empty = TRUE)
+                                    "condition")
+    if (!is.null(condition) && !nzchar(trimws(condition))) condition <- NULL
     if (is.null(condition)) return(NULL)
     result$condition <- condition
   }
@@ -702,9 +705,14 @@ parse_denominator_value <- function(value, path, collector,
   }
   expression <- NULL
   if (has_field(value, "expression")) {
+    # Optional SAS expression, preserved verbatim and never evaluated by R. Only
+    # whitespace is not an expression, so it means "not provided" -- the same rule
+    # chunk$filter has always applied. Requiring non-empty here made one optional
+    # expression stricter than another for no reason the caller could observe.
     expression <- parse_string_value(get_field(value, "expression"),
                                      error_path_field(path, "expression"), collector,
-                                     "expression", non_empty = TRUE)
+                                     "expression")
+    if (!is.null(expression) && !nzchar(trimws(expression))) expression <- NULL
   }
   distinct_key <- parse_distinct_key_value(value, path, collector, unit)
   validate_counting_unit_pair(collector, path, unit, distinct_key)
