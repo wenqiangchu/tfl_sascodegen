@@ -1760,9 +1760,9 @@ SAS 要求 `d` 在 `0–31` 且 `d < w`，而 `w` 固定为 32，因此 `d` 的�
 **其余 id（chunk、level、block、row、column、span）只要求非空**：它们要么由工作区
 重新编号，要么只作为内存键使用，收紧会拒绝当前可用的 bundle。
 
-## Hierarchical 引用方向与列位置：两个补检（Q5）
+## Hierarchical 引用方向与列位置：三个补检（Q5 / Q6）
 
-这两处原本只校验了「引用的东西存在」，没有校验「引用关系在语义上成立」。存在的对象
+这三处原本只校验了「引用的东西存在」，没有校验「引用关系在语义上成立」。存在的对象
 不违反语法，但会让报表静默出错或做无用功，因此属于需要在边界上拒绝的输入。
 
 ### `result_sort.metric` 指向的块必须锚定在被排序的 level（Q5a）
@@ -1782,3 +1782,14 @@ SAS 要求 `d` 在 `0–31` 且 `d < w`，而 `w` 固定为 32，因此 `d` 的�
 实现为 `validate_sort_column_positions(template, header)`，在
 `generate_sas_source()` 解析出实际 header 之后、生成布局之前调用；错误码
 `generation_sort_column_invalid`。
+
+### `same_row` 块必须被其锚定 level 引用（Q6）
+
+一个 `same_row` 块只在其锚定 level 的**节点行**上渲染，指向它的唯一字段是
+`level$node_analysis_id`。原有校验只做了正向（`node_analysis_id` 指向的块必须锚定本层
+且为 `same_row`），没有反向。未被引用的 `same_row` 块照样会被分析、计算并排出结果集，
+但永远不会显示——付出代价却不产出，且没有任何迹象表明配置写错了。因此反向补检：
+每个 `same_row` 块都必须被某个 level 的 `node_analysis_id` 引用。
+
+报错文案会指出该块的 id 和它的锚定 level，便于直接定位漏写引用的位置。
+`below` 块不受此约束：它渲染为节点下方自己的静态行，本就不需要 `node_analysis_id`。

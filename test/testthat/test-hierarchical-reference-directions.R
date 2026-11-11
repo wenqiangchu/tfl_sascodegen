@@ -141,3 +141,27 @@ testthat::test_that("generation refuses an out-of-range sort column before emitt
                         template_id = "t1"))
   testthat::expect_true(generate_table_source(ok, "t1")$passed)
 })
+
+testthat::test_that("a same_row block must be referenced by its anchor level", {
+  # Referenced: fine.
+  testthat::expect_identical(parse_chunk()$errors, list())
+
+  # Unreferenced: the block would be analysed but never rendered.
+  paths <- error_paths(parse_chunk(node_analysis_id = NULL))
+  testthat::expect_true(any(grepl("analysis_blocks", paths)))
+
+  # A below block does not need a node_analysis_id reference, because it renders as its
+  # own static rows under the node rather than on the node row.
+  below <- parse_chunk(
+    placement = "below", node_analysis_id = NULL,
+    extra_blocks = list()
+  )
+  testthat::expect_identical(below$errors, list())
+})
+
+testthat::test_that("the unreferenced check names the block and its anchor level", {
+  result <- parse_chunk(node_analysis_id = NULL)
+  messages <- vapply(result$errors, function(x) x$message, "")
+  testthat::expect_true(any(grepl("a1", messages, fixed = TRUE)))
+  testthat::expect_true(any(grepl("l1", messages, fixed = TRUE)))
+})

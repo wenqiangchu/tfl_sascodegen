@@ -1081,6 +1081,16 @@ parse_analysis_block_value <- function(value, path, collector, registry) {
 validate_hierarchical_references <- function(chunk, path, collector) {
   level_ids <- vapply(chunk$levels, `[[`, character(1L), "id")
   block_ids <- vapply(chunk$analysis_blocks, `[[`, character(1L), "id")
+  # A same_row block renders on its anchor level's own node row and only there, and the
+  # reference that puts it there is level$node_analysis_id. A block nobody references is
+  # still analysed -- its cells are computed and emitted -- but never displayed, so the
+  # work is paid for and discarded. Track the referenced ids and report the rest below.
+  referenced_block_ids <- character()
+  for (level in chunk$levels) {
+    if (identical(level$node_role, "analysis") && !is.null(level$node_analysis_id)) {
+      referenced_block_ids <- c(referenced_block_ids, level$node_analysis_id)
+    }
+  }
   for (i in seq_along(chunk$analysis_blocks)) {
     block <- chunk$analysis_blocks[[i]]
     block_path <- error_path_index(error_path_field(path, "analysis_blocks"), i - 1L)
@@ -1101,6 +1111,18 @@ validate_hierarchical_references <- function(chunk, path, collector) {
                        "Rows in a same_row block share one output row, so only the ",
                        "last would be rendered; use placement 'below' for more."),
                 block$id, length(block$rows))
+      )
+    }
+    # The reverse of the node_analysis_id check below: a same_row block must be claimed
+    # by the level it is anchored at. A below block is exempt, because it renders as its
+    # own static rows under the node rather than on the node row.
+    if (identical(block$placement, "same_row") && !block$id %in% referenced_block_ids) {
+      add_value_error(
+        collector, error_path_field(block_path, "id"),
+        sprintf(paste0("same_row block '%s' is not referenced by any level's ",
+                       "node_analysis_id, so it would be analysed but never rendered. ",
+                       "Reference it from level '%s' or change its placement to 'below'."),
+                block$id, block$anchor_level)
       )
     }
   }
