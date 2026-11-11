@@ -103,6 +103,16 @@ check_mapping <- function(value, path, collector, allowed, required = character(
 parse_string_value <- function(value, path, collector, field,
                                required = TRUE, non_empty = FALSE) {
   if (!required && is.null(value)) return(NULL)
+  if (is.null(value) && isTRUE(required)) {
+    # A caller that reaches here with no value is asking for a field the surrounding
+    # contract requires, but which check_mapping() could not see because it is not in
+    # the mapping's field list (for example the value inside a nested object). Letting
+    # this fall through to the type check below reported bundle_structure_invalid, i.e.
+    # "the value is malformed", for a value that is simply absent -- a different
+    # problem with a different fix.
+    add_required_error(collector, path, field)
+    return(NULL)
+  }
   if (!is.character(value) || length(value) != 1L || is.na(value)) {
     add_structure_error(collector, path, field)
     return(NULL)
@@ -206,6 +216,10 @@ parse_number_value <- function(value, path, collector, field, positive = FALSE) 
 parse_sequence_raw <- function(value, path, collector, field,
                                required = TRUE, allow_empty = TRUE) {
   if (!required && is.null(value)) return(list(items = list(), present = FALSE))
+  if (is.null(value)) {
+    add_required_error(collector, path, field)
+    return(NULL)
+  }
   if (!is_sequence_value(value)) {
     add_structure_error(collector, path, field)
     return(NULL)
@@ -1307,9 +1321,13 @@ parse_chunk_value <- function(value, path, collector, registry) {
     result$analysis_variable <- analysis_variable
     result$rows <- rows
   } else if (type %in% c("categorical_summary_nonexclusive", "categorical_summary_exclusive")) {
-    denominator <- parse_denominator_value(
-      get_field(value, "denominator"), error_path_field(path, "denominator"), collector
-    )
+    # check_mapping() above already reported bundle_required_field_missing when the field
+    # is absent. Parsing the NULL anyway produced a second, contradictory
+    # bundle_structure_invalid for the same path, so a caller saw "malformed" for a field
+    # that was simply not there.
+    denominator <- if (has_field(value, "denominator"))
+      parse_denominator_value(get_field(value, "denominator"),
+                            error_path_field(path, "denominator"), collector) else NULL
     rows_raw <- parse_sequence_raw(get_field(value, "rows"), error_path_field(path, "rows"),
                                    collector, "rows", required = TRUE, allow_empty = FALSE)
     rows <- list()

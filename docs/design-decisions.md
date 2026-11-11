@@ -1794,7 +1794,7 @@ SAS 要求 `d` 在 `0–31` 且 `d < w`，而 `w` 固定为 32，因此 `d` 的�
 报错文案会指出该块的 id 和它的锚定 level，便于直接定位漏写引用的位置。
 `below` 块不受此约束：它渲染为节点下方自己的静态行，本就不需要 `node_analysis_id`。
 
-## 可选 SAS 表达式：纯空白视为未提供（Q9）
+## 可选 SAS 表达式与条件必填字段：两处一致化（Q9 / Q10）
 
 ### 纯空白的可选表达式视为「未提供」（Q9）
 
@@ -1805,3 +1805,23 @@ SAS 要求 `d` 在 `0–31` 且 `d < w`，而 `w` 固定为 32，因此 `d` 的�
 
 现在三处一致：空白（含制表符等）一律丢弃，等于未提供；真实表达式**原样保留**，包括
 首尾空白，因为那属于表达式文本的一部分，清理会改变 SAS 语义。
+
+### 条件必填字段缺字段用 `bundle_required_field_missing`（Q10）
+
+`add_required_error()` 早已存在并报 `bundle_required_field_missing`，
+`check_mapping()` 对映射层缺失字段也一直用它。但有两类**条件必填**字段没走这条路：
+分析块缺 `analysis_variable` / `denominator`，分析行缺 `statistics` / `cell_format` /
+`condition`。这些情况此前落到 `bundle_structure_invalid`（"unsupported structure"），
+即把「字段不存在」报成了「字段值结构不对」。
+
+两者对调用方含义完全不同：前者要**加字段**，后者要**改类型**。现在：
+
+- `parse_string_value()` / `parse_sequence_raw()` 在 `required = TRUE` 且值为 `NULL` 时
+  报 `bundle_required_field_missing`，不再落到类型检查分支。
+- 字段**存在但类型错误**仍报 `bundle_structure_invalid` —— 这是真实的结构问题，
+  报成「缺失」反而误导。
+- `categorical` chunk 的 `denominator` 缺失时，`check_mapping()` 已报过 required，
+  解析层不再对同一个 path 追加一条相反的 `bundle_structure_invalid`，避免同一处
+  同时出现「缺失」和「结构不对」两条互斥诊断。
+
+测试同时覆盖两个方向：缺失报 required、类型错报 structure，防止把它们合并成一个码。

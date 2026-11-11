@@ -89,3 +89,34 @@ testthat::test_that("a whitespace-only optional expression means not provided", 
     " AGEGR1 = '1' "
   )
 })
+
+testthat::test_that("an absent conditionally required field reports the required-field code", {
+  # Analysis block without analysis_variable.
+  no_variable <- parse_one(continuous_bundle(drop = "analysis_variable"))
+  testthat::expect_true("bundle_required_field_missing" %in% codes(no_variable))
+  testthat::expect_false("bundle_structure_invalid" %in% codes(no_variable))
+
+  # Categorical chunk without denominator.
+  no_denominator <- parse_one(categorical_bundle(drop_denominator = TRUE))
+  testthat::expect_true("bundle_required_field_missing" %in% codes(no_denominator))
+  testthat::expect_false("bundle_structure_invalid" %in% codes(no_denominator))
+})
+
+testthat::test_that("the required-field error names the missing field and its path", {
+  result <- parse_one(continuous_bundle(drop = "analysis_variable"))
+  index <- which(codes(result) == "bundle_required_field_missing")
+  testthat::expect_true(length(index) >= 1L)
+  testthat::expect_true(any(grepl("analysis_variable", paths(result)[index], fixed = TRUE)))
+  messages <- vapply(result$errors[index], function(x) x$message, "")
+  testthat::expect_true(any(grepl("analysis_variable", messages, fixed = TRUE)))
+})
+
+testthat::test_that("a present but mistyped field stays a structure error", {
+  # Q10 unifies the code only for absent fields; a field present with the wrong type is
+  # still a malformed value, and reporting it as "missing" would be wrong.
+  bundle <- continuous_bundle()
+  bundle$templates[[1L]]$body$chunks[[1L]]$analysis_variable <- 42
+  result <- parse_one(bundle)
+  testthat::expect_true("bundle_structure_invalid" %in% codes(result))
+  testthat::expect_false("bundle_required_field_missing" %in% codes(result))
+})
