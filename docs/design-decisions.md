@@ -1292,6 +1292,10 @@ render output，再由 table assembly 消费。上述对象仅存在于生成 SA
    的各 Header columns 会被拆开。
 2. 保持既有顺序：当前节点行、当前 level 的 below 静态行、动态子节点。
    result_sort 确定展示路径之后才编号；same_row 不额外添加重复 label 行。
+   same_row 块因此只承载一行：块内所有行共用同一个 `order_key`
+   （`cats(display_order_path, 'A')`，不含 `row_order`），宽表按
+   `(row_sequence, column_order)` 定位单元格，多行会逐行覆盖、只保留最后一行。
+   多行必须用 `below` placement，模型在导入时拒绝多行 same_row 块。
 3. 源码回归覆盖相同 row ID 的多个 blocks、多层级、标签行、categorical 子节点、
    多 container 与普通 chunk 混排、空输入，以及 report/compare 两条输出路径。
 4. 独立预期 fixture 固定最终行数、顺序、runtime identity、label、indent、所有列值

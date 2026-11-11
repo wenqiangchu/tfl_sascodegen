@@ -1041,6 +1041,21 @@ validate_hierarchical_references <- function(chunk, path, collector) {
       add_value_error(collector, error_path_field(block_path, "anchor_level"),
                       sprintf("Anchor level '%s' is not declared.", block$anchor_level))
     }
+    # A same_row block renders on its anchor level's own node row, so its rows share
+    # one order_key: hierarchical.R emits cats(display_order_path, 'A') with no
+    # row_order, and the flattening step turns that into a single row_sequence. The
+    # wide pivot addresses a cell by (row_sequence, column_order), so a second row
+    # would overwrite the first and the extra rows would be dropped silently. A
+    # below block carries block_order and row_order in its order_key and is fine.
+    if (identical(block$placement, "same_row") && length(block$rows) > 1L) {
+      add_value_error(
+        collector, error_path_field(block_path, "rows"),
+        sprintf(paste0("A same_row block holds exactly one row, but '%s' has %d. ",
+                       "Rows in a same_row block share one output row, so only the ",
+                       "last would be rendered; use placement 'below' for more."),
+                block$id, length(block$rows))
+      )
+    }
   }
   for (i in seq_along(chunk$levels)) {
     level <- chunk$levels[[i]]
