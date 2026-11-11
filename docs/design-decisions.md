@@ -1296,6 +1296,425 @@ render output，再由 table assembly 消费。上述对象仅存在于生成 SA
    （`cats(display_order_path, 'A')`，不含 `row_order`），宽表按
    `(row_sequence, column_order)` 定位单元格，多行会逐行覆盖、只保留最后一行。
    多行必须用 `below` placement，模型在导入时拒绝多行 same_row 块。
+3. 源码回归覆盖相同 row ID 的多个 blocks、多层级、标签行、categorical 子节点、
+   多 container 与普通 chunk 混排、空输入，以及 report/compare 两条输出路径。
+4. 独立预期 fixture 固定最终行数、顺序、runtime identity、label、indent、所有列值
+   和 spacer 位置。基线为 2 nodes × 2 rows × 3 columns，即 12 cells、4 wide rows；
+   不能再仅以共享/独立统计路径相互一致作为最终组装正确性的证据。
+
+未采用按 row_id 或 label 合并的方式，因为它们可在不同节点及 block 重复；也未
+改变 table assembly 的既有分组键。R 自动化验收仍遵循 source-only 边界；手写
+synthetic SAS fixture 提供给外部 SAS 环境执行，构建 source 不代表运行期验证通过。
+
+2026-09-29 验证更新：用户随后批准继续外部 synthetic SAS 验证与性能测量。
+5 个行组装场景已在 SAS 9.4 通过；运行证据与测量边界见
+[验证记录](hierarchical-runtime-verification.md)。该授权不改变应用产品边界或
+常规 R 测试的 source-only 约定。
+
+## P0-13：兼容 continuous blocks 只共享 value/digits 转换
+
+状态：已确认（2026-09-29）。用户批准按
+[完整边界](hierarchical-result-sharing-proposal.md) 实施，并明确可读性优先、
+不增加共享中间表或宏封装。
+
+1. 仅对 P0-11 已形成且至少两个 members 的 continuous group，共用一次统计值
+   转换和 digits 解析 DATA step；group 范围、preparation、precision、MEANS、
+   raw 拆分、expected-cell、raw/precision join、render 和布局责任保持原契约。
+2. 先完成各 block 原有 `_TFL_CJOIN_*`，再按原 member 顺序通过 SET 读取；IN=
+   临时标志明确将每条记录 OUTPUT 到原 `_TFL_STAT_*`。保留全部 32 列及属性，
+   不增加共享编号、表或宏，不按局部 row ID 推断归属。
+3. 所有 block 的转换完成后，继续按原顺序执行各自 render/HSMAP。用户接受这项
+   创建时机变化及异常时部分 WORK 表可能不同；正常统计、cell 和布局结果不变。
+4. 负相对精度明确沿用当前源码的 ERROR + NE：每条受影响 statistic 写入原诊断、
+   设置 estimable=0 和 missing resolved_digits，继续运行，不去重、不新增 ABORT。
+   R 的显式精度解析 helper 仍可对非法参数抛错，不能据此称应用已检查实际数据精度。
+5. 原 KEY_MAP、KEY、CJOIN、STAT、RSTAT、REND 名称保留；单 block、不兼容块、
+   其他 primitive 和替代 emitter 沿用原路径。复杂逻辑保持展开；边界明确的短规则
+   按下述后续排版决定允许一条一行。
+
+未采用整组 expected-cell/join/render 流水线或生成 SAS 宏：本轮认为额外中间表、
+身份追踪和定义/调用跳转会增加阅读成本。
+
+2026-09-29 排版维护：compact map 的 INPUT 每个字段/informat 单独一行，使用
+清晰缩进，末尾单独结束分号。字段与 informat 原文及其顺序、inline data records、
+还原语句均保持。增加物理行数是为便于阅读，不改变共享边界。后续 CARDIMAGE
+处理以以下决定为准。
+
+### 后续维护：删除 CARDIMAGE 防御，短规则按边界合行
+
+2026-09-29，用户明确要求删除 CARDIMAGE 防御，并将 Header 派生等有明确边界的
+重复模式合为单行。已删除保存选项、OPTIONS NOCARDIMAGE、恢复选项和清理临时
+宏变量四条语句，不替换为程序全局选项或其他保护机制。
+
+采用“一条规则一行”，不把整个 DATA step 合为一行：
+
+- 每个 Header column 的独立 IF、两个身份赋值及 OUTPUT/END 在同一行；不同列
+  另起一行，仍为独立 IF，重叠 membership 不改为互斥 ELSE IF。
+- 每个 categorical numerator 条件、row_order 和 OUTPUT 在同一行；denominator
+  的 row_order=0 输出也是单独一行。外层 source_row 判断保持展开。
+- continuous/categorical chunk catalog 每个 chunk_order + OUTPUT 一行。
+- 层级标签展开时，每个 Header 的 column_order、header_column_id、OUTPUT 一行。
+
+原有 INPUT 按字段分行保持。复杂嵌套分支、计数单元冲突处理、精度解析及 cell_text
+累积不压成单行。metadata 表达式与字符串原样保留；其中原有换行不被强行删除。
+本次只调整上述源代码边界的排版，不引入通用压缩器、新状态或配置。
+
+### 收尾文档对齐：现有 Header orientation
+
+2026-09-29，核对已实现并写入用户指南的 Header 契约：orientation 必填，取值为
+portrait 或 landscape；canonical YAML 位于 source_data 之后。导入不推断默认值，
+Header editor 必须明确选择；Table 仍不含此字段。Report 使用它计算 Letter 页面
+可用宽度，QC 沿用同一 metadata 结构但不应用 Report 页宽检查。本次补齐便携契约
+中的遗漏，不修改 schema、生成器或 UI 行为。
+
+## 分析契约澄清：实际人数与模板排序保留
+
+状态：用户已确认（2026-10-30）。本节覆盖早期「分母为零就将分子置零」的规则。
+
+1. 分类 `n` 来自实际匹配的计数事件，不因 denominator 为零而被覆盖为零。
+   denominator 为零时只有 `pct` 不可估计，渲染为 `NE`。没有匹配计数事件时，
+   expected-cell join 将缺少的计数补为零；这是计数为空的结果，不是根据分母改写分子。
+2. Header 中不存在受试者的列，经过 membership join 后没有分析事件，自然得到
+   `n=0`。非缺失分母或自定义分母为空，与该列完全没有受试者是不同的情况。
+3. `result_sort` 是已声明的分析契约。模板表单暂未提供其专属编辑控件，但采集、
+   无关字段编辑和 Save 必须保留它；位置 ID 重编号同步更新 metric 的分析与行引用。
+4. 基线分类作为 Header 列、基线后分类作为 row condition，可以在已经准备好
+   受试者分析记录的交叉表中使用。Header 当前按 subject 成员关系分列，不能据此
+   宣称该交叉表无法表达。
+
+统一 denominator 的字段方案随后已获用户认可，状态见下节。自定义 format 节点目录、
+最高严重程度记录选择和父层级行为的具体方案尚未批准，不在本节引入新字段。
+业务例子、现有三处错配及待确认方案见 [分析契约讨论记录](analysis-contract-review.md)。
+
+## 统一分母：已批准模型
+
+状态：模型已确认，尚未实现。2026-10-31 从 session
+`01a182b8-5fd8-7271-bc73-8ed5ddafc291` 恢复批准记录，用户原话为
+「好的，我觉得这个优化方案是合理清晰的」。
+
+### 已批准
+
+1. primitive 与 hierarchical categorical 共用 denominator 对象，字段为 scope、
+   unit、可选 expression，以及 unit=distinct_key 时必填的独立 distinct_key。
+2. scope 分为 header_population（当前列的人群）、chunk_source（完整 chunk filter
+   后并限定当前列的 source）、current_group（当前 anchor 节点并限定当前列的 source）。
+3. unit 分为 distinct_subject、record、distinct_key；分母身份不借用分子配置。
+4. 资格筛选通过 expression 组合，不再把 non_missing/custom 当作 scope；缺省
+   expression 表示不额外筛选。最高严重程度选择不由计数键承担，不增加父节点范围。
+
+### 最初批准时的待确认项（已由下一节关闭）
+
+Header 资格条件的变量来源与去重顺序、scope/unit 与宿主组合限制、旧配置迁移和
+schema_version 策略，以及 emitter 的显式输入输出。具体建议见
+[统一分母契约](denominator-contract-design.md)，其中第 3 至第 6 节尚未批准。
+
+以上记录是目标模型批准时的状态快照；实施细则见下节，更新后的交付状态以当前代码
+和测试为准。
+
+## 统一分母：实施规则
+
+状态：用户于 2026-10-31 明确确认并要求继续实现，见 session
+`01a19004-a9fc-73b2-987d-498188be499d`。
+
+1. Header population 分母资格表达式在 `_TFL_POP_001` 上判断，以保留 Header source
+   变量；先按 Header column condition 展开，再按 subject 去重。此 scope 只允许
+   `distinct_subject`。表达式和列条件使用 SAS 语法。
+2. Primitive categorical 只允许 `header_population` 和 `chunk_source`；
+   `current_group` 仅允许 hierarchical categorical block。chunk_source 使用完整
+   chunk filter 后的 source、限定 Header membership，但不继承动态层级缺失筛选。
+3. 分母有独立的 scope、unit、distinct_key 和 expression。资格过滤与分子条件完全
+   分离，distinct denominator key 不传播到分子事件；筛选先于分母单位去重。
+4. Record 分母只计真实源记录，不将 header scaffold 当作分析数据；不同分母条件仍可
+   保持同类 categorical analysis 共用一次 PROC MEANS。
+5. Bundle 升至 schema_version=2。只导入和导出 v2；v1 返回既有 unsupported-version
+   transport error，不做自动转换。旧 bundle 由用户显式迁移后再导入。
+6. 既有 generator/container/emitter/render 边界保持；分母的资格投影、单位投影和
+   row_order=0 事件由当前 categorical emitter 显式生成，并只在 SAS WORK 中存活。
+
+该决定完成后，P-2a 已关闭。nested categorical block 的 parent-level 分母由
+`current_group` scope 表达；format node catalog 和零频节点已在 P-2d 实施。SOC/PT
+最高严重程度的实现边界见下一节。
+
+## SOC/PT 最高严重程度记录：使用现有配置，不新增字段
+
+状态：用户已确认通过现有 `custom_code.before` 或预先准备的 ADaM source 实现，
+不新增 `record_selection` 或排序字段。
+
+当前 metadata 的 `filter`、`distinct_key`、hierarchical `order_variable` 和
+`result_sort` 没有“按排序键取同一分析单位的第一条记录”的语义。排序与取首条必须
+在分析 row condition 之前完成。
+
+推荐的实现是在 `custom_code.before` 中保留原始事件，并派生：
+
+- `SOC_MAX_SEV`：按 `USUBJID + SOC` 计算最高严重程度；
+- `PT_MAX_SEV`：按 `USUBJID + SOC + PT` 计算最高严重程度。
+
+hierarchical chunk 的 `source_data` 指向派生 source；SOC block 使用
+`SOC_MAX_SEV` row conditions，PT block 使用 `PT_MAX_SEV` row conditions，
+`counting_unit` 继续使用 `distinct_subject`。这样两个层级分别选择最高程度，
+不会因先选 PT 记录而改变 SOC 的选择范围。
+
+若必须保留物理 worst record，则 preparation 分别按 `USUBJID + SOC` 和
+`USUBJID + SOC + PT` 排序后使用 SAS `FIRST.` 生成两个派生源。不能对共享 source
+全局去重成每个 subject 一条。严重程度并列、缺失值和过滤规则由调用方在
+`custom_code.before` 中明确；应用不执行或验证这些 SAS 规则。
+
+## Hierarchical 当前范围：保留线性层级，树形分支留作未来方向
+
+状态：用户已决定保留当前线性层级，不在本轮进行树形分支设计或重构。
+
+当前 `levels` sequence 定义一条有序 level chain，例如 `SOC -> PT`。这不表示每个
+SOC 只能有一个 PT：一个父节点可产生多个由数据决定的同层子节点。SOC/PT 的同行
+频数和严重程度分布使用现有 `same_row`/`below` analysis blocks 与固定 rows 表达，
+不需要把这些分析行建成动态 level。
+
+树形分支指同一个父 level 下挂接多个不同的动态子 level，例如 `SOC -> PT` 和
+`SOC -> Severity`。只有当这些不同维度本身都需要动态节点值域和独立父节点范围时，
+才考虑该扩展。多个 sibling 子 level 需要明确各自的节点身份、source/anchor 范围、
+排序与遍历、analysis block 挂接和输出布局。
+
+树形 level graph 可以作为未来扩展方向，但会跨 metadata parser、编辑器、hierarchical
+emitter、节点身份和 render/layout 重构。当前不继续探讨方案；`parent_level` 的值不
+改变生成器依照 `levels` sequence 构造线性链的现有行为。
+
+## Format 动态节点目录：调用方提供值域，未观察值显示为零
+
+状态：用户已确认并批准核心语义、metadata 字段、format 名称语法、排序规则和分类
+频数过程。当前 format 只负责提供完整节点列表和原始值到显示值的映射；ranges、
+`OTHER`、特殊 missing、multilabel 的专门语义不属于当前版本，需要这些效果时由调用方
+在分析前自行准备数据或 format 结果。
+
+本节批准的分类过程规则更新并覆盖 P0-4/P0-6/P0-7 中关于分类频数必须使用
+`PROC FREQ` 的历史实现描述；连续统计仍使用 `PROC MEANS`。分类计数事件统一设置
+`flag=1`，由 `PROC MEANS` 的 `N(flag)` 产生频数，format 值域由
+`PRELOADFMT`/`COMPLETETYPES` 提供。逻辑 class catalog 可作为 `CLASSDATA=` 提供给
+PROC MEANS，使零频组合由过程直接输出；它不再作为 FREQ 原始结果之后的补零 merge。
+
+动态 level 可以引用调用方 format catalog 中已有的 format，或由
+`custom_code.before` 定义的 format。应用不读取 catalog，也不检查 format 是否存在、
+原始变量类型是否匹配或格式化结果是否为字符型；这些由调用方约定保证。指定 format
+后，动态节点使用 format 产生的字符型格式化值同时作为节点身份、节点值和显示标签；
+此时不使用 `label_variable`。未指定 format 时，才使用 `label_variable`（或其缺省
+变量）作为显示标签。原始变量可以是 numeric 或 character。
+
+format 定义完整的动态节点值域。未观察的格式化值仍生成节点并显示频数 0；指定了
+format 的子 level 要在每个已存在的父节点下展开完整值域。父节点自身没有观测时，
+只有父 level 的 format 值域将它纳入时才存在。父子 level 都使用 format 时，完整的
+格式化值组合是允许的。
+
+当根输入完全为空时，`missing_policy=exclude`、`label` 和 `error` 都保留 format
+提供的非缺失零频节点；`label` 仍可保留真实缺失记录，`exclude` 删除真实缺失记录，
+`error` 按既有缺失策略记录告警并删除真实缺失记录。目录占位记录的 `flag=.` 不构成
+真实 Missing 观测，也不增加任何频数。分类频数使用 `N(flag)`，因此目录步骤的零频
+Missing 守卫依赖 SAS `N` 只统计非缺失 `flag`；这同样适用于 exclude/error：占位缺失
+类别被删除，format 提供的非缺失类别仍作为零频节点保留。
+
+`PROC FREQ` 没有 `CLASS` 语句，`TABLES` 的 `SPARSE` 不能替代 format 值域预载。
+节点目录使用 `PROC MEANS` 的 `CLASS ... / PRELOADFMT` 和 `COMPLETETYPES`；分类频数
+使用包含展示及分母位置的 `CLASSDATA=`。每个分类计数事件先设置 `flag=1`，再以 `N(flag)`
+计数；不符合 row condition 或分母条件的记录在进入对应输入前排除，而不是设置为 0。
+distinct counting unit 仍须在计数前按既有规则归约。用户不采用 PROC FREQ 结果再与
+完整骨架 merge 的补零路径。
+
+`levels[]` 增加可选字符串字段 `format`，保存不带末尾句点的 SAS format 名称；字符型
+format 使用 `$` 前缀。emitter 负责补句点并生成 FORMAT 绑定。字段不保存 catalog
+路径，应用不读取 catalog，也不检查 format 是否存在或原始变量类型是否匹配。
+
+parser 的结构规则是：`format` 必须是非空字符串，且不得以句点结尾；不解析名称是否
+为 SAS 合法 format。一个 level 要么是 format 驱动，要么是变量驱动，**两者互斥**：
+未指定 format 时，`order_variable` 和 `order_direction` 必填，`label_variable` 可选；
+指定 format 时，`label_variable`、`order_variable`、`order_direction` **一律不允许出现**，
+出现即报结构错误。
+
+> 2026-11-07 收紧：先前契约允许「指定 format 时这三个字段可省略也可保留，生成时忽略」。
+> 实际后果是静默丢弃用户写入的内容——既无告警也无结果差异提示。format 同时提供节点
+> 值域、显示标签和节点顺序，这三个字段各自只是其中一项的另一种写法，且它们只能表达
+> 数据中已存在的值，无法表达 format 新增的值。因此改为拒绝，而不是接受后忽略。
+
+`result_sort` 不受影响，仍可在统计完成后覆盖最终展示顺序，两种 level 都适用。
+
+### 节点顺序与 `NOTSORTED`
+
+未指定 format 时，节点顺序由 `order_variable` + `order_direction` 决定。
+
+指定 format 时，emitter 使用 `PROC MEANS ... CLASS ... / PRELOADFMT ORDER=DATA` 取得
+format 值域，节点顺序来自该 class 变量的排列。**是否保留 PROC FORMAT 的声明顺序，取决
+于 format 定义时有没有写 `NOTSORTED`**，两条路径的结果不同：
+
+| format 定义 | 节点顺序 | 实测 |
+| --- | --- | --- |
+| `<name> (NOTSORTED) ...` | **声明顺序** | 声明 `2,3,1` → 输出 `2,3,1` |
+| `<name> ...`（无 `NOTSORTED`） | **原始值顺序**（与声明顺序无关） | 声明 `2,3,1` → 输出 `1,2,3` |
+
+原因：不带 `NOTSORTED` 时 SAS 对 format 的 START 值建立有序查找结构，声明顺序这一信息
+不再保留。因此「按想要的顺序显示」在 format 驱动下**必须写 `NOTSORTED`**，这不是可选项。
+
+应用不读 catalog、不检查 format 定义，因此**无法代替调用方判断**是否需要 `NOTSORTED`，
+也不会在漏写时告警。调用方按以下规则自行决定：
+
+- 希望节点按 format 里的书写顺序出现 → 必须加 `NOTSORTED`；
+- 接受按原始值顺序出现（例如原始值本身就是 1,2,3 的编码）→ 可以不加；
+- 希望按统计量排序 → 两种都可以，用 `result_sort` 覆盖。
+
+### 2026-11-02 审阅修复：目录、分母与真实缺失值
+
+用户批准修复审阅问题 1–4，沿用以上契约，不新增 metadata 字段：
+
+1. 分类 CLASSDATA 从展示位置保留原位置，再派生 row_order=0 的分母位置并去重。
+   header_population/chunk_source 分母使用空 node_key，current_group 保留实际 node_key，
+   避免 PROC MEANS EXCLUSIVE 排除合法分母事件。
+2. 无 expression 的 Header 分母直接使用 membership 已确定的 column_order；仅在有
+   expression、读取完整 Header population 源时计算 Header 条件。
+3. 父节点占位记录 flag=. 只建立目录中的父域。missing_policy=label 时排除
+   missing(variable) 且 N(flag)=0 的类别，保留真实缺失记录及非缺失 format 零频类别。
+   特殊 missing format 仍不在支持范围内。
+4. 可移植契约与当前 emitter 映射统一为 schema_version=2、PROC MEANS，并记录 format
+   和最高严重程度方案已决定；历史决策章节继续作为历史记录保留。
+
+验证针对生成源码、bundle 和 UI 契约，不执行 SAS 或真实分析数据。完全空输入下的
+format 根目录行为仍需在调用方 SAS 环境验证。
+
+### 2026-11-02 独立审阅后续修复：编辑覆盖、路径与字段长度
+
+用户批准修复独立审阅的后续事项；不新增 metadata 字段，不改变 format 值域、节点身份、
+缺失策略或应用不检查 format catalog 的约定。
+
+1. UI 回归使用实际 primitive 与 nested block 控件 ID，输入不同于初始值的新分母配置，
+   检查 collect、Save 和 bundle 导出回读。原有无关编辑保留配置的测试继续独立存在。
+   `block_ui` 按现有 `level_ui` 的形式展开，控件 ID、选项和默认值保持同一契约。
+2. 非根 format level 的 observed 中间表丢弃继承的父 `node_order_path`；当前层 assigned
+   表只从当前节点目录关联该字段，供后续 level 使用，避免 SQL 同名列。
+3. 节点长度在所有 level discovery 前一次性确定。对有 format 的各 level，在现有
+   SAS `DATA _NULL_` 中通过 `IF 0 THEN SET` 载入变量类型，编译独立的
+   `IF 0 THEN probe = PUT(variable, format.)` 表达式；`VLENGTH(probe)` 读取 SAS
+   按 format 输出宽度分配的字符长度。探针只存在于该 DATA step，既不读取观测，也
+   不枚举 catalog 或写入数据集；末尾显式 `STOP`，避免未执行 SET 的循环。
+4. 格式化标签宽度与该 level 的 `missing_label` 字节长度取最大值；节点键再累加
+   各层值宽度、类型前缀及既有长度编码余量。标签长度继续兼容 metadata 文本宽度。
+   未指定 format 的 level 沿用源描述符定长。实际身份、标签和运行期行字段仍由显式
+   `LENGTH` 声明，SAS 单字符变量 32767 字节的既有限制保持；不额外缩短显示值。
+   同一原始变量用于多个 format 时，每层拥有独立探针。
+5. 例：两个 format 输出宽度分别为 40、80 字节，且 metadata 标签不超过默认
+   256 字节时，现有键编码余量对应 key 长度 `1+(40+2+32)+(80+2+32)=189`，
+   label 长度 256；不再仅因设置 format 就将这些字段全部设为 32767。这是长度
+   规则的算例，不是 SAS 性能测量。
+6. `ref-alignment.md` 的 manifest 说明同步为严格 v2。
+
+依据：SAS 官方 [PUT](https://support.sas.com/documentation/cdl/en/lrdict/64316/HTML/default/a000199354.htm)
+规定首次接收 PUT 结果的变量默认按 format 宽度定长；
+[VLENGTH](https://support.sas.com/documentation/cdl/en/lrdict/64316/HTML/default/a000245990.htm)
+返回变量编译时分配的长度，包含尾部空白容量。定长不依赖实际观测或观测中出现的类别。
+format 名称、定义和原始变量类型仍由调用方保证；应用不新增存在性或类型检查。
+
+### 2026-11-02 SAS 9.4M2 外部运行验证：空根目录与 format 顺序
+
+用户明确授权使用本机 SAS 及 study 数据进行开发阶段的外部验证，应用边界不变。
+独立 synthetic 预期发现并复现两个违反已有 format 契约的问题：
+
+1. 根输入完全为空时，`PRELOADFMT`/`COMPLETETYPES` 仍缺少未格式化的根父域。
+   在根目录输入的第一个 `SET` 之前输出一条 `parent_node_key=''`、原始值缺失、
+   `flag=.` 的目录占位记录；该记录仅用于目录过程，不进入 observed 分析输入。
+   `N(flag)` 不计该占位，既有 Missing 策略继续排除零频占位缺失类别。
+2. 子层 `PROC MEANS` 已按 format 顺序输出，但关联父排序路径的 SQL 不保证保序。
+   在关联前保留 `_tfl_format_order`，关联明确按其排序，再按父节点稳定分组。
+   最终 `result_sort` 仍按既有约定覆盖展示顺序。
+
+修复前外部断言分别发现根节点目录为空及子节点顺序错误；早期批次（`runs/final/synthetic`
+10 个、`runs/unformatted_verified` 1 个、`runs/empty_policies` 2 个）为旧代码结果。
+级别 1 的 `_tfl_format_order` 回归修复后，13 个案例已在同一批次
+`runs/aligned_20261103/synthetic/` 中用当前源码全部重跑并通过，恢复的 numeric
+`VVALUE` 路径也已包含在内；旧批次不再作为该路径的证据。
+案例覆盖完全空输入、三种 missing policy、真实缺失值、输入重排、重复记录、结果排序、
+跨父节点标签、两层 format 后的普通层及不同 format 长度。
+完整运行验证与剩余工作跟踪见 `plans/sas-runtime-validation.md`。
+
+### 2026-11-02 Header source 唯一性与重复告警
+
+用户明确选择继续要求 Header source 每个受试者一行，由调用方预处理，并要求
+不符合时生成 WARNING。因此收紧统一分母文档，撤回允许同一 subject 多条 Header
+记录的描述；不对 membership 自动去重，不改变源数据或分析记录。
+
+复用现有 `include_duplicate_check` 开关（默认开启）：在读取原始 Header source
+时输出独立的 subject key 投影，再对该投影排序。每个重复 subject 输出一次
+`WARNING: [USER] header_subject_duplicate`，包括被 population 排除的 subject。
+检查不改变 population/filter 条件、不删除记录、不中止 SAS。关闭 duplicate-check
+时省略这个诊断，与既有 source duplicate-check 的开关语义一致。
+
+### 2026-11-02 RTF 横向分表修复
+
+外部 Word 视觉检查发现，经典 ODS RTF 在内容列宽恰好占满可打印页宽时将 stub
+和治疗列拆成横向 panels。最小 synthetic 程序可复现；移除边框或为边框预留空间
+均可避免拆分。保留边框并显式固定外框宽度为 0.75 pt，计算 stub 宽度时扣除两侧
+边框共 1.5 pt。Header 声明的列宽、Letter 纸张及一英寸左右页边距保持原意。
+该修复不新增 metadata 字段；预计会改变历史 RTF 的分页和表格结构。
+
+> **2026-11-07 更正**：仅预留 1.5 pt 边框远不足以避免分栏。单元格内边距与边框都不在
+> 声明的列宽里，二分探针测得真实阈值约 0.1 英寸，因此改为预留 `fit_reserve = 0.25`
+> 英寸（2.5 倍安全余量）。1.5 pt 的边框扣除仍然保留，但已不再是唯一的预留。
+> 见 `docs/dummy-study-findings.md` §6.8。
+
+### 2026-11-02 未格式化层级的 sibling counter 生命周期
+
+独立 study 参考计算发现：未格式化父层的 `sibling_order` 随 assigned 数据进入
+子层，子层 `SET` 每次覆盖自己的 retained counter，使多个子节点排序键相同。
+这在旧程序和当前程序均存在，不能以新旧输出一致判定正确。计数器只用于当前
+节点发现步骤，输出时丢弃；供后续层使用的只有完整 `node_order_path`。
+以独立的 SOC/PT、Parameter/Visit 和历史 PT 最大严重程度分组排序验证修复。
+
+### 分页：`page_rows` 契约
+
+分页不是数据属性而是版式属性（取决于纸张方向、列宽、字号、单元格内边距），因此作为
+**header 字段**保存，不从数据推导、不硬编码。
+
+| 项 | 契约 |
+| --- | --- |
+| 字段 | `headers[].page_rows`，可选整数 |
+| 默认值 | `default_page_rows = 22` |
+| 取值 | `0`，或 ≥ 4 的整数。`0` 表示**不分页**（整表连续输出，用于不需要版式的调用方）；`1`–`3` 被拒绝（每页两行页边垫行后正文只剩 1 行，分隔行会独占一页并印出空白页） |
+| 计数口径 | **打印行**总数，含每页首尾各一行强制空白行；重复列头不计（它是表头不是正文行） |
+| 可用容量 | `usable = page_rows - 2`，即扣掉页首/页尾两行垫行；模型已保证 ≥ 4，故 `usable ≥ 2` |
+| 归一化输出 | **始终**写入 YAML，含默认值（见 D1 决定） |
+| UI | Header 编辑器的 `Page capacity`（`header_page_rows`），`min = 0`，`0` 表示不分页 |
+
+实测依据（2026-11-09 复核）：**能确认的只有一条**——按 22 分页后，7 张表的 Word 渲染
+页数与分页步产生的 page group 数完全相等（1 / 2 / 1 / 17 / 64 / 5 / 6），且没有表格跨页。
+也就是说 22 在这批版式上**不溢出**。
+
+**余量本身没有测过。** 逐页统计正文行数测不出余量：多页表最满的一页分别是
+14.3.1.2 = 22 行、14.3.1.4 = 21 行、14.1.2 = 22 行，而这些行数本来就是算法按上限 22
+排出来的，只能说明算法守住了上限，不能说明物理页还能多放几行。此前这里写「余量约为
+0–1 行」，与本文件早前写的「至少有充裕余量」一样没有依据，两处说法互相矛盾且都无实测
+支撑，现一并作废。
+
+更早的「每页实测数据行 14.0–20.8」同样不成立：14.0 来自 14.2.3，而它是只有 14 行的
+**单页表**，不构成一页的容量。22 是否偏大、以及是否需要渲染级校验，**仍待决定（见 D2）**。
+
+分页在 SAS 侧执行：按块累加高度、生成 `page_group`，再 `break after page_group / page`。
+**块不跨页**，唯一例外是单块本身就高于一整页（否则无处可放）。每页首尾各一行空白行；
+续页若已由块分隔行开篇则不再叠加第二行。
+
+分页位于 `custom_code.after` **之后**（见第 4 组第 6 条），报告读 `WORK._TFL_PAGED_001`。
+整表打印顺序由 `_tfl_print_order`（最终排序后 `_n_`，跨页连续编号、不按页重新计数）给出，
+`PROC REPORT` 按它排序。
+**不能用 `report_order`**：页边垫行没有 `report_order`，而 `PROC REPORT ... missing`
+把缺失值排在最小，会让两条垫行都跑到页首（2026-11-08 修正）。
+`compare` 模式不分页，直接比对 `WORK._TFL_ASM_001`。
+
+**已决定（D1，2026-11-07，方案 b）**：此前只在 `page_rows` 不等于默认值时才写入 YAML，
+使文件的含义取决于读取时的 `default_page_rows`——改那个常量会**静默改变**所有未写该字段
+的既有 bundle。现改为**始终写入**，bundle 自描述：它声明的版式就是它得到的版式。
+代价是既有 bundle 字节变化一次（一次性、不可逆、已接受）。
+
+该决定与「Header 编辑器新增 `Page capacity` 控件」一起落地：一旦用户能改这个数，
+「默认值」与「用户值」的区别就必须落在文件里，而不能靠常量推断。`default_page_rows`
+仍是 22，未改动。
+
+控件说明文案（UI hint）承担了把语义讲清楚的责任：容量按**打印行**计、含每页首尾两行
+强制空白行、`0` 表示不分页、最小值 4、出厂模板实测为 22，且调大后若某个长标签折行
+仍可能溢出。最后一句是 D2 尚未解决的风险在 UI 上的可见化，不构成校验。
+
+> **待定（D2）**：`default_page_rows = 22` 是否偏大。当前 `check_pagination()` 只校验逻辑
+> 容量，无法发现 Word 实际渲染溢出。是否降低默认值或增加渲染级校验，**尚未决定。**
 
 ## 元数据取值范围：字段约束的批准结论
 
