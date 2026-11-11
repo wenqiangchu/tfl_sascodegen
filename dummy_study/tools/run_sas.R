@@ -21,6 +21,11 @@ data_dir <- file.path(root, "dummy_study", "data")
 program_dir <- file.path(root, "dummy_study", "generated", "sas")
 run_dir <- file.path(root, "dummy_study", "generated", "sasrun")
 out_dir <- file.path(root, "dummy_study", "generated", "sasout")
+# SAS puts its WORK library under the default temp directory, which on this machine
+# lives on a nearly full system drive. Pin WORK next to the run output instead so a
+# large hierarchical program cannot fail with "WORK disk space exhausted" for
+# reasons that have nothing to do with the generated code.
+work_dir <- file.path(root, "dummy_study", "generated", "saswork")
 
 if (!file.exists(sas_exe)) {
   stop("SAS executable not found: ", sas_exe, call. = FALSE)
@@ -32,6 +37,7 @@ if (!is.null(only_table)) {
 }
 dir.create(run_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(work_dir, recursive = TRUE, showWarnings = FALSE)
 
 write_text <- function(lines, path) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
@@ -105,7 +111,8 @@ for (program in programs) {
   old_wd <- setwd(run_dir)
   exit_code <- tryCatch(
     system2(sas_exe, c("-sysin", basename(wrapper), "-log", basename(log_path),
-                       "-print", basename(lst_path), "-nosplash", "-noterminal")),
+                       "-print", basename(lst_path), "-work", work_dir,
+                       "-nosplash", "-noterminal")),
     finally = setwd(old_wd)
   )
   if (!is.numeric(exit_code)) exit_code <- 0L
