@@ -53,6 +53,15 @@ report_text_lengths_source <- function(resolved) {
     tokens <- gregexpr("\\{[^{}]+\\}", format, perl = TRUE)[[1L]]
     nchar(format, type = "bytes") + 32L * sum(tokens > 0L)
   }, integer(1L)))
+  # A SAS character variable stops at 32767 bytes, and these values become LENGTH
+  # statement widths, so an unbounded metadata string would produce a program that
+  # only fails inside SAS. The model refuses text above this size, so the clamp
+  # guards against a value that slipped past it rather than truncating user input
+  # silently.
+  sas_character_limit <- 32767L
+  id_length <- min(id_length, sas_character_limit)
+  label_length <- min(label_length, sas_character_limit)
+  cell_length <- min(cell_length, sas_character_limit)
   c(
     "/* Size metadata text explicitly; hierarchical source descriptors extend these bounds. */",
     paste0("%let _TFL_ID_LEN=", id_length, ";"),

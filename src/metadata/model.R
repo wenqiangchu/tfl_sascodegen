@@ -111,6 +111,15 @@ parse_string_value <- function(value, path, collector, field,
     add_value_error(collector, path, sprintf("Field '%s' must be non-empty.", field))
     return(NULL)
   }
+  # A SAS character variable stops at 32767 bytes, and metadata text is emitted as
+  # character literals and LENGTH widths. Text beyond that cannot be represented, so
+  # it is refused here rather than producing a program that only fails inside SAS.
+  if (nchar(value, type = "bytes") > 32767L) {
+    add_value_error(collector, path,
+                    sprintf(paste0("Field '%s' must not exceed 32767 bytes, the largest ",
+                                   "SAS character value."), field))
+    return(NULL)
+  }
   value
 }
 
@@ -581,7 +590,7 @@ parse_row_value <- function(value, path, collector, definition) {
   if (has_field(value, "indent_level")) {
     indent_level <- parse_integer_value(get_field(value, "indent_level"),
                                         error_path_field(path, "indent_level"), collector,
-                                        "indent_level", min_value = 0)
+                                        "indent_level", min_value = 0, max_value = 9L)
   }
   if (is.null(id) || is.null(row_type) || is.null(label)) return(NULL)
   result <- list(id = id, type = row_type, label = label)
