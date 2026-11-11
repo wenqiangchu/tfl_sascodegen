@@ -92,6 +92,10 @@ statistic_digits_source <- function() {
     "  if resolved_digits < 0 and not missing(resolved_digits) then do;",
     "    putlog 'ERROR: [USER] Relative digits resolved to a negative value.';",
     "    estimable = 0; resolved_digits = .;",
+    "  end;",
+    "  else if resolved_digits > 31 and not missing(resolved_digits) then do;",
+    "    putlog 'ERROR: [USER] Resolved digits exceed the SAS format limit.';",
+    "    estimable = 0; resolved_digits = .;",
     "  end;"
   )
 }

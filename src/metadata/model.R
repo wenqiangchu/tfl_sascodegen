@@ -518,14 +518,25 @@ parse_statistic_value <- function(value, path, collector, allowed_ids, mode) {
         add_value_error(collector, error_path_field(path, "digits"),
                         "Relative digits are not supported for this statistic.")
       } else {
-        digits <- raw_digits
+        # Only the offset is bounded here. The resolved count is
+        # coalesce(base_digits, 0) + digits_value, and base_digits is derived from
+        # the data at run time, so statistic_digits_source() guards the result
+        # inside the program.
+        offset <- suppressWarnings(as.numeric(sub("^[+-]", "", raw_digits)))
+        if (!is.finite(offset) || offset > 31) {
+          add_value_error(collector, error_path_field(path, "digits"),
+                          "A relative digits offset must be between -31 and +31.")
+        } else {
+          digits <- raw_digits
+        }
       }
     } else {
-      # The integer range bound comes from parse_integer_value()'s default; an
-      # absolute digits value is written into the key map and used as an F32.<d>
-      # format width, so it has to be representable.
+      # SAS bounds the decimal count of w.d to 0-31, and result_render.R emits
+      # PUTN(rounded_value, cats('F', 32, '.', resolved_digits)), so 31 is also the
+      # largest value that fits inside the fixed width of 32.
       digits <- parse_integer_value(raw_digits, error_path_field(path, "digits"),
-                                    collector, "digits", min_value = 0)
+                                    collector, "digits", min_value = 0,
+                                    max_value = 31L)
     }
   }
   if (!is.null(id) && identical(id, "n") && has_digits) {
