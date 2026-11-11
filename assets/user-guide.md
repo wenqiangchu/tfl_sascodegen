@@ -17,7 +17,6 @@ On Windows, double-click `start_app.bat`; it selects an available local port
 and opens Chrome. Alternatively run `shiny::runApp('.')` from the project
 directory. Upload a bundle with `Upload metadata`. The demo package contains a
 synthetic bundle and this guide.
-
 ## RTF source generation
 
 The following report conventions apply to **Source report (PROC REPORT)** mode.
@@ -101,6 +100,29 @@ label RTF is preserved.
 A bundle contains `manifest.yaml`, `populations.yaml`, `headers.yaml`, and
 independent `tables/<table-id>.yaml` and `templates/<template-id>.yaml` files.
 The manifest currently declares the schema version.
+
+### Bundle versus demo package
+
+The application uses two different ZIP files, and they are not interchangeable.
+Uploading one where the other is expected fails.
+
+| File | Produced by | Contents | Upload with |
+| --- | --- | --- | --- |
+| `metadata_bundle.zip` | `Download metadata` | `manifest.yaml`, `populations.yaml`, `headers.yaml`, `tables/*.yaml`, `templates/*.yaml` -- nothing else | `Upload metadata` |
+| `demo_metadata_package.zip` | `Download demo package` | `demo_metadata.zip` and `user-guide.md`, i.e. a bundle plus its guide, wrapped in one more ZIP | nothing; unzip it first |
+
+A *bundle* is the metadata itself. A *demo package* is a container that ships a
+bundle together with its documentation. If you upload the demo package, or any
+other ZIP that happens to hold a bundle, the import is refused with
+`Import failed: Metadata archive contains an unsupported entry.` -- the archive
+contains `demo_metadata.zip` and `user-guide.md`, neither of which is a
+recognised bundle entry.
+
+To load the demo metadata: extract `demo_metadata.zip` from the
+demo package and upload that inner file. The same rule applies to any bundle
+re-exported by hand: the archive that `Upload metadata` accepts has exactly the
+entries in the first row of the table above, at the top level, with no wrapping
+directory and no extra files.
 
 ## Editing workflow
 
@@ -225,7 +247,9 @@ The application generates source only; it does not read, validate, or execute
 SAS datasets.
 `Download metadata` exports the last saved workspace snapshot and never
 implicitly saves active edits. `Download demo package` is independent of the
-current workspace.
+current workspace. Note that `Download demo package` does **not** produce an
+uploadable bundle: it wraps a bundle and the user guide in an outer ZIP. See
+[Bundle versus demo package](#bundle-versus-demo-package).
 
 ## Field reference
 

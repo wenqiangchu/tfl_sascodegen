@@ -11,7 +11,8 @@ source text。应用只生成代码，不读取、验证或执行 SAS 分析数�
 中打开应用。也可以在项目目录中运行 `shiny::runApp('.')`。
 
 首次打开时需要点击 `Upload metadata` 并选择 metadata ZIP。也可以先下载
-`Download demo package`，使用其中的示例 bundle 进行体验。
+`Download demo package`，**解压后使用其中的 `demo_metadata.zip`** 进行体验（外层包
+本身不能上传，详见下文）。
 
 ## ZIP 文件结构
 
@@ -27,6 +28,24 @@ templates/<template-id>.yaml
 
 每个 table 和 template 都是独立的 YAML 文件，便于在不同研究之间复制和复用。
 `manifest.yaml` 当前用于声明 schema version。
+
+### bundle 与 demo package 的区别
+
+应用会用到两种不同的 ZIP，二者不能互换。上传错了就会失败。
+
+| 文件 | 由谁产生 | 内容 | 上传方式 |
+| --- | --- | --- | --- |
+| `metadata_bundle.zip` | `Download metadata` | `manifest.yaml`、`populations.yaml`、`headers.yaml`、`tables/*.yaml`、`templates/*.yaml`，**仅此而已** | `Upload metadata` |
+| `demo_metadata_package.zip` | `Download demo package` | `demo_metadata.zip` 与 `user-guide.md`，即一个 bundle 加它的说明，再包一层 ZIP | 不能上传；先解压 |
+
+**bundle** 是 metadata 本身；**demo package** 是把 bundle 和说明文档装在一起的容器。
+如果上传 demo package（或任何把 bundle 包在里层的 ZIP），导入会报
+`Import failed: Metadata archive contains an unsupported entry.` —— 因为包里是
+`demo_metadata.zip` 和 `user-guide.md`，两者都不是被识别的 bundle 条目。
+
+要使用示例 metadata：从 demo package 中解压出 `demo_metadata.zip`，上传这个内层文件。
+手动打包重导 bundle 时同样适用：`Upload metadata` 接受的归档只能包含上表第一行的
+那些条目，且位于顶层，不套目录、不夹带其他文件。
 
 ## Metadata 编辑
 
@@ -188,7 +207,9 @@ Label 行不加粗。一行空白标记一个**块边界**：新 chunk、顶层�
 用户标签中的 RTF 内容保留。
 
 `Download metadata` 下载最近一次保存的 metadata，不会隐式保存当前未保存修改。
-`Download demo package` 与当前 workspace 无关。
+`Download demo package` 与当前 workspace 无关。注意 `Download demo package`
+**不会**产生可上传的 bundle：它把 bundle 与用户指南包在一个外层 ZIP 里。
+详见 [bundle 与 demo package 的区别](#bundle-与-demo-package-的区别)。
 
 ## 字段参考
 
